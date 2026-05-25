@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 3 go-signal.
 **Weeks:** 48–64 (16 weeks).
 **Companion docs:**
-- [Roadmap §6](../roadmap-inkfoot.md#6-phase-4--compound-weeks-4864)
-- [Architecture §4.16](../architecture-inkfoot.md)
-- [Phase 3 detailed design](phase-3-prove.md) — the Cloud foundation
+- [Roadmap §6](../../roadmap-inkfoot.md#6-phase-4--compound-weeks-4864)
+- [Architecture §4.16](../../architecture-inkfoot.md)
+- [Phase 3 detailed design](../phase3/phase-3-prove.md) — the Cloud foundation
   Phase 4 grows.
 
 ---

@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 1 go-signal.
 **Weeks:** 20–32 (12 weeks).
 **Companion docs:**
-- [Roadmap §4](../roadmap-inkfoot.md#4-phase-2--enforce-weeks-2032)
-- [Architecture §4.5, §4.6, §4.7](../architecture-inkfoot.md)
-- [Phase 1 detailed design](phase-1-explain.md) — the framework
+- [Roadmap §4](../../roadmap-inkfoot.md#4-phase-2--enforce-weeks-2032)
+- [Architecture §4.5, §4.6, §4.7](../../architecture-inkfoot.md)
+- [Phase 1 detailed design](../phase1/phase-1-explain.md) — the framework
   adapter foundation Phase 2 builds on.
 
 ---
@@ -1185,7 +1185,7 @@ that doesn't exist is the canonical OSS-to-SaaS failure mode.
 | **EN12** | Postgres storage backend + `inkfoot migrate --to postgres` |
 | **EN13** | Five additional cost smells |
 | **EN14** | Cost-per-success report promotion (new columns; uninstrumented bucket; docs update) |
-| **EN15** | `inkfoot tail` live event tail |
+| ~~**EN15**~~ | ~~`inkfoot tail` live event tail~~ — **shipped in Phase 1 as EX15** (see phase-1-explain §"Suggested epic breakdown"); listed here for the original numbering only and **not** delivered again in Phase 2. |
 | **EN16** | Provider abstraction refactor (Phase 0's shims become formal provider classes) |
 
 EN1 + EN2 + EN3 + EN4 are the contracts critical path. EN5 + EN6

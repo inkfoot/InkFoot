@@ -1,34 +1,39 @@
-# Inkfoot — Phases
+# Inkfoot — Planned Phases
 
-This folder holds **one architecture-per-phase document** of the
-[Inkfoot roadmap](../roadmap-inkfoot.md). Each phase doc is a
-self-contained design spec for that slice: context, goals, a
-high-level diagram for the phase's surface, detailed component
-internals, data-model deltas, sequence diagrams for the critical
-flows, phase-specific ADRs, risks, definition of done, the go/no-go
-signal that determines whether the next phase begins, and a
-suggested epic breakdown.
+This folder holds the **planned but not yet released** phases of the
+[Inkfoot roadmap](../roadmap-inkfoot.md). Each `phaseN/` subfolder has
+two documents: an architecture spec for the slice and a development
+epics breakdown that drives execution.
+
+When a phase ships, its `phaseN/` folder moves to `../released/`,
+preserving both documents as the historical record.
 
 Phase docs are deliberately **not** restatements of
 [architecture-inkfoot.md](../architecture-inkfoot.md) — they zoom in
 on what's actually built in their slice and reference the main
 architecture for shared design.
 
-Epics for each phase will be drafted later in companion files
-(`epics-phase-N-<slug>.md`). The phase docs are the bridge from
-roadmap intent to those epics — they should be specific enough that
-an epic breakdown writes itself from each.
-
 ## Phase index
 
-| Phase | Theme | Doc | Roadmap §  | Weeks |
+| Phase | Theme | Architecture | Development Epics | Weeks |
 |---|---|---|---|---|
-| **0** | Classify | [phase-0-classify.md](phase-0-classify.md) | §2 | 0–8 |
-| **1** | Explain | [phase-1-explain.md](phase-1-explain.md) | §3 | 8–20 |
-| **2** | Enforce | [phase-2-enforce.md](phase-2-enforce.md) | §4 | 20–32 |
-| **3** | Prove | [phase-3-prove.md](phase-3-prove.md) | §5 | 32–48 |
-| **4** | Compound | [phase-4-compound.md](phase-4-compound.md) | §6 | 48–64 |
-| **5** | Enterprise | [phase-5-enterprise.md](phase-5-enterprise.md) | §7 | 64+ |
+| **0** | Classify | [phase-0-classify.md](phase0/phase-0-classify.md) | [Phase 0 epics](phase0/inkfoot_phase0_development_epics.md) | 0–8 |
+| **1** | Explain | [phase-1-explain.md](phase1/phase-1-explain.md) | [Phase 1 epics](phase1/inkfoot_phase1_development_epics.md) | 8–20 |
+| **2** | Enforce | [phase-2-enforce.md](phase2/phase-2-enforce.md) | [Phase 2 epics](phase2/inkfoot_phase2_development_epics.md) | 20–32 |
+| **3** | Prove | [phase-3-prove.md](phase3/phase-3-prove.md) | [Phase 3 epics](phase3/inkfoot_phase3_development_epics.md) | 32–48 |
+| **4** | Compound | [phase-4-compound.md](phase4/phase-4-compound.md) | [Phase 4 epics](phase4/inkfoot_phase4_development_epics.md) | 48–64 |
+| **5** | Enterprise | [phase-5-enterprise.md](phase5/phase-5-enterprise.md) | [Phase 5 epics](phase5/inkfoot_phase5_development_epics.md) | 64+ |
+
+Each phase folder contains two documents:
+- **Phase architecture** (`phase-N-*.md`) — the design spec for the
+  slice: context, goals, high-level diagram, detailed component
+  internals, data-model deltas, sequence diagrams, phase-specific
+  ADRs, risks, DoD, and the go/no-go signal.
+- **Development epics** (`inkfoot_phaseN_development_epics.md`) — the
+  epic + story breakdown an implementer drives from, following the
+  FauxBase template (epic overview Mermaid + Gantt → story points →
+  per-epic stories with tasks tables + acceptance criteria → summary
+  → risks → out-of-scope).
 
 ## Capability matrix — the authoritative phase placement
 

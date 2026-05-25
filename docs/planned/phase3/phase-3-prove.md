@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 2 go-signal.
 **Weeks:** 32–48 (16 weeks).
 **Companion docs:**
-- [Roadmap §5](../roadmap-inkfoot.md#5-phase-3--prove-weeks-3248)
-- [Architecture §4.9, §4.10, §4.13–§4.15](../architecture-inkfoot.md)
-- [Phase 2 detailed design](phase-2-enforce.md) — the OSS foundation
+- [Roadmap §5](../../roadmap-inkfoot.md#5-phase-3--prove-weeks-3248)
+- [Architecture §4.9, §4.10, §4.13–§4.15](../../architecture-inkfoot.md)
+- [Phase 2 detailed design](../phase2/phase-2-enforce.md) — the OSS foundation
   Cloud builds on.
 
 ---
@@ -1176,7 +1176,7 @@ Phase 4; deepen Phase 3; investigate pricing or positioning friction.
 | **PR10** | Invoice reconciliation for OpenAI Usage API |
 | **PR11** | Reconciliation UX (matched / unattributed / unobserved; drill-down) |
 | **PR12** | **FOCUS-spec export** (CSV + Parquet) |
-| **PR13** | Cloud dashboard frontend (React; causal attribution; cost-per-task; cost-per-success; time-series; tag rollups) |
+| **PR13** | Cloud dashboard frontend (React; causal attribution; cost-per-task; cost-per-success; time-series). Per-tag rollups + cohort analysis are Phase 4 (CO12 / Attribution v2). |
 | **PR14** | Threshold-based alerting (rules; evaluation worker; SMTP delivery) |
 | **PR15** | Stripe billing wiring; quota enforcement |
 | **PR16** | API key management UI |

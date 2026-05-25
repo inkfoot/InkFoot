@@ -4,8 +4,8 @@
 **Status:** approved scope; first phase of execution.
 **Weeks:** 0–8.
 **Companion docs:**
-- [Roadmap §2](../roadmap-inkfoot.md#2-phase-0--classify-weeks-08)
-- [Architecture §4.1–§4.7, §4.12](../architecture-inkfoot.md) — the
+- [Roadmap §2](../../roadmap-inkfoot.md#2-phase-0--classify-weeks-08)
+- [Architecture §4.1–§4.7, §4.12](../../architecture-inkfoot.md) — the
   full design this phase implements a slice of.
 
 This document is a **per-phase architecture doc**: it specifies *what

@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 4 go-signal.
 **Weeks:** 64+ (ongoing).
 **Companion docs:**
-- [Roadmap §7](../roadmap-inkfoot.md#7-phase-5--enterprise-weeks-64)
-- [Architecture §10.3, ADR-007](../architecture-inkfoot.md)
-- [Phase 4 detailed design](phase-4-compound.md) — the Cloud-GA
+- [Roadmap §7](../../roadmap-inkfoot.md#7-phase-5--enterprise-weeks-64)
+- [Architecture §10.3, ADR-007](../../architecture-inkfoot.md)
+- [Phase 4 detailed design](../phase4/phase-4-compound.md) — the Cloud-GA
   foundation Phase 5 makes procurement-ready.
 
 ---
