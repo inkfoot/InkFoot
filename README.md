@@ -10,18 +10,22 @@ automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
-**Status:** Phase 0 epics **E1** (Project + Storage Foundation) and
-**E2** (Causal Token Ledger) have landed. The package now provides
-the package skeleton, nanodollar money type, SQLite storage with WAL
-+ two-tier write semantics, aggregator worker, `inkfoot
-rebuild-aggregates` CLI, plus the 14-field Causal Token Ledger,
-per-provider Anthropic + OpenAI translators with stable-prefix
-detection, the `tiktoken`-based tokeniser layer with estimation
-flags, and the pricing module (`estimate_nanodollars` keyed by
-``(provider, model)``). Subsequent epics (E3 Pattern A shims, E4
-smells, E5 report CLI, E6 rollout) build on this foundation. See
-`docs/roadmap-inkfoot.md` for the phased delivery plan and
-`docs/architecture-inkfoot.md` for the technical design.
+**Status:** Phase 0 epics **E1** (Project + Storage Foundation),
+**E2** (Causal Token Ledger), and **E3** (Pattern A Instrumentation)
+have landed. The package now provides the package skeleton,
+nanodollar money type, SQLite storage with WAL + two-tier write
+semantics, aggregator worker, `inkfoot rebuild-aggregates` CLI, the
+14-field Causal Token Ledger, per-provider Anthropic + OpenAI
+translators with stable-prefix detection, the `tiktoken`-based
+tokeniser layer with estimation flags, the pricing module
+(`estimate_nanodollars` keyed by `(provider, model)`), and the
+one-line wedge `inkfoot.instrument()` that monkey-patches Anthropic
++ OpenAI SDK calls with hook-isolation guarantees, replay-mode
+content capture (ADR-0-9), and the three Phase 0 observation
+policies (`BudgetCap`, `RetryThrottle`, `CacheControlPlacer`).
+Subsequent epics (E4 smells, E5 report CLI, E6 rollout) build on
+this foundation. The architecture spec + roadmap live in a separate
+documentation repository (see project owner).
 
 ## Quickstart (development)
 
@@ -55,6 +59,9 @@ CI (`.github/workflows/ci.yml`) runs unit tests on Python 3.10 / 3.11
 inkfoot/                                    # the Python package
   __init__.py                               # public re-exports (frozen surface)
   _version.py                               # SemVer skeleton
+  _instrument.py                            # inkfoot.instrument() entry point (E3)
+  _run_context.py                           # ContextVar-based active-run pointer
+  _shim_install.py                          # SDK auto-detect + install/uninstall
   errors.py                                 # InkfootError, PolicyNotSupported, ...
   money.py                                  # Nanodollar type (ADR-0-4)
   ledger.py                                 # 14-field CausalTokenLedger + invariant
@@ -65,33 +72,33 @@ inkfoot/                                    # the Python package
     __init__.py                             # NeutralCall + stable-prefix detector
     anthropic.py                            # AnthropicTranslator
     openai.py                               # OpenAITranslator
+  policy/
+    __init__.py                             # Policy ABC + IntegrationPattern + register_policies
+    registry.py                             # PolicyRegistry singleton
+    budget_cap.py                           # BudgetCap (observe-only in Phase 0)
+    retry_throttle.py                       # RetryThrottle
+    cache_control_placer.py                 # CacheControlPlacer (Anthropic)
+  shims/
+    _isolation.py                           # @isolated_hook / safely_run (ADR-0-3)
+    _emit.py                                # shared event-emit pipeline
+    anthropic.py                            # AnthropicShim (sync + async)
+    openai.py                               # OpenAIShim (sync + async)
   storage/
     __init__.py                             # Storage Protocol (lazy SQLiteStorage)
-    sqlite.py                               # SQLiteStorage + WAL pragmas
+    sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
     migrations.py                           # forward-only DDL (v1 = §5.5 + §5.5.1)
     aggregator.py                           # claim-and-project AggregatorWorker
   cli/
     main.py                                 # `inkfoot` entry point
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
 tests/
-  unit/                                     # 189 unit tests (E1 + E2)
+  unit/                                     # 248 unit tests (E1 + E2 + E3)
   benchmarks/                               # `pytest-benchmark` hot-path budgets
 .github/workflows/ci.yml                    # unit + benchmark on every PR
-docs/
-  architecture-inkfoot.md                   # full technical design
-  roadmap-inkfoot.md                        # phased delivery roadmap
-  planned/                                  # phases not yet released
-    README.md                               # phase index + capability matrix
-    phase0/
-      phase-0-classify.md                   # phase architecture
-      inkfoot_phase0_development_epics.md   # epic + story breakdown
-    phase1/ ... phase5/                     # (same shape per phase)
-  released/                                 # phases that have shipped (empty)
 ```
 
-When a phase ships, its `phaseN/` folder moves from `docs/planned/`
-to `docs/released/`, preserving the architecture + epic docs as the
-historical record.
+The architecture spec, roadmap, and per-phase epic docs live in a
+separate documentation repository.
 
 ## Operator notes
 

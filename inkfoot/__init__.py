@@ -9,22 +9,29 @@ Phase 0 progress:
 
 * E1 (storage foundation + money type + CLI) — landed.
 * E2 (Causal Token Ledger + per-provider translators + pricing) — landed.
-* E3 / E4 / E5 / E6 — not yet shipped. The public callables they
-  add (``instrument``, ``agent_run``, etc.) are *declared* here so
-  the import contract is stable across phases; they raise
-  ``NotImplementedError`` with a pointer to the epic where they
-  land.
+* E3 (``inkfoot.instrument()`` + Pattern A SDK shims + policy
+  registry + 3 observation policies) — landed.
+* E4 / E5 / E6 — not yet shipped. The public callables they
+  add (``agent_run``, ``set_outcome``, ``tag``, ``tag_retrieval``,
+  ``report_cost``) are *declared* here so the import contract is
+  stable across phases; they raise ``NotImplementedError`` with a
+  pointer to the epic where they land.
 
-E2 internals (``CausalTokenLedger``, ``NeutralCall``,
-``AnthropicTranslator``, ``OpenAITranslator``, ``estimate_nanodollars``)
-are intentionally *not* re-exported on the top-level package — they
+E2 + E3 internals (``CausalTokenLedger``, ``NeutralCall``,
+``AnthropicTranslator``, ``OpenAITranslator``,
+``estimate_nanodollars``, the shim classes, the policy classes) are
+intentionally *not* re-exported on the top-level package — they
 live behind ``inkfoot.ledger`` / ``inkfoot.normalise`` /
-``inkfoot.pricing`` to keep the user-facing surface tight (see
-architecture §6).
+``inkfoot.pricing`` / ``inkfoot.shims`` / ``inkfoot.policy`` to keep
+the user-facing surface tight (see architecture §6). The exception
+is :class:`inkfoot.policy.BudgetCap` / ``RetryThrottle`` /
+``CacheControlPlacer`` which users *do* import to pass into
+:func:`instrument`.
 """
 
 from inkfoot._version import __version__
 from inkfoot.errors import InkfootError, PolicyNotSupported, StorageError
+from inkfoot._instrument import instrument  # E3 — Pattern A Instrumentation
 
 __all__ = [
     "__version__",
@@ -38,18 +45,6 @@ __all__ = [
     "PolicyNotSupported",
     "StorageError",
 ]
-
-
-def instrument(*args, **kwargs):
-    """Install Pattern A monkey-patches for detected SDKs and start the
-    aggregator. Ships in **E3 — Pattern A Instrumentation**.
-
-    See phase-0-classify.md §5.1 for the contract.
-    """
-    raise NotImplementedError(
-        "inkfoot.instrument() ships in Phase 0 epic E3 (Pattern A "
-        "Instrumentation). E1 delivers the storage foundation only."
-    )
 
 
 def agent_run(*args, **kwargs):

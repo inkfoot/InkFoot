@@ -275,10 +275,24 @@ class SQLiteStorage:
         sequence: int,
         payload_json: Optional[str] = None,
         capture_mode: str = "metadata",
+        request_json: Optional[str] = None,
+        response_json: Optional[str] = None,
+        tool_result_json: Optional[str] = None,
+        content_redacted: bool = False,
     ) -> None:
         """Append an event row + set the parent run's
         ``aggregates_dirty`` flag in a single transaction. Must
-        complete under 1 ms p95 in WAL mode (§9.1 perf budget)."""
+        complete under 1 ms p95 in WAL mode (§9.1 perf budget).
+
+        Replay-mode content write (ADR-0-9 + E3-S2 T7): when
+        ``capture_mode='replay'``, an ``event_contents`` row is
+        written *in the same transaction* with the serialised
+        request/response/tool-result bodies. When
+        ``capture_mode='metadata'`` (default), the content kwargs
+        are silently ignored — the row is suppressed here at the
+        storage layer rather than in the shim, so both shims share
+        one write path.
+        """
         if capture_mode not in {"metadata", "replay"}:
             raise ValueError(
                 f"capture_mode must be 'metadata' or 'replay', not "
@@ -308,6 +322,22 @@ class SQLiteStorage:
                     "UPDATE runs SET aggregates_dirty = 1 WHERE id = ?",
                     (run_id,),
                 )
+                if capture_mode == "replay":
+                    conn.execute(
+                        """
+                        INSERT INTO event_contents (
+                            event_id, request_json, response_json,
+                            tool_result_json, content_redacted
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            event_id,
+                            request_json,
+                            response_json,
+                            tool_result_json,
+                            1 if content_redacted else 0,
+                        ),
+                    )
                 conn.execute("COMMIT")
             except BaseException:
                 conn.execute("ROLLBACK")
