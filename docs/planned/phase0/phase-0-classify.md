@@ -382,21 +382,46 @@ Every `NeutralCall` carries `estimation_flags: list[str]` listing
 which ledger fields were estimated. `inkfoot report` surfaces this
 prominently so the reader knows what's exact vs approximate.
 
-**Categories vs total — read this carefully.** The ledger has **14
-fields** total: 13 *input-side cause* categories that account for
-billed *input* tokens, plus `output_tokens` which is the model's
-emitted output billed separately. We say "13 causal categories"
-throughout the docs to refer to the *input attribution* — the
-diagnostic surface ("which 42% of cost is fixable?"). The
-`output_tokens` field is billed and tracked but is not a cause
-category — you don't "fix" output, you measure it.
+**Field roles — read this carefully.** The ledger has **14 fields**:
 
-**Validation invariant (revised):**
+- **11 structural cause categories** (the input-attribution
+  diagnostic surface): `system_static_tokens`,
+  `system_dynamic_tokens`, `user_input_tokens`,
+  `tool_schema_tokens`, `tool_result_tokens`,
+  `retrieved_context_tokens`, `memory_tokens`,
+  `retry_overhead_tokens`, `summariser_tokens`, `reasoning_tokens`,
+  `guardrail_tokens`. These are *tokeniser-derived* counts of the
+  pieces that make up the full request body. `input_total` sums
+  them.
+- **2 cache billing overlays**: `cache_read_tokens`,
+  `cache_creation_tokens`. Provider-reported (from
+  `response.usage`); **not** additive with the 11 structural
+  categories. They tell the cost estimator how the provider billed
+  the input — at the cache rate vs. the fresh rate — without
+  re-introducing double-counting (the cached prefix is already in
+  the request body that the tokeniser walked).
+- **1 output total** (`output_tokens`): provider-reported, billed
+  separately at the output rate.
 
-- Sum of the 13 input-side categories ≈ `usage.input_tokens ± 2%`
-  (small slop for tokeniser disagreement at the boundary).
+We still **say "13 input-side cause categories" in prose** to refer
+to the diagnostic surface ("which 42% of cost is fixable?"). When
+the docs cite a sum, they mean the 11 structural categories — that
+is what `input_total` computes.
+
+**Validation invariant:**
+
+- Sum of the 11 structural input-side categories
+  (`ledger.input_total`) ≈ *total billed input* `± 2%`. On
+  Anthropic, total billed input = `usage.input_tokens +
+  cache_read_input_tokens + cache_creation_input_tokens` (three
+  separate fields); on OpenAI it equals `usage.prompt_tokens`
+  (which already aggregates cached + fresh).
 - `ledger.output_tokens` ≈ `usage.output_tokens` exactly (no
   estimation involved — read from the response).
+- The check rejects when `rel_err >= tolerance` (strictly under
+  the 2% bar passes, exactly 2% fails). This matches the `< 0.02`
+  spec wording and gives a single integration-time bar that
+  doesn't accept "borderline-broken" attribution.
 
 Phase 0 includes a CI test asserting both against a corpus of
 fixtures.

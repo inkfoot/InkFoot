@@ -2,14 +2,25 @@
 
 The package layout follows phase-0-classify.md §4. Underscore-prefixed
 modules are private and not part of the SemVer contract. The public
-surface — what users `from inkfoot import` — is the names in
+surface — what users ``from inkfoot import`` — is the names in
 ``__all__`` below.
 
-Phase 0 ships the foundation (storage + money + run-state). The
-public callables are *declared* here from day one so the import
-contract is stable across phases; the ones that ship in later epics
-raise ``NotImplementedError`` with a pointer to the epic where they
-land.
+Phase 0 progress:
+
+* E1 (storage foundation + money type + CLI) — landed.
+* E2 (Causal Token Ledger + per-provider translators + pricing) — landed.
+* E3 / E4 / E5 / E6 — not yet shipped. The public callables they
+  add (``instrument``, ``agent_run``, etc.) are *declared* here so
+  the import contract is stable across phases; they raise
+  ``NotImplementedError`` with a pointer to the epic where they
+  land.
+
+E2 internals (``CausalTokenLedger``, ``NeutralCall``,
+``AnthropicTranslator``, ``OpenAITranslator``, ``estimate_nanodollars``)
+are intentionally *not* re-exported on the top-level package — they
+live behind ``inkfoot.ledger`` / ``inkfoot.normalise`` /
+``inkfoot.pricing`` to keep the user-facing surface tight (see
+architecture §6).
 """
 
 from inkfoot._version import __version__
@@ -69,10 +80,10 @@ def tag(*args, **kwargs):
 
 def tag_retrieval(*args, **kwargs):
     """Mark a span of messages as retrieved context (lifts the
-    ``retrieved_context`` ledger field). Ships in **E5 — Report CLI +
-    Outcome Tagging** alongside ``set_outcome`` / ``tag``; the
-    underlying ``retrieved_context`` ledger field is populated by
-    E2's attribution recipes.
+    ``CausalTokenLedger.retrieved_context_tokens`` field). Ships in
+    **E5 — Report CLI + Outcome Tagging** alongside ``set_outcome`` /
+    ``tag``. The underlying ledger field exists today (E2) but no
+    translator populates it until the E5 marker API lands.
     """
     raise NotImplementedError(
         "inkfoot.tag_retrieval() ships in Phase 0 epic E5 (Report CLI "
