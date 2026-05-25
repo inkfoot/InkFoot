@@ -26,8 +26,13 @@ from inkfoot.storage.sqlite import SQLiteStorage
 
 
 _EVENTS_TO_INSERT = 10_000
-_P95_BUDGET_S = 0.001  # 1 ms
-_MEAN_BUDGET_S = 0.0005  # 0.5 ms — softer guardrail
+_P95_BUDGET_S = 0.001  # 1 ms — §9.1 spec budget for the SQLite event insert
+# Median guard. Tight on a dev box (<25 µs) and on a quiet CI
+# runner (~30 µs). Set well below the 1 ms p95 budget so a real
+# regression in the SQL/transaction path lights up immediately,
+# but well *above* typical noise so a busy shared runner doesn't
+# go red without a code change.
+_MEDIAN_BUDGET_S = 0.0005  # 500 µs
 
 
 @pytest.fixture()
@@ -66,9 +71,16 @@ def test_insert_event_p95_under_one_ms(
     benchmark.pedantic(one_insert, rounds=_EVENTS_TO_INSERT, iterations=1)
 
     stats = benchmark.stats.stats
-    assert stats.mean < _MEAN_BUDGET_S, (
-        f"mean insert_event {stats.mean * 1000:.3f} ms exceeded "
-        f"{_MEAN_BUDGET_S * 1000:.3f} ms budget"
+
+    # We deliberately do NOT assert on ``stats.mean``: shared CI
+    # runners produce occasional 100-700 ms outliers (VM scheduler
+    # blips, neighbour tenants) which drag the arithmetic mean
+    # orders of magnitude above the actual hot path. The §9.1 spec
+    # budgets p95, not mean — and the median is naturally robust to
+    # outliers. We assert both.
+    assert stats.median < _MEDIAN_BUDGET_S, (
+        f"median insert_event {stats.median * 1000:.3f} ms exceeded "
+        f"{_MEDIAN_BUDGET_S * 1000:.3f} ms budget"
     )
 
     # pytest-benchmark exposes 'iqr' and median but not p95 directly;
