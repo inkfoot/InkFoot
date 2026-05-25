@@ -166,8 +166,7 @@ def render(
         fields_with_cost.sort(key=lambda kv: kv[1], reverse=True)
 
     for name, cost_nd in fields_with_cost:
-        is_zero = cost_nd == 0 and not _run_has_tokens(ledger_totals, name)
-        if is_zero and not show_zero:
+        if cost_nd == 0 and not show_zero:
             continue
         share = (cost_nd / total_nd) if total_nd > 0 else 0.0
         label = _short_label(name).ljust(18)
@@ -179,19 +178,24 @@ def render(
             marker_str += f"  ⚠ {_short_smell_tag(hit)}"
         lines.append(f"  {label} {pct}  {bar}  {dollars}{marker_str}")
 
-    # Footnote when we hid summariser/guardrail/etc.
-    hidden = [
-        _short_label(name)
-        for name in _ALL_FIELDS
-        if int(ledger_totals.get(name, 0)) == 0
-        and not _run_has_tokens(ledger_totals, name)
-    ]
-    if hidden and not show_zero:
-        lines.append("")
-        lines.append(
-            "(" + " and ".join(sorted(hidden))[:120]
-            + " are always-zero in Phase 0 — hidden by default)"
+    # Footnote when always-zero Phase-0 categories were hidden.
+    # We scope this specifically to the three fields that *can't*
+    # carry tokens in Phase 0 (summariser/guardrail/retry_overhead);
+    # other zero categories (retrieved_context, cache_*, etc.) hide
+    # without the footnote because their absence isn't surprising
+    # to the reader.
+    if not show_zero:
+        always_zero_short_labels = sorted(
+            _short_label(name)
+            for name in _ALWAYS_ZERO_IN_PHASE_0
+            if int(ledger_totals.get(name, 0)) == 0
         )
+        if always_zero_short_labels:
+            lines.append("")
+            lines.append(
+                f"({_format_list(always_zero_short_labels)} "
+                f"are always-zero in Phase 0 — hidden by default)"
+            )
 
     # Smells block.
     if smells:
@@ -213,13 +217,30 @@ def render(
     return "\n".join(lines)
 
 
-def _run_has_tokens(ledger_totals: dict[str, int], name: str) -> bool:
-    """We render a row when *either* the cost is non-zero OR the
-    token count is non-zero (a category with zero billed cost but
-    non-zero tokens still belongs on the chart). Phase 0 only knows
-    cost from the per-category split; this is a forward hook for
-    when the renderer accepts raw token totals alongside."""
-    return int(ledger_totals.get(name, 0)) > 0
+# Fields that are guaranteed to be zero in Phase 0 (no translator
+# populates them; smell engine doesn't synthesise). The footnote
+# under the bar chart names just these — listing all hidden
+# categories would surprise the reader for retrieved_context (which
+# E5's tag_retrieval *does* populate when the user marks it) or
+# cache_* (which depend on the provider's behaviour).
+_ALWAYS_ZERO_IN_PHASE_0 = (
+    "summariser_tokens",
+    "guardrail_tokens",
+    "retry_overhead_tokens",
+)
+
+
+def _format_list(items: list[str]) -> str:
+    """Render ``items`` as ``"a, b, and c"`` (Oxford-comma joined).
+    Single-item lists return as-is; two-item lists join with " and ".
+    """
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
 # ----------------------------------------------------------------------
@@ -303,13 +324,32 @@ def _aggregate_ledger_totals(
     return totals
 
 
+def _p95(values: list[int]) -> int:
+    """Approximate 95th percentile from a sorted sample. SQLite has
+    no built-in percentile aggregate (without an extension), so the
+    aggregate view pulls per-bucket totals into Python and computes
+    p95 here. Index = ``int(n × 0.95)``, clamped at ``n - 1``."""
+    if not values:
+        return 0
+    s = sorted(values)
+    idx = min(len(s) - 1, int(len(s) * 0.95))
+    return s[idx]
+
+
 def _render_aggregate(storage: "Storage", args: Any) -> str:
     """Cross-run aggregate view (``--last 7d`` / ``--task name``).
 
     Phase 0 implementation: SELECT recent runs, summarise by
-    (task or all), emit a simple table with ``runs / avg_$ /
-    p95_$ / success%``. Cost-per-success is shown only when at
-    least one run is "success".
+    bucket (``--group-by task`` | ``agent_kind``), emit a table
+    with five columns per E5-S3 AC:
+
+    * ``runs`` — count of runs in the bucket
+    * ``avg_$`` — average ``total_nanodollars``
+    * ``p95_$`` — 95th-percentile ``total_nanodollars``
+      (computed in Python; SQLite has no native percentile agg)
+    * ``success%`` — outcome="success" rate
+    * ``cost/success`` — ``total_$ / n_success`` (or ``—`` when
+      no successes in the bucket)
     """
     import re  # noqa: PLC0415
 
@@ -323,6 +363,10 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
 
     cutoff_ms = int(_time.time() * 1000) - seconds * 1000
 
+    # TODO(phase-2/postgres): the Storage Protocol has no
+    # ``aggregate_runs_since`` method yet so we reach into the
+    # SQLite connection directly. Phase 2's Postgres backend will
+    # need a proper Protocol method; see CL5 review Finding #3.
     conn = storage._conn()  # type: ignore[attr-defined]
     task_filter = getattr(args, "task", None)
     where = "started_at >= ?"
@@ -338,6 +382,14 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
             f"(expected 'task' or 'agent_kind')"
         )
 
+    # Per-bucket aggregates SQLite can compute natively. p95 is
+    # computed in Python below from the per-run totals.
+    #
+    # ``NULLS LAST`` requires SQLite 3.30+ (October 2019). Modern
+    # Python ships a newer SQLite; older builder images may need
+    # to upgrade. Falling back to ``ORDER BY total_nd IS NULL,
+    # total_nd DESC`` would work on older SQLite, but Phase 0's
+    # 3.10+ Python floor implies a recent SQLite anyway.
     cur = conn.execute(
         f"""
         SELECT
@@ -357,10 +409,28 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
     if not rows:
         return f"inkfoot report: no runs in the last {last}."
 
+    # Pull per-run totals once so we can compute p95 per-bucket in
+    # Python. One extra query rather than one-per-bucket keeps the
+    # round-trip count bounded.
+    per_bucket_totals: dict[str, list[int]] = {}
+    detail_cur = conn.execute(
+        f"SELECT {group_by} AS bucket, total_nanodollars FROM runs "
+        f"WHERE {where}",
+        params,
+    )
+    for row in detail_cur.fetchall():
+        bucket = row["bucket"] or "(none)"
+        per_bucket_totals.setdefault(bucket, []).append(
+            int(row["total_nanodollars"] or 0)
+        )
+
     lines = [
         f"Recent runs ({last}, grouped by {group_by}):",
         "",
-        f"  {'bucket':<32} {'runs':>6} {'avg_$':>10} {'total_$':>12} {'success%':>9}",
+        (
+            f"  {'bucket':<32} {'runs':>6} {'avg_$':>10} "
+            f"{'p95_$':>10} {'success%':>9} {'cost/success':>14}"
+        ),
     ]
     for row in rows:
         bucket = (row["bucket"] or "(none)")[:32]
@@ -369,10 +439,17 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
         total_nd = int(row["total_nd"] or 0)
         n_success = row["n_success"] or 0
         success_pct = (n_success / n_runs * 100) if n_runs else 0.0
+        p95_nd = _p95(per_bucket_totals.get(bucket, []))
+        cost_per_success = (
+            format_usd(total_nd // n_success, decimals=4)
+            if n_success > 0
+            else "—"
+        )
         lines.append(
             f"  {bucket:<32} {n_runs:>6} "
             f"{format_usd(avg_nd, decimals=4):>10} "
-            f"{format_usd(total_nd, decimals=2):>12} "
-            f"{success_pct:>8.1f}%"
+            f"{format_usd(p95_nd, decimals=4):>10} "
+            f"{success_pct:>8.1f}% "
+            f"{cost_per_success:>14}"
         )
     return "\n".join(lines)

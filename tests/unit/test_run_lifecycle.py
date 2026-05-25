@@ -194,6 +194,83 @@ def test_agent_run_without_instrument_raises_clear_error(tmp_path: Path) -> None
             pass
 
 
+# ----------------------------------------------------------------------
+# Per-run state cleanup (Finding #2 — memory leak across runs)
+# ----------------------------------------------------------------------
+
+
+def test_clean_exit_releases_per_run_state(instrumented) -> None:
+    """``_RunHandle.end`` must drop the run's entry from both
+    in-memory dicts (``_sequence_counters`` in
+    ``inkfoot.shims._emit`` and ``_run_states`` in
+    ``inkfoot._run_context``). Without this a long-lived process
+    leaks one dict entry per run forever."""
+    from inkfoot._run_context import _run_states
+    from inkfoot.shims._emit import _sequence_counters
+
+    sequence_baseline = len(_sequence_counters)
+    state_baseline = len(_run_states)
+
+    for _ in range(20):
+        with inkfoot.agent_run(task="t") as handle:
+            # Touch the per-run state so it actually enters the
+            # _run_states map (translators do this in production).
+            from inkfoot._run_context import get_or_create_run_state
+
+            get_or_create_run_state(handle.id)
+            # Force a sequence allocation too.
+            from inkfoot.shims._emit import _next_sequence
+
+            _next_sequence(handle.id)
+
+    # After 20 clean exits the dicts should not have grown.
+    assert len(_sequence_counters) == sequence_baseline
+    assert len(_run_states) == state_baseline
+
+
+def test_manual_end_releases_per_run_state(instrumented) -> None:
+    """Manual ``run.end()`` (no context manager) also releases."""
+    from inkfoot._run_context import _run_states, get_or_create_run_state
+    from inkfoot.shims._emit import _next_sequence, _sequence_counters
+
+    handle = inkfoot.agent_run(task="t").start()
+    get_or_create_run_state(handle.id)
+    _next_sequence(handle.id)
+    assert handle.id in _sequence_counters
+    assert handle.id in _run_states
+
+    handle.end()
+    assert handle.id not in _sequence_counters
+    assert handle.id not in _run_states
+
+
+def test_abandoned_run_cleanup_releases_per_run_state(tmp_path: Path) -> None:
+    """``_mark_abandoned_runs`` must also release per-run state.
+    An abandoned run by definition never gets a clean ``end()``."""
+    from inkfoot._run_context import _run_states, get_or_create_run_state
+    from inkfoot.shims._emit import _next_sequence, _sequence_counters
+
+    instrument_mod.shutdown()
+    _reset_ambient_run()
+    _clear_current_run()
+    storage = SQLiteStorage(path=tmp_path / "abandoned.db")
+    inkfoot.instrument(storage=storage)
+
+    handle = inkfoot.agent_run(task="leak-then-abandon").start()
+    run_id = handle.id
+    get_or_create_run_state(run_id)
+    _next_sequence(run_id)
+    assert run_id in _sequence_counters
+    assert run_id in _run_states
+
+    # Simulate process exit without handle.end() — atexit fires
+    # shutdown() which calls _mark_abandoned_runs.
+    instrument_mod.shutdown()
+
+    assert run_id not in _sequence_counters
+    assert run_id not in _run_states
+
+
 def test_abandoned_runs_marked_error_on_shutdown(tmp_path: Path) -> None:
     """Process exit without ``__exit__`` should flip ``running``
     rows to ``error`` with ``error_message='abandoned'``."""

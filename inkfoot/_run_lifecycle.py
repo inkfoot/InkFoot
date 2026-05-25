@@ -364,6 +364,12 @@ class _RunHandle:
         if self._context_token is not None:
             _reset_current_run(self._context_token)
             self._context_token = None
+
+        # Release per-run in-memory state so long-lived processes
+        # don't accumulate one dict entry per run (E3 left this as
+        # a TODO; CL5 review Finding #2 flagged it). Abandonment
+        # cleanup does the same via _release_run_state below.
+        _release_run_state(self._run_id)
         self._ended = True
 
     # ------------------------------------------------------------------
@@ -490,6 +496,44 @@ def agent_run(
 
 
 # ----------------------------------------------------------------------
+# Per-run state cleanup
+# ----------------------------------------------------------------------
+
+
+def _release_run_state(run_id: str) -> None:
+    """Release every per-run in-memory state slot for ``run_id``.
+
+    The shim's per-run sequence counter (``inkfoot.shims._emit``)
+    and the in-memory run-state map (``inkfoot._run_context``) both
+    grow at one entry per run. Without explicit release at run-end
+    they leak indefinitely in long-lived processes (Sleuth +
+    internal tooling). This helper is the single cleanup point —
+    called from :meth:`_RunHandle.end` for clean exits and from
+    :func:`_mark_abandoned_runs` for crashes.
+
+    Idempotent: calling on an already-released or unknown ``run_id``
+    is a no-op.
+    """
+    # Late imports to avoid circular deps + match the style of
+    # other lifecycle plumbing in this module.
+    from inkfoot._run_context import _drop_run_state  # noqa: PLC0415
+    from inkfoot.shims._emit import _drop_sequence_counter  # noqa: PLC0415
+
+    try:
+        _drop_sequence_counter(run_id)
+    except Exception:  # pragma: no cover — defensive
+        _LOG.warning(
+            "_drop_sequence_counter failed for %s", run_id, exc_info=True
+        )
+    try:
+        _drop_run_state(run_id)
+    except Exception:  # pragma: no cover
+        _LOG.warning(
+            "_drop_run_state failed for %s", run_id, exc_info=True
+        )
+
+
+# ----------------------------------------------------------------------
 # Abandonment detection (called from the atexit shutdown hook)
 # ----------------------------------------------------------------------
 
@@ -500,12 +544,18 @@ def _mark_abandoned_runs() -> None:
 
     Called from ``inkfoot._instrument.shutdown`` so a process that
     exits between ``start_run`` and ``end_run`` leaves a clean row
-    rather than a perpetual "running" zombie."""
+    rather than a perpetual "running" zombie. Also releases the
+    abandoned run's in-memory state so it doesn't outlive the row
+    (CL5 review Finding #2)."""
     from inkfoot._instrument import _STORAGE  # noqa: PLC0415
 
     storage = _STORAGE
     if storage is None:
         return
+    # TODO(phase-2/postgres): the Storage Protocol has no
+    # ``find_runs_with_status(status)`` method yet. Reaching into
+    # SQLiteStorage._conn() works today but Phase 2's Postgres
+    # backend will need a Protocol method (CL5 review Finding #3).
     try:
         conn = storage._conn()  # type: ignore[attr-defined]
     except Exception:  # pragma: no cover — defensive
@@ -532,3 +582,7 @@ def _mark_abandoned_runs() -> None:
             _LOG.warning(
                 "abandoned-run cleanup failed for %s", run_id, exc_info=True
             )
+        finally:
+            # Release the abandoned run's in-memory state too —
+            # by definition the user's __exit__ won't run.
+            _release_run_state(run_id)

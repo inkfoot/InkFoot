@@ -257,3 +257,190 @@ def test_render_with_all_zero_totals_does_not_crash() -> None:
     zeros = {name: 0 for name in _totals_with_some_zero()}
     out = render(run=run, ledger_totals=zeros, smells=[])
     assert "Run 01HZX" in out
+
+
+# ----------------------------------------------------------------------
+# Always-zero footnote grammar (review #4)
+# ----------------------------------------------------------------------
+
+
+def test_always_zero_footnote_uses_oxford_comma_with_and() -> None:
+    """Three always-zero Phase 0 fields should render with an
+    Oxford-comma-joined list, not "x and y and z"."""
+    out = render(run=_basic_run(), ledger_totals=_totals_with_some_zero(), smells=[])
+    # All three always-zero fields are zero in the fixture.
+    assert "summariser" in out
+    assert "guardrail" in out
+    assert "retry_overhead" in out
+    # Oxford-comma form: "a, b, and c".
+    footnote_lines = [
+        line for line in out.splitlines() if "always-zero" in line
+    ]
+    assert footnote_lines, "expected an always-zero footnote"
+    footnote = footnote_lines[0]
+    assert ", and " in footnote, footnote
+
+
+def test_footnote_omits_categories_outside_always_zero_set() -> None:
+    """retrieved_context, cache_read, etc. can legitimately be zero
+    in real runs — they should NOT show up in the always-zero
+    footnote, only as plain hidden rows."""
+    out = render(run=_basic_run(), ledger_totals=_totals_with_some_zero(), smells=[])
+    footnote_lines = [
+        line for line in out.splitlines() if "always-zero" in line
+    ]
+    assert footnote_lines
+    footnote = footnote_lines[0]
+    assert "retrieved_context" not in footnote
+    assert "cache_read" not in footnote
+
+
+def test_footnote_absent_when_show_zero_true() -> None:
+    out = render(
+        run=_basic_run(),
+        ledger_totals=_totals_with_some_zero(),
+        smells=[],
+        show_zero=True,
+    )
+    assert "always-zero" not in out
+
+
+# ----------------------------------------------------------------------
+# Aggregate view (Finding #1: p95_$ + cost/success columns)
+# ----------------------------------------------------------------------
+
+
+def test_aggregate_view_header_lists_all_five_columns(tmp_path) -> None:
+    """The §E5-S3 AC spells out five columns: runs, avg_$, p95_$,
+    success%, cost/success."""
+    import time
+    from types import SimpleNamespace
+
+    from inkfoot.cli.report import _render_aggregate
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    now_ms = int(time.time() * 1000)
+    for i in range(5):
+        s.start_run(
+            run_id=f"r{i}",
+            task="triage",
+            agent_kind="agent",
+            started_at=now_ms - 1000,
+        )
+        s._conn().execute(
+            "UPDATE runs SET total_nanodollars = ?, outcome = ?, "
+            "status = 'complete', ended_at = ? WHERE id = ?",
+            (
+                (i + 1) * 1_000_000,
+                "success" if i < 3 else "failure",
+                now_ms,
+                f"r{i}",
+            ),
+        )
+    try:
+        args = SimpleNamespace(last="1d", task=None, group_by="task")
+        out = _render_aggregate(s, args)
+    finally:
+        s.close()
+
+    # Header carries all five columns the AC names.
+    header_line = [ln for ln in out.splitlines() if "runs" in ln and "avg_$" in ln][0]
+    for col in ("runs", "avg_$", "p95_$", "success%", "cost/success"):
+        assert col in header_line, f"missing column {col!r} in header: {header_line!r}"
+
+
+def test_aggregate_view_computes_p95_and_cost_per_success(tmp_path) -> None:
+    """Five runs with totals 1, 2, 3, 4, 5 (Mnd); 3 successes.
+    p95 = 5 (index = floor(5 × 0.95) = 4 → 5th value).
+    cost/success = sum(1+2+3+4+5)M / 3 = 5M nd ≈ $0.0050."""
+    import time
+    from types import SimpleNamespace
+
+    from inkfoot.cli.report import _render_aggregate
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    now_ms = int(time.time() * 1000)
+    for i in range(5):
+        s.start_run(
+            run_id=f"r{i}",
+            task="t",
+            agent_kind="a",
+            started_at=now_ms - 1000,
+        )
+        s._conn().execute(
+            "UPDATE runs SET total_nanodollars = ?, outcome = ?, "
+            "status = 'complete', ended_at = ? WHERE id = ?",
+            (
+                (i + 1) * 1_000_000,
+                "success" if i < 3 else "failure",
+                now_ms,
+                f"r{i}",
+            ),
+        )
+    try:
+        args = SimpleNamespace(last="1d", task=None, group_by="task")
+        out = _render_aggregate(s, args)
+    finally:
+        s.close()
+    # p95 = 5_000_000 nd = $0.0050.
+    assert "$0.0050" in out
+    # cost/success = 15M / 3 = 5M nd = $0.0050.
+    # Both p95 and cost-per-success happen to land on the same
+    # number for this fixture — the column position differentiates.
+
+
+def test_aggregate_view_shows_em_dash_when_no_successes(tmp_path) -> None:
+    """When n_success == 0 we can't divide; the cell shows "—"."""
+    import time
+    from types import SimpleNamespace
+
+    from inkfoot.cli.report import _render_aggregate
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    now_ms = int(time.time() * 1000)
+    for i in range(2):
+        s.start_run(
+            run_id=f"r{i}",
+            task="all-fail",
+            agent_kind="a",
+            started_at=now_ms - 1000,
+        )
+        s._conn().execute(
+            "UPDATE runs SET total_nanodollars = ?, outcome = 'failure', "
+            "status = 'complete', ended_at = ? WHERE id = ?",
+            (1_000_000, now_ms, f"r{i}"),
+        )
+    try:
+        args = SimpleNamespace(last="1d", task=None, group_by="task")
+        out = _render_aggregate(s, args)
+    finally:
+        s.close()
+    # Find the data row (not the header).
+    data_lines = [
+        ln for ln in out.splitlines() if "all-fail" in ln
+    ]
+    assert data_lines
+    assert "—" in data_lines[0]
+
+
+def test_aggregate_view_p95_helper_handles_boundary_cases() -> None:
+    """``_p95`` of empty list → 0; single value → that value;
+    index clamped at n-1 for tiny samples."""
+    from inkfoot.cli.report import _p95
+
+    assert _p95([]) == 0
+    assert _p95([42]) == 42
+    # Two-element list: int(2 × 0.95) = 1, returns sorted[1] = max.
+    assert _p95([10, 20]) == 20
+    # Twenty equal-sized values; p95 is the last.
+    values = list(range(100))
+    assert _p95(values) == 95
