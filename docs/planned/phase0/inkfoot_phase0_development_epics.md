@@ -3,8 +3,8 @@
 > **Phase:** 0 — Classify
 > **Theme:** Classify where every billed token came from. Run on our own agents.
 > **Timeline:** Weeks 0–8 (40 working days)
-> **Total Story Points:** 73
-> **Document Version:** 1.0
+> **Total Story Points:** 76
+> **Document Version:** 1.1
 > **Last Updated:** 2026-05-25
 > **Aligned With:** `phase-0-classify.md` (per-phase architecture)
 >
@@ -21,7 +21,7 @@ graph LR
     subgraph EPICS["Phase 0 - 6 Epics"]
         E1["E1: Project + Storage<br/>Foundation<br/>──────────<br/>13 SP | Week 0–1"]
         E2["E2: Causal Token<br/>Ledger<br/>──────────<br/>15 SP | Week 1–3"]
-        E3["E3: Pattern A<br/>Instrumentation<br/>──────────<br/>13 SP | Week 2–4"]
+        E3["E3: Pattern A<br/>Instrumentation<br/>──────────<br/>16 SP | Week 2–4"]
         E4["E4: Smell Engine +<br/>Recommendations<br/>──────────<br/>10 SP | Week 3–4"]
         E5["E5: Report CLI +<br/>Outcome Tagging<br/>──────────<br/>9 SP | Week 4–5"]
         E6["E6: Internal Rollout<br/>+ Validation Harness<br/>──────────<br/>13 SP | Week 5–8"]
@@ -60,6 +60,13 @@ gantt
     section E6: Rollout
     E6 Internal Rollout + Validation       :p0e6, 2026-06-26, 21d
 ```
+
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below (e.g. "Week 5–8 (Days 21–40)") are
+> **working days** at 5/week. The two are deliberately not unified —
+> calendar dates anchor the schedule on the chart, working days anchor
+> effort estimates in the prose. Both reconcile against the Story Point
+> totals.
 
 ---
 
@@ -143,17 +150,19 @@ gantt
 | # | Task | File(s) | Details |
 |---|---|---|---|
 | T1 | `Storage` Protocol + `SQLiteStorage` | `inkfoot/storage/__init__.py`, `inkfoot/storage/sqlite.py` | Protocol declares `connect`, `insert_event`, `mark_dirty`, `read_dirty`, `update_aggregates`. SQLite impl uses one connection per thread + threadlocal. |
-| T2 | Migrations | `inkfoot/storage/migrations.py` | Forward-only DDL list. v1 = full schema from phase-0-classify §5.5 (runs + events tables, `parent_run_id`, `run_kind`, `divergence_flag`, `total_cache_*` columns, `aggregates_dirty`). Apply on first `connect`. |
+| T2 | Migrations | `inkfoot/storage/migrations.py` | Forward-only DDL list. v1 = full schema from phase-0-classify §5.5 + §5.5.1 (runs + events tables, `parent_run_id`, `run_kind`, `divergence_flag`, `total_cache_*` columns, `aggregates_dirty`, `events.capture_mode TEXT NOT NULL DEFAULT 'metadata'`, and the `event_contents` sibling table per ADR-0-9). Apply on first `connect`. |
 | T3 | Per-connection pragmas | `inkfoot/storage/sqlite.py` | `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`, `temp_store=MEMORY`, `mmap_size=128MiB`. |
-| T4 | Two-tier write helper | `inkfoot/storage/sqlite.py` | `insert_event(run_id, kind, payload)` writes the event row + sets `aggregates_dirty=1` in a single transaction. |
+| T4 | Two-tier write helper | `inkfoot/storage/sqlite.py` | `insert_event(run_id, kind, payload)` writes the event row + sets `aggregates_dirty=1` in a single transaction. Defaults `capture_mode='metadata'`; `event_contents` rows are written only when `capture_mode='replay'` (see E3-S2). |
 | T5 | Indexes | `inkfoot/storage/sqlite.py` | `events_run_seq`, `runs_started`, `runs_task_started`, partial `runs_dirty` (where dirty=1), `runs_parent` (where parent_run_id is not null). |
-| T6 | Unit tests | `tests/unit/test_storage_sqlite.py` | Schema migration applies cleanly; write hot-path < 1 ms p95 on tempfile DB; dirty flag toggles correctly; WAL survives `kill -9` (subprocess test). |
+| T6 | Unit tests | `tests/unit/test_storage_sqlite.py` | Schema migration applies cleanly; write hot-path under 1 ms p95 on tempfile DB; dirty flag toggles correctly; WAL survives `kill -9` (subprocess test); `event_contents` table exists post-migration with the columns from §5.5.1. |
 
 **Acceptance Criteria:**
 - [ ] `SQLiteStorage` exposes the full Storage Protocol surface; passes contract tests against an in-memory + tempfile DB.
 - [ ] `insert_event` p95 < 1 ms on the CI machine (tempfile WAL).
 - [ ] `kill -9` mid-write recovery test: child process kill after `INSERT` but before commit leaves the DB intact and re-openable.
 - [ ] `runs_dirty` partial index exists and is non-empty after a write.
+- [ ] `events.capture_mode` column exists post-migration with default value `'metadata'`; `PRAGMA table_info(events)` includes it.
+- [ ] `event_contents` table exists post-migration with the columns from phase-0-classify §5.5.1 (`event_id` PK, `request_json`, `response_json`, `tool_result_json`, `content_redacted`); foreign-key cascade from `events` is enforced.
 
 ---
 
@@ -324,11 +333,11 @@ gantt
 
 ## E3: Pattern A Instrumentation
 
-**Goal:** Monkey-patch the Anthropic and OpenAI SDKs (Pattern A) with hook-isolation guarantees, the `Policy` ABC + capability matrix, the three observation policies (`BudgetCap`, `RetryThrottle`, `CacheControlPlacer`), and `PolicyNotSupported` registration-time enforcement. After this epic, an instrumented agent produces events end-to-end.
+**Goal:** Monkey-patch the Anthropic and OpenAI SDKs (Pattern A) with hook-isolation guarantees, the `Policy` ABC + capability matrix, the three observation policies (`BudgetCap`, `RetryThrottle`, `CacheControlPlacer`), and `PolicyNotSupported` registration-time enforcement. The shims also wire the conditional `event_contents` write so that `capture_mode="replay"` records full request/response bodies (per ADR-0-9). After this epic, an instrumented agent produces events end-to-end.
 
-**Total Story Points:** 13
+**Total Story Points:** 16
 **Sprint:** Week 2–4 (Days 8–18)
-**Dependencies:** E1 (storage), E2 (ledger + translators)
+**Dependencies:** E1 (storage, including `event_contents` table from E1-S3), E2 (ledger + translators)
 
 ---
 
@@ -356,11 +365,11 @@ gantt
 
 ---
 
-### E3-S2: Anthropic + OpenAI SDK Shims (sync + async)
+### E3-S2: Anthropic + OpenAI SDK Shims (sync + async, with replay-mode capture)
 
-**Story:** As a developer, I need monkey-patches on `anthropic.Messages.create` (sync + async) and `openai.Completions.create` (sync + async) that capture every call without changing user-visible behaviour.
+**Story:** As a developer, I need monkey-patches on `anthropic.Messages.create` (sync + async) and `openai.Completions.create` (sync + async) that capture every call without changing user-visible behaviour, and that conditionally persist full request/response bodies into `event_contents` when `capture_mode="replay"` is enabled.
 
-**Story Points:** 5
+**Story Points:** 8
 
 **Tasks:**
 
@@ -372,12 +381,16 @@ gantt
 | T4 | Async support | `inkfoot/shims/anthropic.py`, `inkfoot/shims/openai.py` | Detect async at install time via `inspect.iscoroutinefunction`; the wrapper is `async def` accordingly. |
 | T5 | Unit tests | `tests/unit/test_anthropic_shim.py`, `tests/unit/test_openai_shim.py` | Stub SDKs; the shim invokes the original; emits one event per call; hook exception doesn't propagate; async variants work; uninstall restores the original callable. |
 | T6 | Fuzz test for isolation | `tests/unit/test_hook_isolation.py` | Inject random exceptions into every hook point; assert the user's call always completes with the original response. |
+| T7 | Replay-mode content write | `inkfoot/shims/anthropic.py`, `inkfoot/shims/openai.py`, `inkfoot/storage/sqlite.py` | When the module-level `capture_mode == "replay"` (set by `instrument()` per E3-S1 T4), in the same transaction as the `llm_call` event insert, write an `event_contents` row with the serialised request (messages + tools + model kwargs at call time) and response (assistant text + tool calls + raw usage). Default `capture_mode="metadata"` writes nothing — the row is suppressed at the storage layer, not in the shim, so both shims share one write path. Apply the Phase 7 redaction floor when configured (set `content_redacted=1` on any matched row). |
+| T8 | Unit tests for replay-mode write | `tests/unit/test_anthropic_shim.py`, `tests/unit/test_openai_shim.py` | With `capture_mode="metadata"` (default): N calls produce zero `event_contents` rows. With `capture_mode="replay"`: N calls produce exactly N `event_contents` rows with non-null `request_json` + `response_json`, each joined 1:1 to its `events` row by `event_id`. The `events` row count is identical in both modes. |
 
 **Acceptance Criteria:**
 - [ ] After `instrument()`, `anthropic.resources.messages.Messages.create` is the shim; the original is recoverable via the unbind mechanism.
 - [ ] One emit per call: `events` table grows by exactly N after N calls.
 - [ ] Hook-isolation fuzz test passes 1000 random exception injections — none reach user code.
 - [ ] Async shim works under `asyncio.run` + `anyio` event loops.
+- [ ] With `capture_mode="replay"`, an `event_contents` row is written per LLM-call event with `request_json` + `response_json` populated and `event_id` joining 1:1 to the `events` row; with the default `capture_mode="metadata"`, zero `event_contents` rows are written for the same workload.
+- [ ] For `tool_result` events emitted by the shim, the `event_contents.tool_result_json` column is populated when `capture_mode="replay"` and null otherwise.
 
 ---
 
@@ -722,15 +735,32 @@ gantt
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E6` consolidate the architecture's ten `CL*` epics
+(see `phase-0-classify.md` §13). Use this table to trace from the
+phase architecture into the implementation breakdown:
+
+| This doc | Covers (from `phase-0-classify.md` §13) |
+|---|---|
+| **E1: Project + Storage Foundation** | `CL1` (project scaffolding) + `CL2` (storage foundation) |
+| **E2: Causal Token Ledger** | `CL3` (13-category ledger + per-provider attribution) |
+| **E3: Pattern A Instrumentation** | `CL4` (SDK shims) + `CL5` (policy engine + capability matrix) |
+| **E4: Smell Engine + Recommendations** | `CL7` (recommendation engine + 5 built-in smells) |
+| **E5: Report CLI + Outcome Tagging** | `CL6` (outcome tracking) + `CL8` (`inkfoot report` CLI) |
+| **E6: Internal Rollout + Validation Harness** | `CL9` (internal-use rollout) + `CL10` (validation harness) |
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 0 - 6 Epics, 26 Stories, 73 Story Points"]
+    subgraph SUMMARY["Phase 0 - 6 Epics, 26 Stories, 76 Story Points"]
         direction TB
         E1S["E1: Project + Storage Foundation<br/>5 stories | 13 SP"]
         E2S["E2: Causal Token Ledger<br/>5 stories | 15 SP"]
-        E3S["E3: Pattern A Instrumentation<br/>4 stories | 13 SP"]
+        E3S["E3: Pattern A Instrumentation<br/>4 stories | 16 SP"]
         E4S["E4: Smell Engine + Recommendations<br/>3 stories | 10 SP"]
         E5S["E5: Report CLI + Outcome Tagging<br/>4 stories | 9 SP"]
         E6S["E6: Internal Rollout + Validation<br/>5 stories | 13 SP"]
@@ -748,11 +778,11 @@ graph TB
 |---|---|---|---|---|
 | E1: Project + Storage Foundation | 5 | 13 | 0–1 | Package skeleton, nanodollar type, SQLite + WAL, aggregator |
 | E2: Causal Token Ledger | 5 | 15 | 1–3 | 14-field ledger, per-provider translators, tokeniser layer, pricing |
-| E3: Pattern A Instrumentation | 4 | 13 | 2–4 | SDK shims, policy ABC, capability matrix, 3 observation policies |
+| E3: Pattern A Instrumentation | 4 | 16 | 2–4 | SDK shims (with replay-mode content write), policy ABC, capability matrix, 3 observation policies |
 | E4: Smell Engine + Recommendations | 3 | 10 | 3–4 | Engine, 5 built-in smells, registry |
 | E5: Report CLI + Outcome Tagging | 4 | 9 | 4–5 | `@agent_run`, `set_outcome`, `inkfoot report` with bar chart |
 | E6: Internal Rollout + Validation | 5 | 13 | 5–8 | Sleuth+tooling instrumented, validation corpus, smell logbook, go/no-go |
-| **Total** | **26** | **73** | **8 weeks** | **Phase 0 complete — internal use only, ready for go/no-go** |
+| **Total** | **26** | **76** | **8 weeks** | **Phase 0 complete — internal use only, ready for go/no-go** |
 
 ---
 

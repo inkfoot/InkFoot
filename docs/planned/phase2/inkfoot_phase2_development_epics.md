@@ -60,6 +60,10 @@ gantt
     E7 Polish + Go/No-Go                   :p2e7, 2026-12-21, 15d
 ```
 
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below are **working days** at 5/week. Same
+> convention as Phase 0 — see Phase 0 epics doc for rationale.
+
 ---
 
 ## Story Point Scale
@@ -127,7 +131,7 @@ gantt
 | T7 | Integration test | `tests/integration/test_contracts_runtime.py` | Real Anthropic stub + a real contract YAML → expected `contract_violation` events sequence. |
 
 **Acceptance Criteria:**
-- [ ] Pre-call cost estimate is within 30% of actual on a 4-turn fixture run.
+- [ ] Pre-call cost estimate is within **30%** of actual on a 4-turn fixture run. *(This tolerance is deliberately wider than Phase 0's <10% per-category attribution bar because pre-call estimation predicts output token counts that **haven't been generated yet**; the moving-average estimator + pessimistic-by-default rounding is inherently noisier than post-hoc attribution. The degrade ladder fires at 80%/90%/100% precisely so a 30%-noisy estimate still catches the runaway case before it blows the budget. Revisit if the predictor lands tighter than 15% in practice — until then, 30% is the honest floor.)*
 - [ ] `switch_to_cheap_model` rewrites the `model` kwarg to the contract's `cheap_model` (or `CAPABILITIES.cheap_model_for_summariser` fallback).
 - [ ] `block` action raises `PolicyBlocked`; the SDK call is not made.
 - [ ] Outcome window check **does not** raise `PolicyBlocked` — emits event only.
@@ -718,11 +722,33 @@ gantt
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E7` consolidate the architecture's sixteen `EN*`
+epics (see `phase-2-enforce.md` §13). Use this table to trace from
+the phase architecture into the implementation breakdown:
+
+| This doc | Covers (from `phase-2-enforce.md` §13) |
+|---|---|
+| **E1: Token Contracts — Runtime + CI** | `EN1` (YAML schema + parser) + `EN2` (runtime enforcer + degrade ladder) + `EN3` (`inkfoot contract draft`) + `EN4` (`inkfoot contract check` CI gate) |
+| **E2: Modification Policies** | `EN5` (`LazyToolExposure`) + `EN6` (`CheapSummariser`) |
+| **E3: Pydantic AI + CrewAI Adapters** | `EN7` (Pydantic AI) + `EN8` (CrewAI) |
+| **E4: Provider Expansion** | `EN9` (Gemini) + `EN10` (Bedrock) + `EN11` (OpenAI-compat) + `EN16` (provider abstraction refactor) |
+| **E5: Postgres Backend + Migration** | `EN12` (PostgresStorage + `inkfoot migrate --to postgres`) |
+| **E6: Cost-per-Success + 5 More Smells** | `EN13` (five additional cost smells) + `EN14` (cost-per-success report promotion) |
+| **E7: Polish + Go/No-Go** | Phase 2 exit criteria + decision doc (no direct `EN*` mapping; pulls together cross-cutting concerns) |
+
+*Note: `EN15` (`inkfoot tail`) was shipped in Phase 1 as `EX15`; it
+appears in `phase-2-enforce.md` §13 for historical numbering only
+and is intentionally absent here.*
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 2 - 7 Epics, 30 Stories, 96 Story Points"]
+    subgraph SUMMARY["Phase 2 - 7 Epics, 26 Stories, 96 Story Points"]
         direction TB
         E1S["E1: Token Contracts<br/>5 stories | 18 SP"]
         E2S["E2: Modification Policies<br/>4 stories | 15 SP"]

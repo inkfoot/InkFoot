@@ -2,7 +2,7 @@
 
 > **Phase:** 5 — Enterprise
 > **Theme:** Become a credible enterprise procurement candidate.
-> **Timeline:** Weeks 64+ (ongoing; ~80 working days through phase exit milestones)
+> **Timeline:** Calendar weeks **64–104** elapsed (E6 SOC 2 Type 2 runs the full 40-week observation window and dominates the tail). Focused-dev burn ≈ **80 working days** for the 117 SP across E1–E5 + E7 — those finish around week 84; E6 then runs in parallel as evidence collection rather than active development. "Phase exit" means the **last milestone in this doc lands**, not the last calendar week elapses.
 > **Total Story Points:** 117
 > **Document Version:** 1.0
 > **Last Updated:** 2026-05-25
@@ -62,6 +62,13 @@ gantt
     section E7: Enterprise
     E7 Enterprise Billing + Customer       :p5e7, 2028-02-28, 25d
 ```
+
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below are **working days** at 5/week. Same
+> convention as Phase 0 — see Phase 0 epics doc for rationale. Note
+> E6 (SOC 2) intentionally overlaps E1–E5 as evidence collection
+> rather than active development; see §"Timeline" at the top of this
+> doc.
 
 ---
 
@@ -805,11 +812,30 @@ gantt
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E7` consolidate the architecture's fourteen `EE*`
+epics (see `phase-5-enterprise.md` §"Suggested epic breakdown"). Use
+this table to trace from the phase architecture into the
+implementation breakdown:
+
+| This doc | Covers (from `phase-5-enterprise.md`) |
+|---|---|
+| **E1: IAM Foundation + Migration** | `EE1` (IAM schema migration: tenants, memberships, identities, sessions, audit_events) |
+| **E2: OIDC + SAML SSO** | `EE2` (OIDC: Google + Entra + Okta) + `EE5` (SAML SSO; SCIM split into E3) |
+| **E3: RBAC + Audit + SCIM** | `EE3` (RBAC enforcement) + `EE4` (audit log writer + query + export) + the SCIM-provisioning half of `EE5` |
+| **E4: Self-Hosted Cloud Distribution** | `EE6` (Docker Compose + Helm + license verifier; cosign + SBOM) |
+| **E5: EU Region + Postgres RLS** | `EE7` (EU region) + `EE8` (Postgres RLS) + `EE11` (per-tenant data export, GDPR-aligned) |
+| **E6: SOC 2 Type 2 + Compliance** | `EE9` (SOC 2 Type 2) + `EE12` (HIPAA BAA template + scoping doc) |
+| **E7: Enterprise Billing + First $100k ARR Customer** | `EE10` (annual / invoiced billing) + `EE13` (SE playbook) + `EE14` (reference customers / case studies) |
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 5 - 7 Epics, 29 Stories, 117 Story Points"]
+    subgraph SUMMARY["Phase 5 - 7 Epics, 32 Stories, 117 Story Points"]
         direction TB
         E1S["E1: IAM Foundation<br/>6 stories | 23 SP"]
         E2S["E2: OIDC + SAML SSO<br/>4 stories | 18 SP"]
@@ -837,7 +863,7 @@ graph TB
 | E5: EU Region + Postgres RLS | 4 | 13 | 76–82 | Frankfurt region + RLS defense-in-depth |
 | E6: SOC 2 Type 2 | 4 | 13 | 64–104 | Type 1 (~mid-phase) + Type 2 (~phase end) |
 | E7: Enterprise Billing + First Customer | 3 | 6 | 78–84 | Invoiced billing + SE playbook + first $100k ARR |
-| **Total** | **32** | **117** | **~80 weeks elapsed; ~80 working days of dev** | **Phase 5 milestones met — enterprise-procurement-ready** |
+| **Total** | **32** | **117** | **Weeks 64–104 elapsed (E6 SOC 2 Type 2 dominates the tail); ~117 SP ≈ ~80 working days of focused dev** | **Phase 5 milestones met — enterprise-procurement-ready** |
 
 ---
 

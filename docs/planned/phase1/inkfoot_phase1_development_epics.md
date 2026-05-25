@@ -6,7 +6,7 @@
 > **Total Story Points:** 88
 > **Document Version:** 1.0
 > **Last Updated:** 2026-05-25
-> **Builds On:** `inkfoot_phase0_development_epics.md` v1.0
+> **Builds On:** `inkfoot_phase0_development_epics.md` v1.1
 > **Aligned With:** `phase-1-explain.md`
 >
 > **Outcome gate:** entered only after Phase 0 go-signal. Public OSS
@@ -62,6 +62,11 @@ gantt
     section E6: Launch
     E6 OSS Launch + Hygiene                :p1e6, 2026-09-21, 14d
 ```
+
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below (e.g. "Week 8–12 (Days 1–20)") are
+> **working days** at 5/week. Same convention as Phase 0 — see Phase 0
+> epics doc for rationale.
 
 ---
 
@@ -750,11 +755,29 @@ Same scale as Phase 0 — kept here for convenience.
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E6` consolidate the architecture's fifteen `EX*`
+epics (see `phase-1-explain.md` §"Suggested epic breakdown"). Use this
+table to trace from the phase architecture into the implementation
+breakdown:
+
+| This doc | Covers (from `phase-1-explain.md`) |
+|---|---|
+| **E1: Framework Adapter Foundation** | `EX1` (LangGraph) + `EX2` (OpenAI Agents SDK) + `EX3` (Anthropic Agent SDK) + `EX4` (raw-SDK Pattern B promotion) |
+| **E2: Benchmark + Diff + GitHub Action** | `EX5` (`inkfoot benchmark`) + `EX6` (`inkfoot diff`) + `EX7` (`inkfoot/diff-action`) |
+| **E3: OTel Ingest + Export** | `EX8` (OTel ingest) + `EX9` (OTel export) |
+| **E4: Smell Rendering + `inkfoot tail`** | `EX14` (smell rendering inline in `inkfoot report`) + `EX15` (`inkfoot tail`) |
+| **E5: Docs Site (`inkfoot.dev`)** | `EX10` (docs site) |
+| **E6: OSS Launch + Hygiene** | `EX11` (launch blog post) + `EX12` (OSS hygiene) + `EX13` (adoption telemetry) |
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 1 - 6 Epics, 28 Stories, 88 Story Points"]
+    subgraph SUMMARY["Phase 1 - 6 Epics, 29 Stories, 88 Story Points"]
         direction TB
         E1S["E1: Adapter Foundation<br/>5 stories | 21 SP"]
         E2S["E2: Benchmark + Diff + GH Action<br/>4 stories | 16 SP"]

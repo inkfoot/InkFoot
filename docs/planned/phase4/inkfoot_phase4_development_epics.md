@@ -61,6 +61,10 @@ gantt
     E7 TS Lint + Phase 4 Exit              :p4e7, 2027-10-04, 20d
 ```
 
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below are **working days** at 5/week. Same
+> convention as Phase 0 — see Phase 0 epics doc for rationale.
+
 ---
 
 ## Story Point Scale
@@ -788,11 +792,30 @@ gantt
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E7` consolidate the architecture's twenty `CO*`
+epics (see `phase-4-compound.md` §"Suggested epic breakdown"). Use
+this table to trace from the phase architecture into the
+implementation breakdown:
+
+| This doc | Covers (from `phase-4-compound.md`) |
+|---|---|
+| **E1: TypeScript SDK** | `CO1` (TS Pattern A) + `CO2` (TS Pattern B) + `CO3` (Vercel AI SDK) + `CO4` (LangChain.js / Mastra) |
+| **E2: Cost Smell Library** | `CO5` (`library.inkfoot.dev` distribution) + `CO6` (PR-based contribution workflow) + `CO7` (verification corpus + worker) + `CO8` (private smells) |
+| **E3: Anomaly Alerts + Slack/PagerDuty** | `CO9` (anomaly-based alerting) + `CO10` (Slack delivery) + `CO11` (PagerDuty delivery) |
+| **E4: Cost Attribution v2** | `CO12` (tag rollups + cohort + percentiles + saved views) |
+| **E5: Bedrock + Gemini Invoice Reconciliation** | `CO13` (Bedrock reconciliation) + `CO14` (Gemini reconciliation) |
+| **E6: Self-Serve Signup + Public Marketing Surface** | `CO16` (self-serve signup) + `CO17` (status page) + `CO18` (roadmap site) + `CO19` (`inkfoot.dev/insights`) + `CO20` (inbound marketing blog) |
+| **E7: TypeScript Static Analyzer + Phase 4 Exit Gate** | `CO15` (TS analyzer + ESLint plugin) + Phase 4 exit-gate decision doc |
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 4 - 7 Epics, 31 Stories, 110 Story Points"]
+    subgraph SUMMARY["Phase 4 - 7 Epics, 32 Stories, 110 Story Points"]
         direction TB
         E1S["E1: TypeScript SDK<br/>6 stories | 26 SP"]
         E2S["E2: Cost Smell Library<br/>7 stories | 23 SP"]

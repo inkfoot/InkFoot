@@ -68,6 +68,10 @@ gantt
     E8 Design-Partner + Exit Gate          :p3e8, 2027-06-07, 20d
 ```
 
+> **Unit convention.** Gantt bar durations (`Nd`) are **calendar days**;
+> per-epic "Sprint" headers below are **working days** at 5/week. Same
+> convention as Phase 0 — see Phase 0 epics doc for rationale.
+
 ---
 
 ## Story Point Scale
@@ -603,7 +607,7 @@ gantt
 
 ## E6: Dashboard + Threshold Alerts
 
-**Goal:** React-based dashboard showing causal attribution, time-series, cost-per-task, cost-per-success, tag rollups, plus threshold-based alerting with email delivery (Slack + PagerDuty are Phase 4).
+**Goal:** React-based dashboard showing causal attribution, time-series, cost-per-task, and cost-per-success, plus threshold-based alerting with email delivery (Slack + PagerDuty are Phase 4; per-tag rollups + cohort analysis are Phase 4 E4 per the capability matrix).
 
 **Total Story Points:** 18
 **Sprint:** Week 40–46 (Days 40–60)
@@ -867,11 +871,31 @@ gantt
 
 ---
 
+## Architecture-epic ↔ implementation-epic mapping
+
+This doc's `E1`–`E8` consolidate the architecture's eighteen `PR*`
+epics (see `phase-3-prove.md` §"Suggested epic breakdown"). Use this
+table to trace from the phase architecture into the implementation
+breakdown:
+
+| This doc | Covers (from `phase-3-prove.md`) |
+|---|---|
+| **E1: Cloud Backend Foundation** | `PR1` (ingestion) + `PR2` (Postgres schema + tenancy) + `PR6` (customer-credential vault) |
+| **E2: Cloud Exporter (OSS)** | `PR3` (background exporter daemon) |
+| **E3: Cost Replay Engine** | `PR4` (Replay Engine core) + `PR5` (Replay API endpoints + polling) |
+| **E4: Static Analyzer (`inkfoot lint`)** | `PR7` (analyzer + 8 launch rules) + `PR8` (CI integration) |
+| **E5: Invoice Reconciliation** | `PR9` (Anthropic) + `PR10` (OpenAI) + `PR11` (reconciliation UX) + `PR12` (FOCUS-spec export) |
+| **E6: Dashboard + Threshold Alerts** | `PR13` (React dashboard) + `PR14` (threshold alerting + SMTP delivery) |
+| **E7: Billing + Self-Serve Cloud** | `PR15` (Stripe + quota enforcement) + `PR16` (API key management UI) |
+| **E8: Design-Partner Onboarding + Exit Gate** | `PR17` (marketing site) + `PR18` (design-partner playbook) + Phase 3 exit-gate decision doc |
+
+---
+
 ## Summary
 
 ```mermaid
 graph TB
-    subgraph SUMMARY["Phase 3 - 8 Epics, 32 Stories, 130 Story Points"]
+    subgraph SUMMARY["Phase 3 - 8 Epics, 34 Stories, 130 Story Points"]
         direction TB
         E1S["E1: Cloud Backend Foundation<br/>5 stories | 21 SP"]
         E2S["E2: Cloud Exporter (OSS)<br/>3 stories | 10 SP"]
