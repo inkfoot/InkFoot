@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run unit tests
+        run: pytest tests/unit -v --tb=short
+
+  benchmark:
+    name: Storage hot-path benchmark
+    runs-on: ubuntu-latest
+    # Run after unit tests pass — no point benchmarking broken code.
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run storage benchmark (p95 < 1 ms gate)
+        run: |
+          pytest tests/benchmarks --benchmark-only \
+            --benchmark-json=benchmark.json
+      - name: Upload benchmark artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-benchmark-${{ github.sha }}
+          path: benchmark.json
+          retention-days: 30

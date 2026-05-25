@@ -85,6 +85,11 @@ gantt
 
 ## E1: Project + Storage Foundation
 
+**Status:** ✅ shipped — see [PR / branch
+`anirban/p0-e1-project-storage-foundation`]. 79 unit tests + storage
+hot-path benchmark green; `inkfoot rebuild-aggregates` CLI installed
+via the `inkfoot` entry point. Code: `inkfoot/{money,storage,cli}.py`.
+
 **Goal:** Stand up the Python package skeleton, the nanodollar money type, the SQLite storage layer with WAL + two-tier write semantics, the aggregator worker, and the `inkfoot rebuild-aggregates` recovery command. After this epic, the rest of Phase 0 has a place to write to.
 
 **Total Story Points:** 13
