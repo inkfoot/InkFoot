@@ -106,6 +106,45 @@ def test_silent_for_cheaper_model_even_with_low_output() -> None:
     assert _detect(events) is None
 
 
+def test_silent_for_gpt_4o_mini_even_though_prefix_matches() -> None:
+    """Finding #1 in the CL4 review.
+
+    ``"gpt-4o-mini".startswith("gpt-4o")`` is True, so the cheap
+    model's name shares an "expensive" prefix. The premium-clamp
+    guard in ``_detect`` keeps the smell silent because
+    gpt-4o-mini's output rate (600 nd/tok) is *below* Haiku's
+    (4000 nd/tok) — there's nothing to save by switching."""
+    events = [
+        event_from_neutral_call(
+            make_neutral_call(
+                sequence=i + 1,
+                provider="openai",
+                model="gpt-4o-mini",
+                ledger_fields={"output_tokens": 50, "reasoning_tokens": 0},
+            )
+        )
+        for i in range(5)
+    ]
+    assert _detect(events) is None
+
+
+def test_silent_for_expensive_model_when_pricing_table_lacks_it() -> None:
+    """A future "expensive-looking" model whose pricing isn't in
+    the table can't be compared to Haiku — stay silent rather than
+    false-positive with cost_impact=0."""
+    events = [
+        event_from_neutral_call(
+            make_neutral_call(
+                sequence=1,
+                provider="openai",
+                model="gpt-4o-experimental",  # not in PRICING_ND_PER_TOKEN
+                ledger_fields={"output_tokens": 50, "reasoning_tokens": 0},
+            )
+        ),
+    ]
+    assert _detect(events) is None
+
+
 def test_silent_when_output_above_threshold() -> None:
     events = [
         event_from_neutral_call(

@@ -116,14 +116,12 @@ def test_silent_when_result_under_threshold() -> None:
     assert _detect(events) is None
 
 
-def test_silent_at_exactly_2000_tokens_boundary() -> None:
-    """The threshold is "> 2000"; exactly 2000 should not fire.
-
-    Actually the implementation uses ``>= 2000`` because we're
-    checking ``ledger.tool_result_tokens >= _OVERSIZED_THRESHOLD_TOKENS``
-    — that's a deliberate inclusive boundary for clarity (2000-tok
-    results are oversized in practice). The spec's "> 2000" wording
-    is informal."""
+def test_fires_at_exactly_2000_tokens_boundary() -> None:
+    """The implementation uses ``>= 2000`` because we're checking
+    ``ledger.tool_result_tokens >= _OVERSIZED_THRESHOLD_TOKENS`` —
+    a deliberate inclusive boundary for clarity (2000-tok results
+    are oversized in practice). The spec's "> 2000" wording is
+    informal."""
     events = [
         event_from_neutral_call(
             make_neutral_call(

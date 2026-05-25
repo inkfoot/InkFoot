@@ -7,6 +7,22 @@ tool output back into context every turn" failure mode — the
 provider doesn't summarise it; the agent doesn't summarise it; the
 bill grows linearly in turn count.
 
+**Phase 0 approximation (broader than the spec).** The spec's
+literal wording — *"a tool result of > 2000 tokens appears in
+tool_result_tokens for ≥ 3 turns"* — naturally reads as "the *same*
+oversized result appears across 3 turns". Tracking *which* result
+is which requires args-or-content identity, which only exists in
+``event_contents`` (replay mode, Phase 3). Phase 0's metadata-mode
+events carry per-call token totals but no result identity, so we
+approximate the spec as: "at least one turn has an oversized
+result AND at least N turns have any tool-result tokens at all."
+
+That broader heuristic false-positives on the shape
+``[5000, 50, 50]`` — one large result followed by small follow-ups
+— which is a legitimately benign pattern. Phase 3's replay-mode
+upgrade lets us key on a content hash and drop the false positives;
+until then the bias is towards alerting over silence.
+
 Cost impact: ``oversized_call.tool_result_tokens × (turns - 1) ×
 input_price`` — the tool-result body costs full input rate on every
 turn it sticks around. Subtracting one turn (the first appearance)

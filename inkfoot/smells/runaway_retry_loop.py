@@ -65,6 +65,14 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
     # the translator hasn't classified retries yet (Phase 0) this is
     # zero — the smell still fires; the user sees the loop, just
     # without a dollar figure.
+    #
+    # Scope note (Finding #5 in the CL4 review): this sums retry
+    # overhead across *every* tool in the run, not just the breach
+    # tool. In Phase 0 retry_overhead_tokens is always 0 so the
+    # difference is invisible; once E5/E6 starts populating it the
+    # E5 renderer should label the impact line "all retry overhead
+    # on the run" rather than "retries from the breach tool", and a
+    # follow-up may want to split by tool name to be more precise.
     cost_impact_nd = 0
     if last_payload is not None and total_retry_overhead > 0:
         row = price_row_for(last_payload)

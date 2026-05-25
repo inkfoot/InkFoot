@@ -50,10 +50,22 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
     if dynamic_fraction <= _DYNAMIC_FRACTION_THRESHOLD:
         return None
 
-    # Cost impact: the dynamic tokens are paying full input rate when
-    # they could have served at cache_read rate. We approximate using
-    # the LAST call's pricing — homogeneous runs are the common case;
-    # mixed-provider runs are an open question.
+    # Cost impact — spec §5.9 verbatim: total_dynamic × cache_read.
+    #
+    # Worth flagging for E5's renderer (Finding #3 in the CL4
+    # review): this number is neither "what these tokens cost today"
+    # (× input_rate) nor "what they'd save if fixed"
+    # (× (input_rate - cache_read_rate)). It's an optimistic floor —
+    # "even if perfectly cached, you'd still pay this much for
+    # these tokens" — so the bar-chart label should read as a
+    # *lower bound on recoverable cost*, not pure savings. The
+    # decision whether to keep the spec-faithful number or switch
+    # to actual savings sits with E5; this smell stays spec-faithful
+    # until that decision lands so the docs and the impl agree.
+    #
+    # Approximation: use the LAST call's pricing as a proxy.
+    # Homogeneous runs are the common case; mixed-provider runs
+    # are an open question.
     cost_impact_nd = 0
     if last_payload is not None:
         row = price_row_for(last_payload)

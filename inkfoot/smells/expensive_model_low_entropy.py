@@ -59,16 +59,32 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
             # anything on a cheaper model either.
             continue
 
+        # **Premium-clamp guard (Finding #1 in the CL4 review).**
+        # The prefix match catches gpt-4o-mini too because
+        # ``"gpt-4o-mini".startswith("gpt-4o")`` is True, but
+        # gpt-4o-mini is already cheaper than Haiku — flagging it
+        # as "expensive" would surface a confusing warning that
+        # recommends a cheaper model the user is already using.
+        # Generalising fix: if the model's output rate isn't above
+        # Haiku's, there's no savings to surface and the smell stays
+        # silent. This naturally covers any future model that
+        # shares an "expensive" prefix but isn't actually pricier.
+        row = price_row_for(payload)
+        if row is None or haiku_output <= 0:
+            # No pricing → can't tell if it's actually expensive;
+            # stay silent rather than false-positive.
+            continue
+        premium = row.output - haiku_output
+        if premium <= 0:
+            continue
+
         qualifying_count += 1
         if first_sequence is None:
             first_sequence = int(event.get("sequence", 0) or 0)
             sample_model = model
             sample_output_tokens = ledger.output_tokens
 
-        row = price_row_for(payload)
-        if row is not None and haiku_output > 0:
-            premium = max(0, row.output - haiku_output)
-            total_potential_savings_nd += ledger.output_tokens * premium
+        total_potential_savings_nd += ledger.output_tokens * premium
 
     if qualifying_count == 0:
         return None
