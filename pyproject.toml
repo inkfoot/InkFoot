@@ -23,6 +23,9 @@ dynamic = ["version"]
 dependencies = [
     "python-ulid>=2.2.0",
     "tiktoken>=0.7",
+    # python-ulid 2.x uses typing_extensions.Self; pin explicitly so a
+    # fresh CI runner doesn't fail on the transitive miss.
+    "typing_extensions>=4.10",
 ]
 
 [project.optional-dependencies]

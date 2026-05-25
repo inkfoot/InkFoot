@@ -67,7 +67,9 @@ def test_version_is_a_pep440_string() -> None:
 
 @pytest.mark.parametrize(
     "callable_name",
-    ["instrument", "agent_run", "set_outcome", "tag", "tag_retrieval", "report_cost"],
+    # ``instrument`` shipped in E3 (Pattern A); removed from this
+    # list. The rest still ship in E5.
+    ["agent_run", "set_outcome", "tag", "tag_retrieval", "report_cost"],
 )
 def test_unshipped_callables_raise_notimplementederror_with_pointer(callable_name: str) -> None:
     fn = getattr(inkfoot, callable_name)
@@ -76,6 +78,18 @@ def test_unshipped_callables_raise_notimplementederror_with_pointer(callable_nam
     # The error must tell the developer which epic the function lands in
     # so a reader chasing the stub doesn't hit a dead end.
     assert "epic" in str(exc.value).lower()
+
+
+def test_instrument_is_a_real_callable_not_a_stub() -> None:
+    """E3 shipped ``inkfoot.instrument()`` — it must no longer raise
+    NotImplementedError. We don't *call* it here (would side-effect
+    install monkey-patches); we just check the docstring + module
+    origin. The submodule is private (``inkfoot._instrument``) to
+    avoid colliding with the same-named function on the package."""
+    fn = inkfoot.instrument
+    assert callable(fn)
+    assert fn.__module__ == "inkfoot._instrument"
+    assert "NotImplementedError" not in (fn.__doc__ or "")
 
 
 def test_module_reimports_cleanly() -> None:

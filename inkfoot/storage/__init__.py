@@ -78,10 +78,25 @@ class Storage(Protocol):
         sequence: int,
         payload_json: Optional[str] = None,
         capture_mode: str = "metadata",
+        request_json: Optional[str] = None,
+        response_json: Optional[str] = None,
+        tool_result_json: Optional[str] = None,
+        content_redacted: bool = False,
     ) -> None:
         """Append one event row + flip the parent run's
         ``aggregates_dirty`` flag in a single transaction (§5.6).
-        Returns when the row is durable in WAL."""
+        Returns when the row is durable in WAL.
+
+        Replay-mode content kwargs (ADR-0-9): when
+        ``capture_mode='replay'`` *and* any of ``request_json`` /
+        ``response_json`` / ``tool_result_json`` is non-None, the
+        implementation writes an ``event_contents`` row in the same
+        transaction. ``capture_mode='metadata'`` always suppresses
+        the sibling row. Backends that don't support replay should
+        accept these kwargs (so the shim call site doesn't have to
+        branch) and ignore them — Phase 2's Postgres backend may
+        defer the replay implementation to Phase 3.
+        """
 
     def mark_dirty(self, run_id: str) -> None:
         """Set ``aggregates_dirty=1`` on the named run. Used by

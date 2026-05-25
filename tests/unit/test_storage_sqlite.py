@@ -471,6 +471,103 @@ def test_close_is_idempotent_after_cross_thread_close(tmp_path: Path) -> None:
 
 
 # ----------------------------------------------------------------------
+# Storage Protocol signature alignment (Finding #2)
+# ----------------------------------------------------------------------
+
+
+def test_storage_protocol_insert_event_signature_includes_replay_kwargs() -> None:
+    """The shim's emit pipeline passes ``request_json`` /
+    ``response_json`` / ``tool_result_json`` / ``content_redacted``.
+    The Protocol must declare them so a Phase-2 Postgres backend
+    that implements only the Protocol surface accepts the call
+    without raising ``TypeError: unexpected keyword argument``.
+    """
+    import inspect
+
+    from inkfoot.storage import Storage
+
+    sig = inspect.signature(Storage.insert_event)
+    for kwarg in (
+        "request_json",
+        "response_json",
+        "tool_result_json",
+        "content_redacted",
+    ):
+        assert kwarg in sig.parameters, (
+            f"Storage.insert_event Protocol is missing {kwarg!r} kwarg"
+        )
+
+
+def test_sqlite_storage_signature_matches_protocol() -> None:
+    """Cross-check: the concrete SQLite impl agrees with the
+    Protocol. If the two drift again, the shim's call site is
+    silently wrong and only blows up at runtime against a fresh
+    backend."""
+    import inspect
+
+    from inkfoot.storage import Storage
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    proto_params = inspect.signature(Storage.insert_event).parameters
+    impl_params = inspect.signature(SQLiteStorage.insert_event).parameters
+    for name in proto_params:
+        assert name in impl_params, (
+            f"SQLiteStorage.insert_event missing Protocol param {name!r}"
+        )
+
+
+def test_replay_mode_with_no_content_does_not_write_event_contents(
+    memory_storage: SQLiteStorage,
+) -> None:
+    """Finding #3 regression at the storage layer: when the call site
+    passes ``capture_mode='replay'`` but doesn't pass any content
+    kwargs, no event_contents row is written. Policy events take
+    this path."""
+    _seed_run(memory_storage)
+    memory_storage.insert_event(
+        event_id="policy-event-1",
+        run_id="run-1",
+        kind="budget_warning",
+        occurred_at=1,
+        sequence=1,
+        payload_json='{"reason": "over budget"}',
+        capture_mode="replay",
+        # No request_json / response_json / tool_result_json.
+    )
+    conn = memory_storage._conn()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM event_contents WHERE event_id = ?",
+        ("policy-event-1",),
+    ).fetchone()[0]
+    assert count == 0
+
+
+def test_replay_mode_with_request_json_writes_content_row(
+    memory_storage: SQLiteStorage,
+) -> None:
+    _seed_run(memory_storage)
+    memory_storage.insert_event(
+        event_id="llm-1",
+        run_id="run-1",
+        kind="llm_call",
+        occurred_at=1,
+        sequence=1,
+        payload_json="{}",
+        capture_mode="replay",
+        request_json='{"messages": []}',
+        response_json='{"usage": {}}',
+    )
+    conn = memory_storage._conn()
+    row = conn.execute(
+        "SELECT request_json, response_json FROM event_contents WHERE event_id = ?",
+        ("llm-1",),
+    ).fetchone()
+    assert row is not None
+    assert row["request_json"] == '{"messages": []}'
+    assert row["response_json"] == '{"usage": {}}'
+
+
+# ----------------------------------------------------------------------
 # kill -9 recovery (WAL durability)
 # ----------------------------------------------------------------------
 
