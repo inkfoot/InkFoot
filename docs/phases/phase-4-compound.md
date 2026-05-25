@@ -21,16 +21,18 @@ moat that compounds over time.
 
 The narrative beat: Phases 0–3 built the product. Phase 4 turns it
 into a **platform** — the place where the agent-FinOps community
-agrees on cost smells, with verification data Inkfoot Cloud uniquely
-provides.
+agrees on cost smells, with **estimated-savings data** Inkfoot Cloud
+uniquely computes across opt-in customer runs (see ADR-4-8 for why
+"estimated", not "verified").
 
 What changes architecturally:
 
 - **TypeScript SDK** mirroring Python's Pattern A + B + Pattern C
   adapters for Vercel AI SDK and one second TS framework adapter.
 - **Cost Smell Library** at `library.inkfoot.dev`: community-
-  contributed smells with verification data computed across opted-in
-  customer runs. Cloud auto-pulls verified smells; customers can
+  contributed smells with **estimated-savings data** (per ADR-4-8)
+  computed across opted-in customer runs. Cloud auto-pulls
+  evidence-bearing smells; customers can
   author private smells.
 - **Anomaly-based alerting** complementing Phase 3's threshold-based
   alerts.
@@ -51,7 +53,7 @@ What changes architecturally:
 - **At least two TS framework adapters** — Vercel AI SDK + one other
   (LangChain.js or Mastra, design-partner-driven choice).
 - **Cost Smell Library** at `library.inkfoot.dev` with **≥ 20
-  community-contributed smells** with verification data.
+  community-contributed smells** with estimated-savings data.
 - **≥ 15 paying customers** across Pro / Team tiers.
 - **$20k+ MRR.**
 - **Anomaly-based alerting** firing correctly with < 5% false-positive
@@ -141,7 +143,7 @@ What's new vs Phase 3:
 | TS framework adapters | Vercel AI SDK + LangChain.js (Pattern C) |
 | `library.inkfoot.dev` + library API | Community Cost Smell Library distribution |
 | Verification corpus | Computes savings impact across opted-in customer runs; the moat |
-| Smell auto-pull job | Cloud syncs verified smells into the smell engine |
+| Smell auto-pull job | Cloud syncs evidence-bearing smells (per ADR-4-8) into the smell engine |
 | Anomaly-based alerting | Per-tenant baseline; 3σ deviation detector |
 | Slack + PagerDuty delivery | Alert channels |
 | Cost attribution v2 | Tag rollups, cohort analysis, percentile breakdowns |
@@ -434,9 +436,9 @@ ledger corpus to estimate the savings impact at scale.
 | Surface | Mechanism |
 |---|---|
 | OSS library | Pulls the bundled snapshot at install time; updates on `pip install --upgrade inkfoot` |
-| Cloud | Auto-pulls verified smells from `library.inkfoot.dev` API on startup; refreshes daily |
+| Cloud | Auto-pulls evidence-bearing smells (any with `estimated_savings` populated above the k-anonymity floor) from `library.inkfoot.dev` API on startup; refreshes daily |
 | Private smells | Customer authors YAML in their Cloud workspace UI; stored per-tenant; never published |
-| Library site | Static site rendered from the repo; each smell has its own page with verification stats |
+| Library site | Static site rendered from the repo; each smell has its own page with estimated-savings stats + `evidence_kind` |
 
 #### 4.2.4 Smell contribution workflow
 
@@ -459,11 +461,11 @@ sequenceDiagram
   Bot-->>Dev: feedback comments
   PR->>Rev: human review (publish criteria from CONTRIBUTING.md)
   Rev->>PR: approve / request changes
-  PR->>Main: merge (without verification data)
-  Note over Main: smell is "candidate"
+  PR->>Main: merge as candidate without estimated_savings
+  Note over Main: smell is candidate
   Main->>Ver: next monthly verification cycle
-  Ver->>Main: PR updating verification fields
-  Note over Main: smell is "verified" once verification data lands
+  Ver->>Main: PR updating estimated_savings fields
+  Note over Main: smell is evidence-bearing once estimated_savings lands
 ```
 
 The publish criteria (from `CONTRIBUTING.md` in the cost-smells
@@ -672,6 +674,54 @@ sequenceDiagram
 Quota enforcement enforced from event 1; Free tier defaults; the
 upgrade flow is one click.
 
+#### 4.7.1 Minimum users + credentials schema
+
+Self-serve signup is the **first** path that creates a user record
+that is *not* the workspace owner of a Phase-3 single-user
+workspace. Phase 4 therefore ships a small users / credentials
+table — kept deliberately narrow because the full IAM model
+(memberships, identities, sessions) arrives in Phase 5:
+
+```sql
+CREATE TABLE users (
+  id              TEXT PRIMARY KEY,            -- ULID
+  email           TEXT UNIQUE NOT NULL,
+  email_verified  BOOLEAN NOT NULL DEFAULT 0,
+  password_hash   TEXT NOT NULL,               -- argon2id; format includes parameters
+  display_name    TEXT,
+  tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+  created_at      INTEGER NOT NULL,
+  last_login_at   INTEGER
+);
+
+CREATE INDEX users_tenant ON users(tenant_id);
+```
+
+Constraints:
+
+- **One user per workspace in Phase 4.** The `tenant_id` column is
+  `NOT NULL` and there's no membership table yet. A self-serve
+  signup creates exactly one (tenant, user) pair atomically. Adding
+  more users to a tenant is a Phase-5 feature (requires the
+  `memberships` table).
+- **`password_hash` is argon2id** with the same parameters used by
+  Inkfoot Cloud password operations (`memory_cost=64 MiB`,
+  `time_cost=3`, `parallelism=4`; the standard recommended defaults
+  as of 2026). The full hash string includes parameters so future
+  Phase-5 migrations can verify without re-hashing.
+- **API keys still exist alongside.** Phase-3-style API keys remain
+  the programmatic-access path; self-serve users authenticate via
+  email + password to the dashboard and mint API keys from there.
+  The two coexist; Phase 5 IAM unifies them into the `identities`
+  table.
+- **No SSO.** Self-serve is password-only in Phase 4. SSO is Phase 5.
+
+This schema is what Phase 5 §4.1.2 migrates from — the argon2id
+hash format and parameter set are deliberately compatible with the
+Phase-5 `identities` table's `kind='password'` rows. No password
+reset is forced on existing self-serve users during the Phase 5
+migration because the hash format already matches.
+
 ### 4.8 Public status page + roadmap + insights
 
 | Surface | Purpose |
@@ -738,7 +788,7 @@ inkfoot-ts/
 inkfoot/
 ├── ... (Phase 0+1+2+3 unchanged) ...
 ├── library/
-│   ├── pull.py                    # auto-pull verified smells
+│   ├── pull.py                    # auto-pull evidence-bearing smells
 │   ├── private_smells.py          # per-workspace authoring
 │   └── verification_client.py     # reports back to verification corpus (opt-in)
 └── lint/
@@ -751,7 +801,7 @@ inkfoot-cloud/
 ├── ... (Phase 3 unchanged) ...
 ├── library/
 │   ├── api.py                     # library distribution API
-│   ├── pull_worker.py             # syncs verified smells into all tenants
+│   ├── pull_worker.py             # syncs evidence-bearing smells into all tenants
 │   ├── verification_worker.py     # nightly verification jobs
 │   └── corpus.py                  # anonymised corpus access layer
 ├── alerts/
@@ -796,8 +846,8 @@ cost-smells/
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/library/smells` | List verified community smells |
-| `GET` | `/api/v1/library/smells/{id}` | Smell detail + verification stats |
+| `GET` | `/api/v1/library/smells` | List community smells with estimated-savings data |
+| `GET` | `/api/v1/library/smells/{id}` | Smell detail + estimated-savings stats + `evidence_kind` |
 | `POST` | `/api/v1/library/smells/private` | Author private smell |
 | `GET` | `/api/v1/aggregates?group_by=tag.<name>` | Tag rollup |
 | `GET` | `/api/v1/aggregates?cohort=<tag>` | Cohort analysis |
@@ -839,7 +889,7 @@ sequenceDiagram
   Ver->>Main: PR updating verification stats
   Main->>Lib: re-deploy
   Main->>Pull: invalidate cache
-  Pull->>Tenant: next sync includes verified smell
+  Pull->>Tenant: next sync includes the evidence-bearing smell
   Tenant->>Tenant: SmellEngine fires new smell on next inkfoot report
 ```
 
@@ -907,22 +957,25 @@ same shape regardless of source language.
 constraints) feel less native than a from-scratch TS design would.
 Acceptable tradeoff for cross-language consistency.
 
-### ADR-4-2: Verification data is the moat, not the rule set
+### ADR-4-2: Estimated-savings data is the moat, not the rule set
 
-**Status:** Accepted.
+**Status:** Accepted (terminology updated per ADR-4-8; previously
+titled "Verification data is the moat").
 **Context:** Anyone can copy a smell rule. The hard-to-replicate
-asset is the *verified savings impact* across customer runs.
+asset is the *estimated-savings impact* across customer runs (with
+explicit `evidence_kind` calibration; never claimed as "verified"
+unless `evidence_kind=replay_pair` or `production_pair`).
 **Decision:** The Cost Smell Library is open (rules in a public
-repo). The verification corpus is **Cloud-only** — only Inkfoot
-Cloud computes the savings impact, because only Inkfoot Cloud has
-the opt-in corpus.
+repo). The verification corpus (the internal computation mechanism)
+is **Cloud-only** — only Inkfoot Cloud computes the estimated-
+savings impact, because only Inkfoot Cloud has the opt-in corpus.
 **Alternatives considered:**
 - *Closed rule set.* Drives competitors to fork; the moat erodes via
   community contribution to a competitor's library.
 - *Open corpus.* GDPR-impossible; would require customer-by-customer
   data-sharing agreements.
 **Consequences:** Competitors can replicate the rules; replicating
-the verification requires building a multi-tenant Cloud with opt-in
+the estimated-savings computation requires building a multi-tenant Cloud with opt-in
 corpus participation. 18–36 month catch-up.
 
 ### ADR-4-3: Anomaly alerts require sustained-trigger plus baseline volume gate
@@ -1036,7 +1089,7 @@ Governance:
   dashboard.
 - **Right to withdraw.** Tenant can opt out; their previously-
   contributed ledgers are removed from the corpus within 30 days.
-- **k-anonymity floor** applies before any verification number is
+- **k-anonymity floor** applies before any estimated-savings number is
   published.
 
 ### 9.3 Versioning and stability
@@ -1058,7 +1111,7 @@ Governance:
 | **Insights privacy attack.** | Medium | High | Per-post consent; k-anonymity ≥ 5; legal review on the consent policy; opt-out flow tested before first insights post |
 | **Anomaly alert false-positive flood.** | Medium | Medium | ADR-4-3 sustained-trigger + volume gate; per-tenant tuning; published `acted_on/fired` ratio |
 | **Self-serve signup abuse.** | Medium | Low | Email verification; per-IP signup rate limit; auto-delete inactive free workspaces after 90 days; the metadata-only privacy posture limits abuse anyway |
-| **Incumbent ships a Smell Library.** | Medium | Medium | Verification data is the moat; lean on "verified savings %" as the headline metric in marketing |
+| **Incumbent ships a Smell Library.** | Medium | Medium | Estimated-savings data is the moat (per ADR-4-2 + ADR-4-8); lean on "estimated savings backed by `evidence_kind`" as the headline framing — never claim "verified" without paired before/after evidence |
 | **Bedrock reconciliation gap.** | High | Low | Documented as customer-side tagging; surface untagged spend as a known bucket |
 
 ---
@@ -1068,7 +1121,8 @@ Governance:
 - [ ] TypeScript SDK on npm with Pattern A + B parity to Python.
 - [ ] At least two TS framework adapters (Vercel AI SDK + one other).
 - [ ] Cost Smell Library has **≥ 20 community-contributed smells**
-      with verification data.
+      with `estimated_savings` data populated (per ADR-4-8;
+      `evidence_kind` field surfaced on each).
 - [ ] **≥ 15 paying customers** across Pro / Team.
 - [ ] **$20k+ MRR.**
 - [ ] Inkfoot cited in at least one external article or
@@ -1123,6 +1177,23 @@ If growth is strong and enterprises ask: Phase 5 is justified.
 
 - **TS framework #2 choice.** LangChain.js, Mastra, or Vercel-only?
   Design-partner data from Phase 3 drives the pick.
+- **`evidence_kind` upgrade path: `simulation` → `replay_pair`.**
+  ADR-4-8 commits to the three-tier evidence ladder but doesn't
+  design the *mechanism* by which a smell gets promoted from
+  `simulation` to `replay_pair`. The natural fit is the Cost Replay
+  Engine from Phase 3 running over opt-in customer runs at scale —
+  for each candidate promotion, a sample of triggered runs is
+  replayed *with* the recommended fix applied (e.g., a stabilised
+  prompt prefix) and the cost delta becomes the replay-pair evidence.
+  This is **not designed in Phase 4** because (a) the replay-corpus
+  scale needed for statistically meaningful results doesn't exist
+  until Phase 5+, and (b) the consent model for replaying customer
+  runs for *library* benefit is a separate policy decision. Flagged
+  here so it surfaces during Phase 5 planning rather than being
+  rediscovered as a surprise in 18 months. The library UI already
+  exposes `evidence_kind` per smell so customers can filter on it;
+  smells naturally promote one rule at a time as the mechanism
+  lands.
 - **Smell Library license.** Apache 2.0 for the rule definitions
   (matches the rest of the OSS). Confirm pre-launch.
 - **Smell Library governance.** Foundation-style (Apache, OpenJS) or

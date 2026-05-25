@@ -41,7 +41,7 @@ fix the prose.
 | Capability | Phase 0 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | Pattern A SDK shims (Anthropic + OpenAI) | ✅ | — | — | — | — | — |
-| Pattern B + Pattern C framework adapters | — | ✅ | ✅ (+ Pydantic AI, CrewAI) | — | ✅ (TS) | — |
+| Pattern B + Pattern C framework adapters[^adapters] | — | ✅ | ✅ | — | ✅ | — |
 | Causal Token Ledger (13 input cause + output_tokens) | ✅ | — | — | — | — | — |
 | Replay-capture mode (schema lands; opt-in default off) | ✅ | — | — | — | — | — |
 | Local SQLite storage | ✅ | — | — | — | — | — |
@@ -77,6 +77,24 @@ fix the prose.
 | EU region | — | — | — | — | — | ✅ |
 | SOC 2 Type 2 | — | — | — | — | — | ✅ |
 | Postgres RLS | — | — | — | — | — | ✅ |
+
+[^adapters]: The framework-adapter ✅ rows cover three distinct
+delivery slices:
+- **Phase 1 (Python):** LangGraph + OpenAI Agents SDK + Anthropic
+  Agent SDK + raw-SDK Pattern B.
+- **Phase 2 (Python):** adds Pydantic AI + CrewAI adapters and the
+  modification policies (`LazyToolExposure`, `CheapSummariser`) that
+  Pattern C unlocks.
+- **Phase 4 (TypeScript):** mirrors Pattern A + B in TS with Vercel
+  AI SDK + LangChain.js adapters as Pattern C. Wire format is
+  identical to Python's; Cloud ingest can't tell which language
+  produced a batch.
+
+Static analyzer ✅ rows (Python vs TypeScript) are kept on separate
+matrix rows for the same reason; the framework-adapter row is
+collapsed because the Python adapters are continuous across Phase 1
+and Phase 2, and pulling them apart visually would make the matrix
+harder to scan.
 
 **Multi-user / seats / multiple workspaces:** the Phase 3 and Phase
 4 pricing tiers (Pro, Team) operate as **single-user-per-workspace**
