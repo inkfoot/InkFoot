@@ -6,7 +6,9 @@ Covers:
 - ``capture_mode`` defaults to ``'metadata'`` on the events table.
 - Two-tier writes flip ``aggregates_dirty`` atomically.
 - Foreign-key cascade from ``events`` to ``event_contents`` is enforced.
-- The dirty queue + the ``WHERE id=? AND dirty=1`` lost-update guard.
+- The dirty queue + the claim-and-project lost-update guarantee
+  (``claim_clean`` / ``write_totals`` / composite ``update_aggregates``).
+- Cross-thread connection cleanup via ``close()``.
 - ``kill -9`` recovery via a subprocess (WAL durability per ADR-0-5).
 """
 
@@ -15,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -465,9 +468,6 @@ def test_close_is_idempotent_after_cross_thread_close(tmp_path: Path) -> None:
     s.connect()
     s.close()
     s.close()  # second call must not raise
-
-
-import sqlite3  # noqa: E402 — used by the cross-thread close test
 
 
 # ----------------------------------------------------------------------
