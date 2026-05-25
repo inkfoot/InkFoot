@@ -123,4 +123,5 @@ OVERSIZED_TOOL_RESULT_RECYCLED = CostSmell(
         "SELECT tool_result_tokens, sequence FROM events_json "
         "WHERE run_id = :run_id AND kind = 'llm_call'"
     ),
+    primary_category="tool_result_tokens",
 )

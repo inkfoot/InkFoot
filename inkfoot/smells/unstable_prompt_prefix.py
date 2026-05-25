@@ -110,4 +110,5 @@ UNSTABLE_PROMPT_PREFIX = CostSmell(
         "SELECT system_static_tokens, system_dynamic_tokens "
         "FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"
     ),
+    primary_category="system_dynamic_tokens",
 )

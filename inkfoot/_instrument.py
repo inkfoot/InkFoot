@@ -142,6 +142,23 @@ def shutdown() -> None:
     """
     global _INSTRUMENTED, _STORAGE, _WORKER, _CAPTURE_MODE
     with _INSTRUMENT_LOCK:
+        # E5: any active agent_run that didn't exit cleanly (process
+        # exit between start_run and end_run) needs its row flipped
+        # from 'running' to 'error' with error_message='abandoned'.
+        # Done BEFORE we stop the worker so the post-write
+        # aggregator pass picks up the projection.
+        if _STORAGE is not None:
+            try:
+                from inkfoot._run_lifecycle import (  # noqa: PLC0415
+                    _mark_abandoned_runs,
+                )
+
+                _mark_abandoned_runs()
+            except Exception:  # pylint: disable=broad-except
+                _LOG.warning(
+                    "abandoned-run cleanup raised", exc_info=True
+                )
+
         if _WORKER is not None:
             try:
                 _WORKER.stop()

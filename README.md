@@ -12,23 +12,23 @@ savings against real provider invoices.
 
 **Status:** Phase 0 epics **E1** (Project + Storage Foundation),
 **E2** (Causal Token Ledger), **E3** (Pattern A Instrumentation),
-and **E4** (Smell Engine + Recommendations) have landed. The
-package now provides the package skeleton, nanodollar money type,
-SQLite storage with WAL + two-tier write semantics, aggregator
-worker, `inkfoot rebuild-aggregates` CLI, the 14-field Causal Token
+**E4** (Smell Engine + Recommendations), and **E5** (Report CLI +
+Outcome Tagging) have landed. The Phase 0 user-facing surface is
+complete: `inkfoot.instrument()` to monkey-patch the SDKs,
+`@inkfoot.agent_run(task=...)` decorator + context manager for run
+scoping, `inkfoot.set_outcome / tag / tag_retrieval / report_cost`
+for in-run metadata, the rule-based smell engine with five built-in
+cost smells, and the `inkfoot` CLI with `report` (single-run
+attribution bar chart + smells, or aggregate `--last 7d --group-by
+task`), `tag` (late tagging), and `rebuild-aggregates`. Underlying
+that: nanodollar money type, SQLite storage with WAL + two-tier
+writes, claim-and-project aggregator, the 14-field Causal Token
 Ledger, per-provider Anthropic + OpenAI translators with
-stable-prefix detection, the `tiktoken`-based tokeniser layer with
-estimation flags, the pricing module (`estimate_nanodollars` keyed
-by `(provider, model)`), the one-line wedge `inkfoot.instrument()`
-that monkey-patches Anthropic + OpenAI SDK calls with hook-isolation
-guarantees, replay-mode content capture (ADR-0-9), the three Phase
-0 observation policies (`BudgetCap`, `RetryThrottle`,
-`CacheControlPlacer`), and the rule-based smell engine with the
-five Phase 0 cost smells (`unstable-prompt-prefix`,
-`runaway-retry-loop`, `oversized-tool-result-recycled`,
-`expensive-model-low-entropy`, `recurring-cache-writes`).
-Subsequent epics (E5 report CLI, E6 rollout) build on this
-foundation. The architecture spec + roadmap live in a separate
+stable-prefix detection, `tiktoken`-based tokenisers with
+estimation flags, the pricing module, and the three Phase 0
+observation policies (`BudgetCap`, `RetryThrottle`,
+`CacheControlPlacer`). Only **E6** (internal rollout + validation
+harness) remains. The architecture spec + roadmap live in a separate
 documentation repository (see project owner).
 
 ## Quickstart (development)
@@ -101,11 +101,14 @@ inkfoot/                                    # the Python package
     sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
     migrations.py                           # forward-only DDL (v1 = §5.5 + §5.5.1)
     aggregator.py                           # claim-and-project AggregatorWorker
+  _run_lifecycle.py                         # E5: @agent_run + set_outcome/tag/tag_retrieval/report_cost
   cli/
-    main.py                                 # `inkfoot` entry point
+    main.py                                 # `inkfoot` entry point (report / rebuild-aggregates / tag)
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
+    report.py                               # `inkfoot report` — bar chart + smells (renderer is pure)
+    tag.py                                  # `inkfoot tag <run-id> <key> <value>` — late tagging
 tests/
-  unit/                                     # 321 unit tests (E1 + E2 + E3 + E4)
+  unit/                                     # 373 unit tests (E1 + E2 + E3 + E4 + E5)
   benchmarks/                               # `pytest-benchmark` hot-path budgets (storage + aggregator + shim)
 .github/workflows/ci.yml                    # unit + benchmark on every PR
 ```

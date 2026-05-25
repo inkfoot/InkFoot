@@ -97,4 +97,5 @@ RECURRING_CACHE_WRITES = CostSmell(
         "SELECT cache_creation_tokens, sequence FROM events_json "
         "WHERE run_id = :run_id AND kind = 'llm_call'"
     ),
+    primary_category="cache_creation_tokens",
 )
