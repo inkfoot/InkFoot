@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inkfoot"
+description = "Causal token economics layer for LLM agents."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Inkfoot maintainers" }]
+keywords = ["llm", "agents", "cost", "tokens", "observability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dynamic = ["version"]
+dependencies = [
+    "python-ulid>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-benchmark>=4",
+]
+
+[project.scripts]
+inkfoot = "inkfoot.cli.main:main"
+
+[project.urls]
+Homepage = "https://inkfoot.dev"
+Source = "https://github.com/anirbanbhat/InkFoot"
+Issues = "https://github.com/anirbanbhat/InkFoot/issues"
+
+[tool.setuptools.packages.find]
+include = ["inkfoot*"]
+exclude = ["tests*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "inkfoot._version.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live_anthropic: tests that hit a real Anthropic endpoint (skipped without API key)",
+    "live_openai: tests that hit a real OpenAI endpoint (skipped without API key)",
+    "slow: tests that take more than a few seconds",
+]
