@@ -11,20 +11,24 @@ and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
 **Status:** Phase 0 epics **E1** (Project + Storage Foundation),
-**E2** (Causal Token Ledger), and **E3** (Pattern A Instrumentation)
-have landed. The package now provides the package skeleton,
-nanodollar money type, SQLite storage with WAL + two-tier write
-semantics, aggregator worker, `inkfoot rebuild-aggregates` CLI, the
-14-field Causal Token Ledger, per-provider Anthropic + OpenAI
-translators with stable-prefix detection, the `tiktoken`-based
-tokeniser layer with estimation flags, the pricing module
-(`estimate_nanodollars` keyed by `(provider, model)`), and the
-one-line wedge `inkfoot.instrument()` that monkey-patches Anthropic
-+ OpenAI SDK calls with hook-isolation guarantees, replay-mode
-content capture (ADR-0-9), and the three Phase 0 observation
-policies (`BudgetCap`, `RetryThrottle`, `CacheControlPlacer`).
-Subsequent epics (E4 smells, E5 report CLI, E6 rollout) build on
-this foundation. The architecture spec + roadmap live in a separate
+**E2** (Causal Token Ledger), **E3** (Pattern A Instrumentation),
+and **E4** (Smell Engine + Recommendations) have landed. The
+package now provides the package skeleton, nanodollar money type,
+SQLite storage with WAL + two-tier write semantics, aggregator
+worker, `inkfoot rebuild-aggregates` CLI, the 14-field Causal Token
+Ledger, per-provider Anthropic + OpenAI translators with
+stable-prefix detection, the `tiktoken`-based tokeniser layer with
+estimation flags, the pricing module (`estimate_nanodollars` keyed
+by `(provider, model)`), the one-line wedge `inkfoot.instrument()`
+that monkey-patches Anthropic + OpenAI SDK calls with hook-isolation
+guarantees, replay-mode content capture (ADR-0-9), the three Phase
+0 observation policies (`BudgetCap`, `RetryThrottle`,
+`CacheControlPlacer`), and the rule-based smell engine with the
+five Phase 0 cost smells (`unstable-prompt-prefix`,
+`runaway-retry-loop`, `oversized-tool-result-recycled`,
+`expensive-model-low-entropy`, `recurring-cache-writes`).
+Subsequent epics (E5 report CLI, E6 rollout) build on this
+foundation. The architecture spec + roadmap live in a separate
 documentation repository (see project owner).
 
 ## Quickstart (development)
@@ -83,6 +87,15 @@ inkfoot/                                    # the Python package
     _emit.py                                # shared event-emit pipeline
     anthropic.py                            # AnthropicShim (sync + async)
     openai.py                               # OpenAIShim (sync + async)
+  smells/
+    __init__.py                             # CostSmell + DetectionResult + DEFAULT_SMELLS + registry
+    engine.py                               # SmellEngine (lazy, off the hot path)
+    _helpers.py                             # event-payload parsing + pricing lookups
+    unstable_prompt_prefix.py               # 5 Phase 0 smells, one per file
+    runaway_retry_loop.py
+    oversized_tool_result_recycled.py
+    expensive_model_low_entropy.py
+    recurring_cache_writes.py
   storage/
     __init__.py                             # Storage Protocol (lazy SQLiteStorage)
     sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
@@ -92,7 +105,7 @@ inkfoot/                                    # the Python package
     main.py                                 # `inkfoot` entry point
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
 tests/
-  unit/                                     # 260 unit tests (E1 + E2 + E3)
+  unit/                                     # 321 unit tests (E1 + E2 + E3 + E4)
   benchmarks/                               # `pytest-benchmark` hot-path budgets (storage + aggregator + shim)
 .github/workflows/ci.yml                    # unit + benchmark on every PR
 ```
