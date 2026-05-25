@@ -17,7 +17,7 @@ architecture for shared design.
 
 | Phase | Theme | Architecture | Development Epics | Weeks |
 |---|---|---|---|---|
-| **0** | Classify *(E1 in progress)* | [phase-0-classify.md](phase0/phase-0-classify.md) | [Phase 0 epics](phase0/inkfoot_phase0_development_epics.md) | 0–8 |
+| **0** | Classify *(E1 + E2 shipped)* | [phase-0-classify.md](phase0/phase-0-classify.md) | [Phase 0 epics](phase0/inkfoot_phase0_development_epics.md) | 0–8 |
 | **1** | Explain | [phase-1-explain.md](phase1/phase-1-explain.md) | [Phase 1 epics](phase1/inkfoot_phase1_development_epics.md) | 8–20 |
 | **2** | Enforce | [phase-2-enforce.md](phase2/phase-2-enforce.md) | [Phase 2 epics](phase2/inkfoot_phase2_development_epics.md) | 20–32 |
 | **3** | Prove | [phase-3-prove.md](phase3/phase-3-prove.md) | [Phase 3 epics](phase3/inkfoot_phase3_development_epics.md) | 32–48 |

@@ -217,6 +217,15 @@ installed via the `inkfoot` entry point. Code:
 
 ## E2: Causal Token Ledger
 
+**Status:** ✅ shipped — see branch
+`anirban/CL-E2-causal-token-ledger`. 96 new unit tests (189 total
+incl. E1); both perf benchmarks still green. Code:
+`inkfoot/ledger.py`, `inkfoot/normalise/`, `inkfoot/tokenisers.py`,
+`inkfoot/pricing.py`, `inkfoot/run.py`. `tiktoken` added as a
+runtime dep; `anthropic` remains an optional soft dep (probed at
+runtime; estimation flag surfaces when the SDK tokeniser isn't
+available).
+
 **Goal:** Implement the 14-field ledger (13 input-side cause categories + `output_tokens`), the per-provider attribution recipes for Anthropic and OpenAI, the tokeniser layer with estimation flags, and the `NeutralCall` / `Run` payloads. This epic is the load-bearing diagnostic surface of the entire product.
 
 **Total Story Points:** 15
