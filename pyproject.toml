@@ -39,8 +39,8 @@ inkfoot = "inkfoot.cli.main:main"
 
 [project.urls]
 Homepage = "https://inkfoot.dev"
-Source = "https://github.com/anirbanbhat/InkFoot"
-Issues = "https://github.com/anirbanbhat/InkFoot/issues"
+Source = "https://github.com/inkfoot/InkFoot"
+Issues = "https://github.com/inkfoot/InkFoot/issues"
 
 [tool.setuptools.packages.find]
 include = ["inkfoot*"]

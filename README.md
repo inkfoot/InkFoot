@@ -32,7 +32,7 @@ documentation repository (see project owner).
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/anirbanbhat/InkFoot.git
+git clone https://github.com/inkfoot/InkFoot.git
 cd InkFoot
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
