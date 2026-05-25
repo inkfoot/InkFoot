@@ -143,13 +143,10 @@ def dict_to_neutral_call(payload: dict[str, Any]) -> NeutralCall:
             "dict_to_neutral_call: 'error' must be dict, NeutralError, or None"
         )
 
-    cache_status = payload.get("cache_status", "n/a")
-    if cache_status not in _VALID_CACHE_STATUSES:
-        raise ValueError(
-            f"dict_to_neutral_call: invalid cache_status {cache_status!r}; "
-            f"expected one of {sorted(_VALID_CACHE_STATUSES)}"
-        )
-
+    # cache_status validation lives on NeutralCall.__post_init__ so
+    # both the deserialiser and any translator constructing a
+    # NeutralCall directly hit the same contract. We don't pre-check
+    # here.
     return NeutralCall(
         provider=payload["provider"],
         model=payload["model"],
@@ -160,7 +157,7 @@ def dict_to_neutral_call(payload: dict[str, Any]) -> NeutralCall:
         tools_offered=tuple(payload.get("tools_offered") or ()),
         tools_called=tuple(payload.get("tools_called") or ()),
         error=error,
-        cache_status=cache_status,
+        cache_status=payload.get("cache_status", "n/a"),
         parent_run_id=payload.get("parent_run_id"),
         sequence=payload.get("sequence", 0),
         estimation_flags=tuple(payload.get("estimation_flags") or ()),

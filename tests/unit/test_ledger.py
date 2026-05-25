@@ -2,14 +2,16 @@
 
 Covers:
 - 14-field defaults are all zero.
-- ``input_total`` sums the 13 input-side categories (excludes
-  ``output_tokens``).
+- ``input_total`` sums the 11 structural cause categories (excludes
+  the two cache billing overlays and ``output_tokens``).
 - ``output_total`` equals ``output_tokens``.
-- ``validate_against_usage`` accepts ±2% and rejects 5%; the output
-  check is exact.
+- ``validate_against_usage`` accepts strictly under 2% and rejects
+  2% / 5% (per the spec's ``< 0.02`` wording); the output check is
+  exact.
+- ``CACHE_CATEGORIES`` is disjoint from ``INPUT_CATEGORIES``.
 - Frozen dataclass — assignment raises ``FrozenInstanceError``.
 - Edge cases: zero raw input, negative inputs rejected, tolerance
-  parameter respected, non-string nasties (NaN tolerance, etc.).
+  parameter respected, custom tolerance honoured.
 """
 
 from __future__ import annotations
