@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 1 go-signal.
 **Weeks:** 20–32 (12 weeks).
 **Companion docs:**
-- [Roadmap §4](../roadmap-inkfoot.md#4-phase-2--enforce-weeks-2032)
-- [Architecture §4.5, §4.6, §4.7](../architecture-inkfoot.md)
-- [Phase 1 detailed design](phase-1-explain.md) — the framework
+- [Roadmap §4](../../roadmap-inkfoot.md#4-phase-2--enforce-weeks-2032)
+- [Architecture §4.5, §4.6, §4.7](../../architecture-inkfoot.md)
+- [Phase 1 detailed design](../phase1/phase-1-explain.md) — the framework
   adapter foundation Phase 2 builds on.
 
 ---

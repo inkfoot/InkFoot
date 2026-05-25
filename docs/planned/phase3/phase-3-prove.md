@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 2 go-signal.
 **Weeks:** 32–48 (16 weeks).
 **Companion docs:**
-- [Roadmap §5](../roadmap-inkfoot.md#5-phase-3--prove-weeks-3248)
-- [Architecture §4.9, §4.10, §4.13–§4.15](../architecture-inkfoot.md)
-- [Phase 2 detailed design](phase-2-enforce.md) — the OSS foundation
+- [Roadmap §5](../../roadmap-inkfoot.md#5-phase-3--prove-weeks-3248)
+- [Architecture §4.9, §4.10, §4.13–§4.15](../../architecture-inkfoot.md)
+- [Phase 2 detailed design](../phase2/phase-2-enforce.md) — the OSS foundation
   Cloud builds on.
 
 ---

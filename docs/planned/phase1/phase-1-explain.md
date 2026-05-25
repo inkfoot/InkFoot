@@ -4,9 +4,9 @@
 **Status:** approved scope; entered only after Phase 0 go-signal.
 **Weeks:** 8–20 (12 weeks).
 **Companion docs:**
-- [Roadmap §3](../roadmap-inkfoot.md#3-phase-1--explain-weeks-820)
-- [Architecture §4.1, §4.4, §4.8, §4.11, §4.12](../architecture-inkfoot.md)
-- [Phase 0 detailed design](phase-0-classify.md) — the foundation
+- [Roadmap §3](../../roadmap-inkfoot.md#3-phase-1--explain-weeks-820)
+- [Architecture §4.1, §4.4, §4.8, §4.11, §4.12](../../architecture-inkfoot.md)
+- [Phase 0 detailed design](../phase0/phase-0-classify.md) — the foundation
   this phase extends.
 
 ---
@@ -519,7 +519,7 @@ Phase 0 had the smell engine but rendered hits only when explicitly
 asked (`--show-smells`). Phase 1 promotes inline rendering: every
 `inkfoot report --run <id>` invocation evaluates and displays
 detected smells right under the attribution bar chart, as the sample
-in [Phase 0 §5.10](phase-0-classify.md#510-inkfoot-report-rendering-pipeline)
+in [Phase 0 §5.10](../phase0/phase-0-classify.md#510-inkfoot-report-rendering-pipeline)
 shows.
 
 Aggregate-level smell detection (`SmellEngine.evaluate_aggregate`)

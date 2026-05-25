@@ -18,20 +18,34 @@ savings against real provider invoices.
 
 ```
 docs/
-  architecture-inkfoot.md           # full technical design
-  roadmap-inkfoot.md                # phased delivery roadmap
-  phases/                           # per-phase implementation specs
-    README.md                       # index of phase docs
-    phase-0-classify.md
-    phase-1-explain.md
-    phase-2-enforce.md
-    phase-3-prove.md
-    phase-4-compound.md
-    phase-5-enterprise.md
+  architecture-inkfoot.md                   # full technical design
+  roadmap-inkfoot.md                        # phased delivery roadmap
+  planned/                                  # phases not yet released
+    README.md                               # phase index + capability matrix
+    phase0/
+      phase-0-classify.md                   # phase architecture
+      inkfoot_phase0_development_epics.md   # epic + story breakdown
+    phase1/
+      phase-1-explain.md
+      inkfoot_phase1_development_epics.md
+    phase2/
+      phase-2-enforce.md
+      inkfoot_phase2_development_epics.md
+    phase3/
+      phase-3-prove.md
+      inkfoot_phase3_development_epics.md
+    phase4/
+      phase-4-compound.md
+      inkfoot_phase4_development_epics.md
+    phase5/
+      phase-5-enterprise.md
+      inkfoot_phase5_development_epics.md
+  released/                                 # phases that have shipped (empty)
 ```
 
-Epics under each phase will be drafted as separate documents once each
-phase is approved for execution.
+When a phase ships, its `phaseN/` folder moves from `docs/planned/`
+to `docs/released/`, preserving the architecture + epic docs as the
+historical record.
 
 ## License
 
