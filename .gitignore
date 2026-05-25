@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg
+build/
+dist/
+.tox/
+.venv/
+venv/
+env/
+.python-version
+
+# Node / TypeScript (Phase 4)
+node_modules/
+.npm
+.pnpm-store/
+*.tsbuildinfo
+
+# Local Inkfoot data
+.inkfoot/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Build artefacts
+*.log
+*.tmp
+
+# Docs build
+docs/_build/
+site/
