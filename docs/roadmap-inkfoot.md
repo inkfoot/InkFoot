@@ -328,20 +328,23 @@ reconciliation**. We have at least one paying customer by phase end.
 | Tier | Price | Limits |
 |---|---|---|
 | Free | $0 | 10k events/mo, 7-day retention, 1 workspace |
-| Pro | $39/mo | 250k events/mo, 30-day retention, 3 workspaces, alerts, **invoice reconciliation** |
-| Team | $249/mo | 2.5M events/mo, 90-day retention, unlimited workspaces, 5 seats, **Cost Replay Engine**, **static analyzer in CI** |
-| Enterprise | Contact | Custom volume, custom retention, SSO, self-host option |
+| Pro | $39/mo | 250k events/mo, 30-day retention, alerts |
+| Team | $249/mo | 2.5M events/mo, 90-day retention, **Cost Replay Engine**, **static analyzer in CI**, **invoice reconciliation** |
+| Enterprise | Contact | Custom volume, custom retention, SSO, multi-user, self-host option |
 
 Pricing is the *most-iterated thing in Phase 3*. The numbers above
 are strawman; design-partner conversations set the real ones.
 
-**Note on tiering:** the Pro → Team upgrade is anchored on invoice
-reconciliation (Pro: see your spend; Team: reconcile against your
-provider invoice). This is the finance-conversation hook. Cost
-Replay Engine sits at the Team tier because it has real
-infrastructure costs (we make LLM calls during replay) and because
-it's the strongest "wow" feature — keeping it premium maintains the
-upgrade incentive.
+**Note on tiering:** the Pro → Team upgrade is anchored on **invoice
+reconciliation + Cost Replay + static analyzer**. Pro is "see your
+spend with attribution + alerts"; Team is "reconcile against your
+provider invoice, replay past runs under different policies, and
+gate CI on the lint." Cost Replay Engine sits at the Team tier
+because it has real infrastructure costs and is the strongest "wow"
+feature. Seats and multi-workspace are **Enterprise-tier** features
+because they require the IAM stack that ships in Phase 5 — until
+then, Phase 3 / Phase 4 are single-user-per-workspace at every tier
+(see Phase 3 §4.8 for the auth/packaging reconciliation).
 
 ### Definition of done
 

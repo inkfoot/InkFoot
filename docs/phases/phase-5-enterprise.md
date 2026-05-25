@@ -254,6 +254,27 @@ Existing API keys continue to work; they're now formally identities
 of the workspace owner. Adding more users, RBAC, and SSO are
 additive.
 
+#### 4.1.2 Migration from Phase-4 self-serve signups
+
+Phase 4 introduced self-serve signup (see `phase-4-compound.md`
+§4.7) — an email-verified path that creates a tenant without a sales
+conversation. This added a *second* user-creation path on top of
+Phase 3's API-key model. Both must consolidate into Phase 5's IAM
+schema. The migration handles them together:
+
+| Phase-3/4 artefact | Phase-5 IAM equivalent |
+|---|---|
+| Phase 3 `api_keys.<row>` | `identities` row with `kind='api_key'`, attached to the workspace owner's `users` row |
+| Phase 4 self-serve email-verified user | `users` row with `email_verified=true` and an `identities` row of `kind='password'`; `memberships` row to their workspace as `owner` |
+| Phase 3 workspace | `tenants` row; the workspace's existing owner becomes the sole `owner` membership |
+| Phase 4 workspace | same — `tenants` row + owner membership |
+
+The migration runs once per Cloud database; idempotent if re-run.
+Self-serve users keep their existing password (already
+argon2-hashed in the Phase 4 schema); no forced password reset. The
+migration emits an audit-log row per migrated user so the audit
+trail starts at Phase-5 day one with the correct provenance.
+
 ### 4.2 SSO — OIDC flow
 
 ```mermaid
@@ -292,7 +313,8 @@ sequenceDiagram
   Cloud-->>Browser: Set-Cookie session and redirect to return url
 ```
 
-Identity-linking rules (mirrors Sleuth's IAM ADR-003): auto-link
+Identity-linking rules (same pattern as the standard "verified-email
+auto-link" used by mature IAM systems): auto-link
 only when the IdP returns `email_verified=true` and the verified
 email matches an existing user. Otherwise, the flow either creates a
 new user (allowed) or refuses to link (the user must log in with
@@ -990,6 +1012,7 @@ established). Phase 5 hardens it:
 | **Self-hosted code diverges from managed** | Medium | High | Same codebase; flag-gated; CI tests both deploy shapes; quarterly internal self-host install drill |
 | **SSO integration edge cases** | High | Medium | Start with Google (cleanest); validate Azure Entra + Okta against real customer IdP before broader launch |
 | **EU operational complexity** | Medium | Medium | EU is fully independent (no cross-region traffic); customer picks at creation; no migration path between regions |
+| **No cross-region migration path** (accepted constraint, not a bug) | High | Medium | A US-region customer wanting to move to EU must create a new EU workspace and re-instrument; documented publicly; procurement asks this question and gets the same honest answer every time. Revisit only if a Fortune-500 deal hinges on it. |
 | **Pricing power vs procurement negotiation** | High | Medium | Tie Enterprise pricing to invoice-reconciled savings; the customer's CFO sees the savings |
 | **HIPAA scope creep** | Medium | High | Privacy posture (metadata only) makes BAA scope narrow; refuse PHI-bearing feature requests |
 | **License-key theft** | Low | Medium | Annual licenses; renewal-based rotation; one year worst-case loss |

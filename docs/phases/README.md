@@ -30,6 +30,61 @@ an epic breakdown writes itself from each.
 | **4** | Compound | [phase-4-compound.md](phase-4-compound.md) | §6 | 48–64 |
 | **5** | Enterprise | [phase-5-enterprise.md](phase-5-enterprise.md) | §7 | 64+ |
 
+## Capability matrix — the authoritative phase placement
+
+This table is the source of truth when phase docs disagree. Reviewers
+caught a few drift points (outcome tracking, threshold alerting,
+invoice reconciliation, modification policies). When the body text
+of any phase doc conflicts with this table, **the table wins**;
+fix the prose.
+
+| Capability | Phase 0 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Pattern A SDK shims (Anthropic + OpenAI) | ✅ | — | — | — | — | — |
+| Pattern B + Pattern C framework adapters | — | ✅ | ✅ (+ Pydantic AI, CrewAI) | — | ✅ (TS) | — |
+| Causal Token Ledger (13 input cause + output_tokens) | ✅ | — | — | — | — | — |
+| Replay-capture mode (schema lands; opt-in default off) | ✅ | — | — | — | — | — |
+| Local SQLite storage | ✅ | — | — | — | — | — |
+| Postgres storage backend | — | — | ✅ | — | — | — |
+| 5 built-in cost smells | ✅ | — | — | — | — | — |
+| +5 smells (10 total) | — | — | ✅ | — | — | — |
+| Outcome tagging (`set_outcome`) — capture | ✅ | — | — | — | — | — |
+| Cost-per-success — headline reporting | — | — | ✅ | — | — | — |
+| Observation policies (BudgetCap, RetryThrottle, CacheControlPlacer) | ✅ | — | — | — | — | — |
+| Modification policies (LazyToolExposure, CheapSummariser) | — | — | ✅ | — | — | — |
+| `inkfoot benchmark` + `inkfoot diff` + GitHub Action | — | ✅ | — | — | — | — |
+| Token Contracts (runtime + `contract check` CI) | — | — | ✅ | — | — | — |
+| Contract outcome clauses — runtime advisory | — | — | ✅ (advisory) | — | — | — |
+| OTel ingest + export | — | ✅ | — | — | — | — |
+| Provider expansion (Gemini, Bedrock, OpenAI-compat) | — | — | ✅ | — | — | — |
+| Cloud ingestion + Postgres + workers | — | — | — | ✅ | — | — |
+| Cost Replay Engine | — | — | — | ✅ | — | — |
+| Static analyzer `inkfoot lint` (Python) | — | — | — | ✅ | — | — |
+| Static analyzer `inkfoot lint` (TypeScript) | — | — | — | — | ✅ | — |
+| Invoice reconciliation (Anthropic + OpenAI) | — | — | — | ✅ | — | — |
+| Invoice reconciliation (Bedrock + Gemini) | — | — | — | — | ✅ | — |
+| FOCUS-spec export | — | — | — | ✅ | — | — |
+| **Threshold alerts** (Slack/PagerDuty/email delivery) | — | — | — | ✅ (email only) | ✅ (+ Slack, PagerDuty) | — |
+| **Anomaly alerts** (3σ baseline) | — | — | — | — | ✅ | — |
+| TypeScript SDK | — | — | — | — | ✅ | — |
+| Cost Smell Library (community-contributed, estimated savings) | — | — | — | — | ✅ | — |
+| Self-serve signup | — | — | — | — | ✅ | — |
+| Full IAM (tenants, memberships, identities, sessions) | — | — | — | — | — | ✅ |
+| SSO (OIDC + SAML) | — | — | — | — | — | ✅ |
+| RBAC enforcement (Owner/Admin/Member/Viewer) | — | — | — | — | — | ✅ |
+| Audit log (compliance-grade, ≥ 1 year retention) | — | — | — | — | — | ✅ |
+| Self-hosted Cloud distribution | — | — | — | — | — | ✅ |
+| EU region | — | — | — | — | — | ✅ |
+| SOC 2 Type 2 | — | — | — | — | — | ✅ |
+| Postgres RLS | — | — | — | — | — | ✅ |
+
+**Multi-user / seats / multiple workspaces:** the Phase 3 and Phase
+4 pricing tiers (Pro, Team) operate as **single-user-per-workspace**
+at every Cloud tier. Multi-user, seats, and multiple workspaces per
+organisation are **Enterprise-tier features that ship with the
+Phase 5 IAM stack**, not Phase 3/4. Phase 3's pricing table reflects
+this; the roadmap was corrected to match.
+
 ## Dependency graph
 
 ```mermaid
@@ -84,12 +139,15 @@ across phases doesn't collide:
 
 | Phase | Suggested epic prefix | Example |
 |---|---|---|
-| Phase 0 — Classify | `CL` | `CL1` Causal Token Ledger, `CL2` Smell engine |
-| Phase 1 — Explain | `EX` | `EX1` LangGraph adapter, `EX5` `inkfoot diff` |
-| Phase 2 — Enforce | `EN` | `EN1` Token Contract YAML, `EN3` `CheapSummariser` |
+| Phase 0 — Classify | `CL` | `CL3` Causal Token Ledger, `CL7` Smell engine |
+| Phase 1 — Explain | `EX` | `EX1` LangGraph adapter, `EX6` `inkfoot diff` |
+| Phase 2 — Enforce | `EN` | `EN1` Token Contract YAML, `EN6` `CheapSummariser` |
 | Phase 3 — Prove | `PR` | `PR1` Cloud ingestion, `PR4` Replay Engine |
-| Phase 4 — Compound | `CO` | `CO1` TypeScript port, `CO3` Smell Library |
-| Phase 5 — Enterprise | `EE` | `EE1` SSO, `EE3` Self-hosted Cloud |
+| Phase 4 — Compound | `CO` | `CO1` TypeScript port, `CO5` Smell Library |
+| Phase 5 — Enterprise | `EE` | `EE2` OIDC SSO, `EE6` Self-hosted Cloud |
+
+Examples reference the actual epic IDs from each phase doc's
+"Suggested epic breakdown" section.
 
 Pick the prefix when starting the phase's epic breakdown; document the
 final choice in the phase doc.

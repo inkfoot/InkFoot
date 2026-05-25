@@ -339,19 +339,39 @@ recommendation: |
 
 suggested_policy: CacheControlPlacer
 
-verification:
+estimated_savings:
   corpus_runs: 8412
   triggered_in: 1240
-  applying_recommendation_saved_avg_percent: 18.7
-  saved_avg_nanodollars_per_run: 4_300_000
-  confidence: high
-  last_verified: 2026-09-15
+  estimated_potential_saved_avg_percent: 18.7
+  estimated_potential_saved_nanodollars_per_run: 4_300_000
+  evidence_kind: simulation     # see §4.2.2.1
+  confidence: medium
+  last_computed: 2026-09-15
 ```
 
-`verification` is the load-bearing differentiator. Each smell is
-**re-verified** monthly against the latest opt-in customer corpus.
-The Cloud verification worker recomputes the savings impact and
-updates the smell file in the library repo via an automated PR.
+**Naming honesty — read this carefully.** Earlier drafts called this
+field `verification` and the per-smell numbers "verified savings." A
+review pointed out (correctly) that Phase 4's corpus only stores
+anonymised ledger shapes and *simulates* the recommendation against
+them — it doesn't actually run before/after pairs. Calling that
+"verified" overclaims the evidence. The accurate framing for
+Phase 4 is **estimated potential savings**: the per-smell number
+represents what the savings *would be* if the smell's recommendation
+were applied and the agent's behaviour didn't otherwise change.
+
+`evidence_kind` is the load-bearing field:
+
+| Value | Meaning | Phase that produces it |
+|---|---|---|
+| `simulation` | Anonymised ledger shapes + heuristic recomputation of the corrected ledger. The default for Phase 4. | Phase 4 verification worker |
+| `replay_pair` | Real Cost Replay runs producing before/after measurements on the same input. Stronger evidence. | Phase 5+ (requires the replay engine on opted-in customer runs at scale) |
+| `production_pair` | Customer-provided before/after production runs (manual contribution). Strongest evidence. | Community-contributed, manually verified |
+
+The library distinguishes the three in the per-smell UI; customers
+see whether a smell's number is `simulation`, `replay_pair`, or
+`production_pair` and can filter accordingly. This is the
+follow-through on the reviewer's point: we don't pretend simulation
+is verification.
 
 #### 4.2.2 Verification corpus
 
@@ -389,12 +409,25 @@ sequenceDiagram
 - Aggregation at the **ledger shape** level — the 13 category
   fractions + the run metadata (model, task name optional, agent
   kind).
-- k-anonymity floor: a verification number is published only when
-  ≥ 50 distinct tenants have contributed ledger shapes matching the
-  smell.
+- k-anonymity floor: an estimated-savings number is published only
+  when **≥ 20 distinct contributing tenants** have ledger shapes
+  matching the smell.
+
+**The k-anonymity floor and Phase 4 timing.** Earlier drafts set the
+floor at ≥ 50 distinct tenants. Phase 4's DoD requires ≥ 15 paying
+customers; combined with opted-in OSS users, ≥ 50 is plausible by
+late Phase 4 but not guaranteed at launch. We lower the floor to
+**≥ 20 distinct contributing tenants** (still preserving meaningful
+k-anonymity at the small-scale end) so the library has publishable
+numbers at Phase 4 launch rather than waiting for late-phase or
+Phase 5. Smells with fewer than 20 contributing tenants show
+`evidence_kind: simulation` with `confidence: low` and no aggregate
+saving number; the per-tenant detail is never exposed.
+
+ADR-4-8 (added below) records this floor.
 
 This is the moat. Anyone can copy a smell rule; nobody else has the
-ledger corpus to verify the savings.
+ledger corpus to estimate the savings impact at scale.
 
 #### 4.2.3 Distribution
 
@@ -494,7 +527,11 @@ Controls:
 2. **3σ threshold** — conservative; tighten to 2σ only per-tenant
    opt-in.
 3. **Task volume gate** — don't alert on tasks with < 50 runs in
-   the baseline window. Statistically unreliable.
+   the baseline window. Statistically unreliable. **Tasks below
+   this threshold use Phase 3's threshold-based alerts only**;
+   anomaly evaluation skips them entirely and the dashboard
+   surfaces "Anomaly alerts on this task will activate once 50
+   baseline runs accumulate."
 4. **Sustained-trigger requirement** — current p95 must exceed the
    threshold for 2 consecutive 5-minute windows before firing.
 5. **Manual suppression UI** — when an alert is dismissed as
@@ -946,6 +983,30 @@ configs.
 pipeline drives adoption.
 **Consequences:** Two surfaces to maintain. Rule logic shared; only
 the entry points differ.
+
+### ADR-4-8: Estimated potential savings, not verified savings
+
+**Status:** Accepted.
+**Context:** Reviewers flagged that calling the Smell Library's
+per-smell savings numbers "verified" overclaims the evidence —
+Phase 4's verification corpus stores only anonymised ledger shapes
+and simulates the recommendation, not actually running before/after
+pairs.
+**Decision:** Phase 4 ships the field as `estimated_savings` (was
+`verification`), with an `evidence_kind` enum recording how the
+number was produced: `simulation` (Phase 4 default), `replay_pair`
+(Phase 5+ once replay is widespread), `production_pair`
+(community-contributed, manually verified). Smells with fewer than
+20 contributing tenants don't publish a savings number.
+**Alternatives considered:**
+- *Keep the "verified" label.* Defensible only with paired
+  before/after runs, which Phase 4 doesn't have.
+- *Don't publish any number until Phase 5.* Loses the moat at the
+  exact moment we're trying to build it.
+**Consequences:** The library UI surfaces `evidence_kind` per
+smell; customers see what kind of evidence supports each number.
+Smells can be promoted from `simulation` → `replay_pair` over time
+as the corpus matures.
 
 ---
 

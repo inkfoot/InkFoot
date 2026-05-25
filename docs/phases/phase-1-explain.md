@@ -257,7 +257,7 @@ with `inkfoot.*` attributes carrying the Causal Token Ledger.
 |---|---|
 | `gen_ai.system` | `NeutralCall.provider` |
 | `gen_ai.request.model` | `NeutralCall.model` |
-| `gen_ai.usage.input_tokens` | `ledger.user_input + system_static + system_dynamic + tool_schema + tool_result + retrieved_context + memory + cache_creation_input + cache_read_input` |
+| `gen_ai.usage.input_tokens` | Sum of the 13 input-side ledger categories: `system_static_tokens + system_dynamic_tokens + user_input_tokens + tool_schema_tokens + tool_result_tokens + retrieved_context_tokens + memory_tokens + retry_overhead_tokens + summariser_tokens + reasoning_tokens + guardrail_tokens + cache_creation_tokens + cache_read_tokens` (all `*_tokens` per the Phase-0 ledger). |
 | `gen_ai.usage.output_tokens` | `ledger.output_tokens` |
 | `gen_ai.response.id` | event id |
 | `gen_ai.operation.name` | `chat` / `completion` / `tool_use` |

@@ -382,10 +382,24 @@ Every `NeutralCall` carries `estimation_flags: list[str]` listing
 which ledger fields were estimated. `inkfoot report` surfaces this
 prominently so the reader knows what's exact vs approximate.
 
-**Validation invariant:** the sum of the 13 categories should equal
-`usage.input_tokens + usage.output_tokens ± 2%` (a small slop for
-tokeniser disagreement at the boundary). Phase 0 includes a CI test
-asserting this against a corpus of fixtures.
+**Categories vs total — read this carefully.** The ledger has **14
+fields** total: 13 *input-side cause* categories that account for
+billed *input* tokens, plus `output_tokens` which is the model's
+emitted output billed separately. We say "13 causal categories"
+throughout the docs to refer to the *input attribution* — the
+diagnostic surface ("which 42% of cost is fixable?"). The
+`output_tokens` field is billed and tracked but is not a cause
+category — you don't "fix" output, you measure it.
+
+**Validation invariant (revised):**
+
+- Sum of the 13 input-side categories ≈ `usage.input_tokens ± 2%`
+  (small slop for tokeniser disagreement at the boundary).
+- `ledger.output_tokens` ≈ `usage.output_tokens` exactly (no
+  estimation involved — read from the response).
+
+Phase 0 includes a CI test asserting both against a corpus of
+fixtures.
 
 ### 5.4 `NeutralCall` and `Run` — the event payloads
 
@@ -395,18 +409,28 @@ classDiagram
     +id: ULID
     +task: str
     +agent_kind: str
+    +parent_run_id: str_or_None
+    +run_kind: root_or_fork_or_replay_or_drilldown
+    +divergence_flag: bool_or_None
     +started_at: datetime
-    +ended_at: datetime|None
-    +status: "running"|"complete"|"error"
-    +outcome: "success"|"failure"|"human_escalated"|None
-    +quality_score: float|None
+    +ended_at: datetime_or_None
+    +status: running_or_complete_or_error
+    +outcome: success_or_failure_or_human_escalated_or_None
+    +quality_score: float_or_None
     +total_input_tokens: int
     +total_output_tokens: int
+    +total_cache_read_tokens: int
+    +total_cache_creation_tokens: int
     +total_nanodollars: int
     +aggregates_dirty: bool
     +metadata: dict
-    +stable_system_prefix: str
   }
+  class InMemoryRunState {
+    +stable_system_prefix: str
+    +recent_calls: list
+    +retry_counts: dict
+  }
+  Run "1" --o "1" InMemoryRunState : tracks during execution
 
   class NeutralCall {
     +provider: str
@@ -459,6 +483,9 @@ erDiagram
     text id PK "ULID"
     text task
     text agent_kind
+    text parent_run_id FK "nullable; points at runs.id"
+    text run_kind "root|fork|replay|drilldown; default 'root'"
+    integer divergence_flag "0|1|null; set by Phase-3 replay"
     integer started_at "Unix epoch ms"
     integer ended_at
     text status "running|complete|error"
@@ -490,6 +517,7 @@ CREATE INDEX events_run_seq    ON events(run_id, sequence);
 CREATE INDEX runs_started      ON runs(started_at DESC);
 CREATE INDEX runs_task_started ON runs(task, started_at DESC);
 CREATE INDEX runs_dirty        ON runs(aggregates_dirty) WHERE aggregates_dirty = 1;
+CREATE INDEX runs_parent       ON runs(parent_run_id) WHERE parent_run_id IS NOT NULL;
 ```
 
 The partial index `runs_dirty` is what the aggregator worker scans;
@@ -508,6 +536,68 @@ PRAGMA mmap_size = 134217728;  -- 128 MiB
 WAL is non-negotiable: it allows concurrent reads during writes and
 survives unclean shutdown cleanly. `synchronous=NORMAL` is the
 conventional safety-vs-throughput tradeoff for WAL mode.
+
+### 5.5.1 Capture modes — metadata vs replay-capable
+
+A Phase-3 follow-up (Cost Replay Engine) requires re-running the
+LLM turns of a recorded run with a different policy stack, which
+requires the full request shape (messages, tools, model params) and
+the recorded tool results as fixtures. That's content, not just
+metadata. The Phase-0 default is **metadata-only** — no prompts or
+responses stored. This is the privacy-first posture (architecture
+§9.3) and is what Phase 0 ships.
+
+To make Phase 3's Replay Engine possible without a retroactive
+schema migration, Phase 0 commits to two capture modes from day
+one:
+
+```python
+inkfoot.instrument(capture_mode="metadata")    # default — privacy-first
+inkfoot.instrument(capture_mode="replay")      # opt-in — stores enough to replay
+```
+
+Schema impact in Phase 0:
+
+```sql
+-- Additive to the events table:
+ALTER TABLE events ADD COLUMN capture_mode TEXT NOT NULL DEFAULT 'metadata';
+-- For replay-mode events only, a sibling table keyed 1:1 to events:
+CREATE TABLE event_contents (
+  event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+  request_json TEXT,           -- messages, tools, model params at call time
+  response_json TEXT,          -- assistant text + tool calls + raw usage
+  tool_result_json TEXT,       -- for tool_result events: the tool output
+  content_redacted BOOLEAN NOT NULL DEFAULT 0
+);
+```
+
+Behaviour:
+
+- **`capture_mode="metadata"` (default).** Events table populated as
+  designed; `event_contents` rows are **not** written. Replay is
+  unavailable for these runs. Reporting, smells, contracts all work.
+- **`capture_mode="replay"`.** Events table populated as before, *and*
+  `event_contents` row written per LLM-call / tool-result event with
+  the full content. The Phase 7 redaction floor (regex-based) is
+  applied at write time when configured; `content_redacted=1` flags
+  any row that had a pattern match.
+
+**Why ship the table now even though Phase 0 doesn't write to it.**
+Phase 3's Cost Replay Engine assumes this shape (per ADR-0-9
+below). Adding the column + table later via migration is possible
+but risks reading older `capture_mode="metadata"` runs and being
+unable to replay them. The honest answer to Phase 3 customers is
+**"replay only works for runs recorded after capture-mode was
+enabled."** Saying so requires the field to exist from Phase 0.
+
+Cost on disk: `event_contents` is empty for default-mode runs (zero
+bytes), so the Phase-0-default-user pays nothing. Replay-mode users
+trade disk for the Phase 3 capability.
+
+The privacy-transition UX (what happens the first time a customer
+enables `capture_mode="replay"`) is a Phase 3 concern — see Phase 3
+§9.3 for the workspace-level confirm-and-acknowledge gate that
+wraps this flag for Cloud users.
 
 ### 5.6 Two-tier write semantics
 
@@ -761,7 +851,9 @@ surface of the entire product. The exact rendering is constrained:
 - Category sorted by absolute cost descending.
 - Estimated dollar figures with 4-decimal precision.
 
-Sample output:
+Sample output (the renderer hides categories that are zero across
+the whole run by default; pass `--show-zero` to render all 14
+fields):
 
 ```
 Run 01HZX... · customer-support-triage · 18.2s · $0.0541 · success (0.94)
@@ -774,10 +866,13 @@ Causal attribution:
   tool_result            34.6%  ███████████░  $0.0187  ⚠ oversized
   retrieved_context       0.0%  ░░░░░░░░░░░░  $0.0000
   memory                  8.1%  ██░░░░░░░░░░  $0.0044
+  retry_overhead          0.0%  ░░░░░░░░░░░░  $0.0000
   cache_creation          5.4%  █░░░░░░░░░░░  $0.0029
   cache_read              0.0%  ░░░░░░░░░░░░  $0.0000  ⚠ no cache hits
   reasoning               0.0%  ░░░░░░░░░░░░  $0.0000
   output                 11.4%  ███░░░░░░░░░  $0.0062
+
+(summariser and guardrail are always-zero in Phase 0 — hidden by default)
 
 Smells detected (2):
   · unstable-prompt-prefix  (system_dynamic is 18% of cost)
@@ -1089,6 +1184,38 @@ available. Mark every affected category in
 small percentages (typical 2–5%) when the fallback kicks in. The
 `estimation_flags` make this transparent to readers. Phase 0
 includes a validation corpus measuring the actual error.
+
+### ADR-0-9: Capture modes from day one — metadata default, replay opt-in
+
+**Status:** Accepted.
+**Context:** Phase 0 ships a privacy-first profiler (metadata only;
+no prompt or response content stored). Phase 3 ships a Cost Replay
+Engine that needs full message streams and tool results from the
+original run. Storing content retroactively isn't possible — Phase 3
+customers who care about replay need it for runs they recorded
+*before* Phase 3 shipped.
+**Decision:** Ship the `capture_mode` field on every event from
+Phase 0 and the `event_contents` sibling table. Default is
+`metadata` (no content; current Phase 0 posture). Customers who
+want Phase 3 replay later set `capture_mode="replay"` *now*,
+trading disk for the future capability.
+**Alternatives considered:**
+- *Add the table in Phase 3 via migration.* Older runs can never be
+  replayed; the schema migration touches every Cloud customer.
+  Worse trade.
+- *Always capture content; redact at the boundary.* Inverts the
+  privacy default. Will lose enterprise customers in Phase 5.
+- *Capture content only on Cloud opt-in.* Conflates the OSS-local
+  story with the Cloud story; some OSS-local users want replay too
+  (Phase 3 ships a `inkfoot replay` CLI shortcut).
+**Consequences:**
+- Phase 0 ships a column it doesn't write to and a table it never
+  populates. Disk cost zero; conceptual cost ~10 lines of doc.
+- Phase 3's docs honestly tell customers: "replay works for runs
+  recorded with `capture_mode='replay'`. If you haven't enabled
+  it yet, your historical runs can't be replayed."
+- Sets up Phase 3's privacy-transition UX (a workspace-level
+  setting that gates the flag for Cloud users) cleanly.
 
 ---
 

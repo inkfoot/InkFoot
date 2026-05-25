@@ -49,9 +49,12 @@ The product premise:
 > invoices.**
 
 Each of the four verbs corresponds to a phase. Classify (Phase 0) is
-the data foundation. Explain (Phase 1) is the recommendation engine
-and CI integration. Enforce (Phase 2) is Token Contracts. Prove
-(Phase 3) is outcome tracking, replay, and invoice reconciliation.
+the data foundation — and ships **outcome tagging** as a Phase-0
+primitive so cost-per-success math is available from day one (see
+§4.7 for detail; Phase 2 promotes it to the headline metric, but the
+tag is captured from Phase 0). Explain (Phase 1) is the recommendation
+engine and CI integration. Enforce (Phase 2) is Token Contracts.
+Prove (Phase 3) is replay and invoice reconciliation.
 
 ## 2. Goals & non-goals
 
@@ -869,11 +872,19 @@ real-world data. Each smell has:
 - A detection rule (SQL/jsonpath over the event log)
 - A recommendation
 - A suggested policy
-- **Verification data**: across N opted-in customer runs that fired
-  this smell, applying the recommendation saved X% on average
+- **Estimated potential savings**: across N opted-in customer runs
+  that fired this smell, applying the recommendation would have
+  saved an estimated X% on average. The evidence is one of three
+  kinds: `simulation` (heuristic recomputation on the ledger;
+  Phase-4 default), `replay_pair` (real before/after via the Cost
+  Replay Engine; Phase 5+), or `production_pair` (community-
+  contributed paired runs). The kind is surfaced per smell; we
+  don't claim "verified" when we mean "simulated." See Phase 4
+  ADR-4-8.
 
-The verification layer is the moat. Anyone can copy a single rule;
-nobody else has the run corpus to verify the rule's impact.
+The estimation-corpus layer is the moat. Anyone can copy a single
+rule; nobody else has the run corpus to estimate the rule's impact
+at scale.
 
 Library distribution:
 
@@ -1047,7 +1058,7 @@ sequenceDiagram
   U->>Run: inkfoot.set_outcome("success", 0.94)
   Run->>DB: INSERT outcome event
   Run->>DB: UPDATE runs (status='complete', aggregates_dirty=1)  [synchronous]
-  Note over DB: Aggregator picks up dirty rows;<br/>recomputes total_nanodollars etc.<br/>from events; sets dirty=0.
+  Note over DB: Aggregator picks up dirty rows<br/>recomputes total_nanodollars etc<br/>from events and sets dirty=0
 ```
 
 ### 7.2 CI cost review
@@ -1090,10 +1101,10 @@ sequenceDiagram
   participant Cred as Customer LLM credentials
   participant DB as Cloud Postgres
 
-  U->>API: POST /api/v1/replay {run_id, policies}
+  U->>API: POST /api/v1/replay with run_id and policies
   API->>DB: SELECT events FROM run
   API->>Engine: replay job
-  Engine->>Engine: load events; build replay context
+  Engine->>Engine: load events and build replay context
   loop each LLM turn in original run
     Engine->>Engine: apply new policy stack to message state
     Engine->>Cred: call LLM with modified state
@@ -1258,12 +1269,14 @@ plus real linting (code).
 frameworks is real work. Phase 3 scope is meaningful. Acceptable
 because this is the position that compounds.
 
-### ADR-011: Cost Smell Library with verification as the OSS-mindshare moat
+### ADR-011: Cost Smell Library with estimated savings as the OSS-mindshare moat
 
-**Status:** Accepted.
+**Status:** Accepted (updated: see Phase 4 ADR-4-8 for naming).
 **Decision:** Phase 4 ships a community-contributed Cost Smell
-Library. Each smell carries verification data (across N runs,
-applying the recommendation saved X%).
+Library. Each smell carries **estimated potential savings** data —
+across N opted-in runs, applying the recommendation would have saved
+an estimated X% (the evidence_kind enum records whether the number
+came from simulation, replay-pair, or production-pair data).
 **Why:** Verification data is only computable across many
 customers' runs — Inkfoot Cloud is positioned to do this; nobody
 else can. Competitors can copy individual smells but cannot

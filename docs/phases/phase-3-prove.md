@@ -415,13 +415,36 @@ See ADR-3-1.
 Replays cost real LLM money on Inkfoot's infrastructure. Two
 decisions in ADR-3-2:
 
-1. **Replays count against the customer's monthly events quota** (a
-   replay generates events just like a live run does).
+1. **Replays count against the customer's monthly events quota.** A
+   replay generates events just like a live run does. **The
+   accounting is 1:1** — each event emitted by the replay engine
+   (including its own `replay_call` events) consumes one event from
+   the tenant's quota. No multiplier. If a customer's original run
+   emitted 12 events, replaying it under one policy stack also
+   emits ~12 events; replaying it under three different policy
+   stacks emits ~36 events. The pricing tables (§4.8) are
+   denominated in raw events; replays are not "free" but are also
+   not separately metered.
 2. **The LLM-call cost during replay is borne by the customer's
    credentials** — we don't pay for replays.
 
 This keeps Cloud's unit economics clean: Cloud is a per-event SaaS;
 the LLM provider sees the customer as the spender.
+
+**Replay capture prerequisite.** Replay only works for runs recorded
+with **`capture_mode="replay"`** (see Phase 0 §5.5.1 and ADR-0-9).
+Runs recorded with the default `capture_mode="metadata"` have no
+stored content; the replay engine will refuse them with a clear
+error pointing at the docs: *"This run was captured in metadata mode;
+the original message stream wasn't stored. Replay requires
+`capture_mode='replay'`. New runs captured under this mode will be
+replayable; historical metadata-mode runs cannot be retroactively
+replayed."*
+
+This is the **honest framing** the architecture's ADR-0-9 commits to.
+The Cloud UI surfaces it explicitly on the per-run view: a
+"Replay-capable: yes/no" indicator, with a link to the setting that
+controls the flag for new runs.
 
 #### 4.4.4 Customer-credential vault
 
@@ -635,13 +658,34 @@ Email-only delivery in Phase 3. Slack + PagerDuty arrive in Phase 4.
 | Tier | Price | Limits |
 |---|---|---|
 | Free | $0 | 10k events/mo, 7-day retention, 1 workspace |
-| Pro | $39/mo | 250k events/mo, 30-day retention, 3 workspaces, alerts, **invoice reconciliation** |
-| Team | $249/mo | 2.5M events/mo, 90-day retention, unlimited workspaces, 5 seats, **Cost Replay Engine**, **static analyzer in CI** |
-| Enterprise | Contact | Custom volume, custom retention, SSO, self-host option |
+| Pro | $39/mo | 250k events/mo, 30-day retention, alerts |
+| Team | $249/mo | 2.5M events/mo, 90-day retention, **Cost Replay Engine**, **static analyzer in CI**, **invoice reconciliation** |
+| Enterprise | Contact | Custom volume, custom retention, SSO, multi-user, self-host option |
 
 The tier breakpoints are strawman; design-partner conversations
 adjust them. Stripe-self-serve for Free → Pro → Team; Enterprise is
 contract-and-invoice.
+
+**Important constraint — Phase 3 auth is single-user-per-workspace.**
+Real multi-user (multiple seats; multiple workspaces per
+organisation; roles) requires the IAM stack that lands in Phase 5
+(see ADR-3-5). The Phase 3 Pro / Team tiers therefore quantify the
+**ingest volume + retention + feature set**, not seats or workspaces.
+The roadmap previously listed "5 seats" and "unlimited workspaces"
+on Team — those move to Phase 5's Enterprise tier once IAM exists
+to enforce them. Phase 3 customers operate one workspace per tenant
+with one human user; Phase 5 lifts the constraint without changing
+the tier prices.
+
+**Invoice reconciliation placement.** Reconciliation sits at the
+**Team** tier (not Pro). Reasoning: Pro is the "see your spend"
+upgrade from Free; Team is the "reconcile against the provider
+invoice + replay + lint" upgrade from Pro. The roadmap (§5)
+contained an internal contradiction here — the pricing table listed
+reconciliation under Pro, but the same section said reconciliation
+was the Pro→Team upgrade hook. This phase doc is now the
+authoritative placement: **reconciliation is Team-tier and up**. The
+roadmap pricing table is corrected to match.
 
 **Quota enforcement.** The ingest endpoint checks
 `tenants.events_used_this_month` against
@@ -1019,12 +1063,35 @@ The privacy posture from Phase 0 ("metadata only by default") extends
 to Cloud:
 
 - The OSS exporter ships *event metadata* (NeutralCall + ledger). No
-  prompt or response content unless `inkfoot.instrument(upload_content=True)`.
-- Cost Replay requires content (to reconstruct the message history).
-  Customers must opt into content upload per workspace; without it,
-  replay is unavailable for that workspace.
+  prompt or response content uploaded.
+- Cost Replay requires content. Customers must opt in **at two
+  levels** — and the UX deliberately surfaces the decision twice:
+
+  1. **At the OSS library** — `capture_mode="replay"` on
+     `inkfoot.instrument(...)` (Phase 0 §5.5.1). This is what
+     causes the local SQLite to start storing message streams.
+  2. **At the Cloud workspace** — a workspace-level setting
+     `cloud_content_upload_enabled: bool` (per workspace, not
+     per-call). Disabled by default. Toggling it to `true`
+     surfaces a **confirm-and-acknowledge dialog**:
+
+     > Enabling content upload means Inkfoot Cloud will store the
+     > prompts your agents send to LLM providers and the responses
+     > they receive, including any user inputs they contain. This is
+     > required for the Cost Replay Engine. You can disable this at
+     > any time, after which new events will be uploaded as metadata
+     > only. Previously-uploaded content will be deleted within 30
+     > days. [Confirm enable] [Cancel]
+
+  The two-level model is deliberate: a developer running OSS locally
+  may want replay-capable local capture without ever uploading to
+  Cloud. A Cloud-using team may want to upload content for a *single*
+  workspace tied to their replay use case while keeping production
+  workspaces metadata-only.
 - A redaction floor (regex patterns) runs at the exporter boundary
-  when content is uploaded.
+  when content upload is enabled. The redacted-or-not status is
+  surfaced on every persisted content row
+  (`event_contents.content_redacted` from Phase 0 §5.5.1).
 
 ### 9.4 Testing strategy
 

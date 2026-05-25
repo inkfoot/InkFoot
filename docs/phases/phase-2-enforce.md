@@ -62,8 +62,12 @@ DSL.
 - Invoice reconciliation — Phase 3.
 - TypeScript port — Phase 4.
 - Community Cost Smell Library — Phase 4.
-- Anomaly-based alerting — Phase 4 (threshold-based with contracts
-  ships in Phase 2).
+- Anomaly-based alerting — Phase 4. **Threshold-based alerts also
+  ship in Phase 3 with Cloud**, not Phase 2; Phase 2's runtime
+  enforcement of contracts emits `contract_violation` events but
+  doesn't deliver them as alerts to Slack/PagerDuty/email — that
+  delivery layer is Cloud-side. See the capability matrix in
+  `phases/README.md` for the authoritative phase placement.
 - IAM / SSO / SOC 2 — Phase 5.
 
 ## 3. High-level shape — Phase 2 only
@@ -353,6 +357,35 @@ against baseline; `inkfoot contract check` flags absolute violations
 of the team-agreed contract. Both can fail the build; the second is
 the harder gate.
 
+#### 4.4.1 What `contract check` evaluates — and what it doesn't
+
+The CI gate evaluates **budget clauses** against benchmark stats:
+`max_nanodollars`, `max_llm_calls`, `max_tool_result_tokens`,
+`cache_hit_rate_min`, `max_run_duration_seconds`.
+
+The **outcome clauses** (`required_success_rate`,
+`measure_window_runs`) are declared in the YAML but are **advisory
+in Phase 2 CI** — the gate does not fail the build on outcome
+shortfall. Reason: a benchmark scenario doesn't measure outcome
+quality the same way production does (the scenario's
+`expected_outcome` is hand-set; production outcomes come from
+`set_outcome()` calls inside real agents). Treating outcome shortfall
+as a CI failure would either rubber-stamp every benchmark or punish
+PRs for unrelated quality drift.
+
+Where outcomes *are* checked:
+
+| Surface | Check | Action |
+|---|---|---|
+| CI (`inkfoot contract check`) | Outcome clauses parsed; surfaced as **advisory** in the report | Never fails build |
+| Runtime | Outcome clauses evaluated over the trailing window (`measure_window_runs`) per task | Emits `contract_violation` event (`level=outcome`); never blocks the run |
+| Reports (`inkfoot report`) | Surfaces tasks whose recent outcome rate is below contract floor | Visible alert in the dashboard / CLI |
+
+True outcome enforcement (paired before/after benchmark runs with
+quality scoring) requires deeper test infrastructure than Phase 2
+ships; flagged in §14 as an open question and tracked for Phase 4+.
+The YAML field exists from Phase 2 so contracts are forward-stable.
+
 ### 4.5 `LazyToolExposure` — modification policy
 
 Today's loops typically expose every enabled tool on every turn. For
@@ -456,6 +489,59 @@ to avoid credential proliferation. If the provider has no cheap-model
 declared, `CheapSummariser` falls back to mechanical truncation
 (first N tokens + marker).
 
+#### 4.6.1 A/B mode — the trust mechanism
+
+`CheapSummariser` modifies what the model sees mid-run. The risk is
+real: a bad summary causes downstream quality regression that
+shouldn't be invisible. Phase 2 ships an **A/B mode** as the
+opt-in trust mechanism:
+
+```python
+CheapSummariser(
+    threshold_tokens=1500,
+    max_summary_tokens=600,
+    preserve_for_replay=True,
+    ab_mode=True,                   # NEW — opt-in for the first month per task
+    ab_sample_rate=0.10,            # 10% of triggers run both branches
+)
+```
+
+When `ab_mode=True`, on each summarisation decision the policy:
+
+```mermaid
+flowchart TB
+  Trig["Tool result over threshold"]
+  Roll["Random < ab_sample_rate ?"]
+  Both["Branch A: keep raw result<br/>Branch B: summarise"]
+  Solo["Single path: summarise"]
+  Run["Run produces outcome"]
+  Compare["abPair worker:<br/>compare next-turn behaviour<br/>across A and B branches"]
+  Metric["per-task quality metric"]
+
+  Trig --> Roll
+  Roll -- yes --> Both
+  Roll -- no --> Solo
+  Both --> Run
+  Run --> Compare
+  Compare --> Metric
+```
+
+The A/B comparison metric: across paired A/B runs of the same task,
+does the summarised branch (B) reach the same outcome (success rate,
+quality_score) within tolerance? When the gap exceeds the
+per-tenant threshold (default 5pp success-rate drop), the policy
+fires a `summariser_quality_regression` smell and auto-disables
+itself for that task pending operator review.
+
+The kill-switch is per-task config: a task can opt out of
+`CheapSummariser` via `inkfoot.tag("disable_summariser", True)` or
+via a tenant-config flag. Documented in the operator guide.
+
+This sub-section was previously only mentioned in the §10 risk row;
+it's now first-class because the modification-policy promise of
+Phase 2 ("policies actually modify") depends on customer trust in
+the modification quality.
+
 ### 4.7 Provider expansion
 
 The `LLMProvider` interface (sketched in Phase 0's architecture) gains
@@ -489,6 +575,34 @@ different from Anthropic's marker-based caching. Phase 0's
 `CacheControlPlacer` policy is provider-aware: on Gemini it
 creates/reuses cache resources; on Anthropic it places markers; on
 OpenAI it does nothing (caching is automatic).
+
+**How Gemini's cache semantics map to the Phase-0 ledger fields.** The
+ledger fields `cache_creation_tokens` and `cache_read_tokens` were
+designed against Anthropic's per-call cache-write / cache-read
+billing. Gemini's model is different:
+
+- **First call** that creates a `CachedContent` resource: the
+  request body costs the full input price; Gemini also returns the
+  cached-portion size separately as `cachedContentTokenCount`. We
+  attribute the cached-portion to `cache_creation_tokens` (a
+  one-time write) and the remainder to the matching cause categories
+  (`system_static_tokens`, etc.).
+- **Subsequent calls** referencing the cached resource: the cached
+  portion is billed at the cache-read price; we attribute its tokens
+  to `cache_read_tokens`. The non-cached parts of the request go
+  to the relevant cause categories as usual.
+- **Cache resource lifetime billing.** Gemini also charges per-hour
+  for stored cache resources (a small ambient cost). This is
+  cache-resource-only, not per-call, so it doesn't appear in the
+  per-call ledger; it lands as a separate `cache_resource_overhead`
+  line in the Phase-3 reconciliation report.
+
+The capability matrix records this for callers that care, but the
+**reporting and smells layer treats all three providers uniformly**
+via the neutral `cache_*_tokens` fields. A future provider whose
+caching model doesn't fit (token-banded? subscription-based?) would
+extend `Capabilities.prompt_cache_style` with a new enum value and
+adjust the mapping; the ledger fields themselves stay stable.
 
 #### 4.7.2 `BedrockProvider`
 
