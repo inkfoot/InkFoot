@@ -75,41 +75,84 @@ def test_cache_creation_priced_at_cache_write_rate() -> None:
 def test_openai_cache_creation_costs_zero_no_billed_writes() -> None:
     """OpenAI doesn't bill cache writes — the row has cache_write=0
     and the math reflects that even if a translator (mistakenly) put
-    a non-zero count on the ledger."""
+    a non-zero count on the ledger.
+
+    Under the new semantics: input_total = 100 (structural).
+    fresh = max(0, 100 - 0 - 999) = 0. So cost = 0 × input_rate
+    + 0 × cache_read + 999 × cache_write(=0) + 0 × output = 0.
+    """
     ledger = CausalTokenLedger(
         user_input_tokens=100, cache_creation_tokens=999
     )
-    # 100 fresh input × 2500 = 250_000; cache_creation × 0 = 0.
-    # input_total = 100 + 999 = 1099. fresh = 1099 - 0 - 999 = 100. ✓
-    assert estimate_nanodollars("openai", "gpt-4o", ledger) == 250_000
+    assert estimate_nanodollars("openai", "gpt-4o", ledger) == 0
 
 
-def test_fresh_input_excludes_cache_buckets() -> None:
-    """Mixed ledger: 100 fresh input + 50 cache_read + 20 cache_create.
-    input_total = 170. fresh = 170 - 50 - 20 = 100.
-    Sonnet 4.6: 100×3000 + 50×300 + 20×3750 = 300000 + 15000 + 75000 = 390000.
+def test_fresh_input_recovered_from_input_total_minus_cache() -> None:
+    """A typical caching agent: 130-token structural request body
+    (the API ships the full request including cached prefix),
+    50 of which the provider billed as cache_read, 20 as
+    cache_creation. fresh = 130 - 50 - 20 = 60.
+
+    Sonnet 4.6: 60×3000 + 50×300 + 20×3750 = 180_000 + 15_000 + 75_000
+              = 270_000.
     """
     ledger = CausalTokenLedger(
-        user_input_tokens=100,
+        # Structural tokenisation of the request body (incl. the
+        # cached prefix). On a real call this is the sum of system +
+        # user + tools + memory + tool_results that the tokeniser
+        # walked.
+        system_static_tokens=80,
+        user_input_tokens=50,
+        # Provider-reported overlays:
         cache_read_tokens=50,
         cache_creation_tokens=20,
     )
+    assert ledger.input_total == 130  # structural sum
     assert (
         estimate_nanodollars("anthropic", "claude-sonnet-4-6", ledger)
-        == 390_000
+        == 270_000
+    )
+
+
+def test_no_double_count_on_cache_heavy_call() -> None:
+    """The reviewer's worked example (Finding #1): 5,000-token system
+    block, 4,800 served from cache, 100 fresh.
+
+    Under the old (buggy) semantics, ledger.input_total would have
+    been ≈ 5,000 + 4,800 = 9,800 (cache tokens counted twice). cost
+    estimate would have priced fresh as max(0, 9,800 - 4,800) = 5,000
+    at fresh rates — 10× too expensive on a Sonnet cache-hit.
+
+    Under the new semantics, input_total = 5,000 (just the
+    structural sum). fresh = 5,000 - 4,800 = 200; the 100
+    discrepancy is the tokeniser drift between the provider and
+    tiktoken which is well within the 2% bar. Cost is computed at
+    the right rates.
+    """
+    ledger = CausalTokenLedger(
+        system_static_tokens=5_000,  # structural sum of the request
+        cache_read_tokens=4_800,
+    )
+    assert ledger.input_total == 5_000
+    # fresh = 5000 - 4800 = 200. cost = 200×3000 + 4800×300 = 600000 + 1440000.
+    assert (
+        estimate_nanodollars("anthropic", "claude-sonnet-4-6", ledger)
+        == 200 * 3_000 + 4_800 * 300
     )
 
 
 def test_fresh_input_clamped_at_zero_when_cache_exceeds_total() -> None:
-    """Pathological ledger where cache_read + cache_creation > input_total.
-    fresh_input clamps at 0, math doesn't go negative."""
+    """Pathological ledger: provider reports more cached tokens than
+    the tokeniser saw in the structural categories. fresh_input
+    clamps at 0; math doesn't go negative."""
     ledger = CausalTokenLedger(
-        # input_total = 30 + 25 = 55 but cache sums to 55, fresh = 0
+        # Structural sum = 0 (no tokenised content)
+        # Cache overlays = 30 read + 25 write
         cache_read_tokens=30,
         cache_creation_tokens=25,
     )
     nd = estimate_nanodollars("anthropic", "claude-sonnet-4-6", ledger)
-    # 0 fresh × 3000 + 30 × 300 + 25 × 3750 = 9000 + 93750 = 102750
+    # fresh = max(0, 0 - 30 - 25) = 0. cost = 0 + 30×300 + 25×3750 = 102_750.
     assert nd == 102_750
 
 

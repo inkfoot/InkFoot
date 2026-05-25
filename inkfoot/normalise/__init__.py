@@ -45,6 +45,9 @@ class NeutralError:
     retryable: bool = False
 
 
+_VALID_CACHE_STATUSES = frozenset({"hit", "partial", "miss", "n/a"})
+
+
 @dataclass(frozen=True, slots=True)
 class NeutralCall:
     """Provider-neutral payload for one LLM call.
@@ -52,6 +55,11 @@ class NeutralCall:
     Field order follows the §5.4 class diagram. The ledger is
     **always** populated; estimation flags list which ledger fields
     were tokeniser-estimated rather than provider-reported.
+
+    ``cache_status`` is validated in ``__post_init__`` so a
+    translator that constructs :class:`NeutralCall` directly hits
+    the same contract as one going through
+    :func:`dict_to_neutral_call`.
     """
 
     provider: str
@@ -68,8 +76,12 @@ class NeutralCall:
     sequence: int = 0
     estimation_flags: tuple[str, ...] = ()
 
-
-_VALID_CACHE_STATUSES = frozenset({"hit", "partial", "miss", "n/a"})
+    def __post_init__(self) -> None:
+        if self.cache_status not in _VALID_CACHE_STATUSES:
+            raise ValueError(
+                f"NeutralCall: invalid cache_status {self.cache_status!r}; "
+                f"expected one of {sorted(_VALID_CACHE_STATUSES)}"
+            )
 
 
 def dict_to_neutral_call(payload: dict[str, Any]) -> NeutralCall:

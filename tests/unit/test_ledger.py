@@ -19,6 +19,7 @@ import dataclasses
 import pytest
 
 from inkfoot.ledger import (
+    CACHE_CATEGORIES,
     INPUT_CATEGORIES,
     INPUT_INVARIANT_TOLERANCE,
     CausalTokenLedger,
@@ -48,20 +49,31 @@ def test_input_total_excludes_output_tokens() -> None:
     assert ledger.output_total == 999
 
 
-def test_input_total_sums_thirteen_categories() -> None:
-    # Each category set to 1 — input_total should be 13.
+def test_input_total_sums_eleven_structural_categories() -> None:
+    # Each structural category set to 1 — input_total should be 11.
     fields_set = {name: 1 for name in INPUT_CATEGORIES}
     ledger = CausalTokenLedger(**fields_set)
-    assert ledger.input_total == 13
+    assert ledger.input_total == 11
 
 
-def test_validate_accepts_two_percent_input_slop() -> None:
+def test_validate_accepts_just_under_two_percent_slop() -> None:
+    """Spec wording: rel_err < 0.02. 1.9% passes; 2.0% exactly does
+    not (boundary tested separately)."""
     ledger = CausalTokenLedger(
-        user_input_tokens=98,  # 2% under 100
+        user_input_tokens=981,  # 1.9% under 1000
         output_tokens=50,
     )
-    # Should not raise.
-    validate_against_usage(ledger, raw_input=100, raw_output=50)
+    validate_against_usage(ledger, raw_input=1000, raw_output=50)
+
+
+def test_validate_rejects_exactly_two_percent_per_spec_wording() -> None:
+    """Per §5.3: `< 0.02`. Exactly 2.0% fails; the check is strict."""
+    ledger = CausalTokenLedger(
+        user_input_tokens=98,  # exactly 2% off 100
+        output_tokens=50,
+    )
+    with pytest.raises(AssertionError, match="tolerance"):
+        validate_against_usage(ledger, raw_input=100, raw_output=50)
 
 
 def test_validate_rejects_five_percent_input_mismatch() -> None:
@@ -130,15 +142,27 @@ def test_default_tolerance_is_two_percent() -> None:
     assert INPUT_INVARIANT_TOLERANCE == pytest.approx(0.02)
 
 
-def test_input_total_with_cache_fields_included() -> None:
-    """cache_read / cache_creation tokens contribute to input_total —
-    they are *billed input* tokens, just at different rates."""
+def test_input_total_excludes_cache_billing_overlays() -> None:
+    """cache_read / cache_creation tokens are billing overlays, NOT
+    structural categories. They must not contribute to input_total
+    — otherwise the cached portion gets double-counted with the
+    structural tokenisation of the request body."""
     ledger = CausalTokenLedger(
         user_input_tokens=10,
         cache_read_tokens=20,
         cache_creation_tokens=15,
     )
-    assert ledger.input_total == 45
+    # Only user_input_tokens contributes to input_total.
+    assert ledger.input_total == 10
+
+
+def test_cache_categories_constant_lists_the_two_billing_overlays() -> None:
+    assert CACHE_CATEGORIES == ("cache_read_tokens", "cache_creation_tokens")
+
+
+def test_cache_and_input_categories_are_disjoint() -> None:
+    """Sanity check: no field belongs to both sets."""
+    assert not (set(INPUT_CATEGORIES) & set(CACHE_CATEGORIES))
 
 
 def test_field_names_returns_fourteen_fields() -> None:
@@ -147,8 +171,13 @@ def test_field_names_returns_fourteen_fields() -> None:
     assert "output_tokens" in names
     for input_field in INPUT_CATEGORIES:
         assert input_field in names
+    for cache_field in CACHE_CATEGORIES:
+        assert cache_field in names
 
 
-def test_input_categories_is_immutable_tuple() -> None:
+def test_input_categories_is_immutable_tuple_of_eleven() -> None:
     assert isinstance(INPUT_CATEGORIES, tuple)
-    assert len(INPUT_CATEGORIES) == 13
+    assert len(INPUT_CATEGORIES) == 11
+    # Cache fields explicitly excluded.
+    assert "cache_read_tokens" not in INPUT_CATEGORIES
+    assert "cache_creation_tokens" not in INPUT_CATEGORIES

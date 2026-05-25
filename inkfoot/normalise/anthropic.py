@@ -55,6 +55,13 @@ def _extract_system_block(request: dict[str, Any]) -> str:
     list of content blocks (each ``{"type": "text", "text": "..."}``).
     Both shapes collapse to a single string for tokenisation /
     stable-prefix detection.
+
+    TODO(phase-2/smells): when the cache_control smell lands, this
+    helper (or a sibling) will need to expose the ``cache_control``
+    markers on individual system blocks — they identify the cached
+    span and let the smell flag misplaced or absent boundaries. For
+    Phase 0 we only need the text content; markers are intentionally
+    dropped here.
     """
     raw = request.get("system")
     if raw is None:
@@ -72,10 +79,23 @@ def _extract_system_block(request: dict[str, Any]) -> str:
     return ""
 
 
-def _block_text(block: Any) -> str:
+_BLOCK_TEXT_MAX_DEPTH = 4
+
+
+def _block_text(block: Any, *, depth: int = 0) -> str:
     """Pull the text content off a single message block. Handles the
     common shapes; unknown shapes yield empty string rather than
-    raising."""
+    raising.
+
+    The optional ``depth`` parameter guards against pathological
+    nesting in ``tool_result.content`` arrays — the Anthropic SDK
+    will never produce more than 2 levels in practice, but
+    :func:`dict_to_neutral_call` accepts arbitrary dicts and a
+    self-referential payload would otherwise stack-overflow. We
+    short-circuit past ``_BLOCK_TEXT_MAX_DEPTH``.
+    """
+    if depth > _BLOCK_TEXT_MAX_DEPTH:
+        return ""
     if isinstance(block, str):
         return block
     if not isinstance(block, dict):
@@ -88,7 +108,9 @@ def _block_text(block: Any) -> str:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            return "".join(_block_text(b) for b in content)
+            return "".join(
+                _block_text(b, depth=depth + 1) for b in content
+            )
     return ""
 
 
@@ -326,6 +348,11 @@ class AnthropicTranslator:
             if tc.estimated:
                 flags.append(name)
 
+        # Empty-string / missing tool names are dropped *silently*
+        # rather than surfaced — a tool with no name can't actually
+        # be called, so it has no business appearing on the bar
+        # chart. If a future contributor wants to flag misconfigured
+        # tools, that's a smell-engine job, not a translator job.
         tools_offered = tuple(
             t.get("name", "") if isinstance(t, dict) else ""
             for t in (request.get("tools") or [])

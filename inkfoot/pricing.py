@@ -99,6 +99,17 @@ def estimate_nanodollars(
 
     Plus output tokens × ``row.output``.
 
+    **Why the subtraction is correct.** ``ledger.input_total`` sums
+    the 11 *structural* categories — these tokenise the full request
+    body, which still includes the cached portion (Anthropic ships
+    the cached prefix in the request even when it's served from
+    cache). The cache fields (``cache_read_tokens`` /
+    ``cache_creation_tokens``) are billing overlays from
+    ``response.usage``: they tell us how many of those tokens the
+    provider billed at the cache rate. So
+    ``input_total - cache_read - cache_creation`` recovers the
+    fresh portion that the provider billed at the full input rate.
+
     Returns ``None`` when ``(provider, model)`` isn't in the table —
     the caller (typically the report renderer) shows tokens but
     omits the dollar column. **Never raises** for unknown models.
@@ -110,10 +121,11 @@ def estimate_nanodollars(
       ever assign non-negatives). We don't re-validate here — that's
       the ledger's job.
     * ``input_total < cache_read + cache_creation`` is *not*
-      impossible if a translator emits inconsistent fields. We clamp
-      ``fresh_input`` at 0 in that case so the estimate never goes
-      negative; the validation invariant catches the underlying bug
-      separately.
+      impossible if a translator emits inconsistent fields (e.g.
+      provider reports cached tokens we didn't see in the request
+      body). We clamp ``fresh_input`` at 0 in that case so the
+      estimate never goes negative; the validation invariant
+      catches the underlying bug separately.
     """
     row = PRICING_ND_PER_TOKEN.get((provider, model))
     if row is None:

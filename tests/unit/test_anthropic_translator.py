@@ -348,35 +348,145 @@ def test_estimation_flags_surface_when_anthropic_fallback_used(
 
 
 # ----------------------------------------------------------------------
-# Validation invariant on a 4-turn fixture
+# Validation invariant — non-circular, independent expected total
 # ----------------------------------------------------------------------
 
 
-def test_four_turn_run_satisfies_validation_invariant() -> None:
-    """End-to-end check: across a synthetic 4-turn run with growing
-    tool-result history, ledger.input_total stays within 2% of the
-    response's total billed input on each turn.
+def _independent_token_count(text: str) -> int:
+    """Compute the tokeniser count for ``text`` directly, without
+    going through the translator. The non-circular test below uses
+    this to compute the expected ``input_total`` from request
+    content alone, then feeds the number into ``raw_input``."""
+    import tiktoken  # local import — keeps the module-level imports tidy
 
-    The fixture is deliberately small + synthetic — Phase 0 will add
-    a recorded-API-response corpus once we have one. For now the
-    invariant is exercised against responses we hand-construct, so
-    the relationship is by construction. The check still validates
-    that the *sum* arithmetic and slop tolerance behave correctly.
+    enc = tiktoken.get_encoding("o200k_base")
+    return len(enc.encode(text))
+
+
+def test_input_total_matches_independently_tokenised_request_no_cache() -> None:
+    """Build a request whose tokenised content is computable
+    independently. Assert input_total matches that count (within
+    the 2% bar). The fixture has zero cache fields so the
+    "total billed input" simplifies to ``usage.input_tokens``.
     """
     t = AnthropicTranslator()
     state = InMemoryRunState()
 
-    # Each turn: user message → tool result. Tool result body grows
-    # to stress tool_result_tokens accumulation.
-    messages = [
-        {"role": "user", "content": "Find weather for NYC."},
+    system = "You are a helpful agent."
+    user = "Find weather for NYC."
+    request = {
+        "model": _MODEL,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }
+
+    expected_structural = _independent_token_count(
+        system
+    ) + _independent_token_count(user)
+
+    call = t.translate(
+        request=request,
+        response=_response(
+            input_tokens=expected_structural, output_tokens=1
+        ),
+        run_state=state,
+        started_at=0,
+        ended_at=1,
+    )
+    # input_total should match the independent count exactly when
+    # the same tokeniser is used end-to-end.
+    assert call.ledger.input_total == expected_structural
+    # validate against the independent number — within 2% bar.
+    validate_against_usage(
+        call.ledger, raw_input=expected_structural, raw_output=1
+    )
+
+
+def test_input_total_matches_request_under_cache_hit_regression() -> None:
+    """Finding #1 regression: under the old buggy semantics,
+    input_total would have been inflated by cache_read_tokens +
+    cache_creation_tokens, because the structural categories *and*
+    the cache fields both got summed. Under the new semantics
+    cache_* are billing overlays — not summed into input_total —
+    so the cache-hit case has the same structural total as the
+    no-cache case.
+
+    Concretely: 5000-token system block, 4800 served from cache.
+    The structural sum (system_static + dynamic) should equal the
+    tokenised system content, *not* 5000 + 4800.
+    """
+    t = AnthropicTranslator()
+    state = InMemoryRunState()
+
+    # A system block we can tokenise independently.
+    system = "Inkfoot agent header. " * 200  # ~1500 tokens-ish
+    request = {
+        "model": _MODEL,
+        "system": system,
+        "messages": [{"role": "user", "content": "go"}],
+    }
+
+    independent_system = _independent_token_count(system)
+    independent_user = _independent_token_count("go")
+    expected_structural = independent_system + independent_user
+
+    # Provider reports most of the system block served from cache.
+    cache_read = max(0, independent_system - 50)
+    fresh = expected_structural - cache_read  # the fresh portion
+    call = t.translate(
+        request=request,
+        response=_response(
+            input_tokens=fresh,
+            output_tokens=1,
+            cache_read=cache_read,
+        ),
+        run_state=state,
+        started_at=0,
+        ended_at=1,
+    )
+    # The structural sum equals the request-body tokenisation —
+    # cache_read is NOT added on top.
+    assert call.ledger.input_total == expected_structural
+    # And the cache field is populated separately.
+    assert call.ledger.cache_read_tokens == cache_read
+
+    # The total billed input the provider reports equals
+    # fresh + cache_read = expected_structural by construction.
+    total_billed_input = fresh + cache_read
+    validate_against_usage(
+        call.ledger, raw_input=total_billed_input, raw_output=1
+    )
+
+
+def test_four_turn_run_invariant_holds_with_independent_totals() -> None:
+    """End-to-end across a 4-turn run. Each turn's expected
+    ``input_total`` is computed independently from the request
+    content; we feed that into the synthetic response and validate.
+    No circular fixture."""
+    t = AnthropicTranslator()
+    state = InMemoryRunState()
+
+    system = "You are a helpful weather agent."
+    user_turn_1 = "Look up NYC weather."
+    tool_results = [
+        "NYC: 60F sunny",
+        "Forecast: 65/55 high/low",
+        "History: 14d trailing avg",
+        "Tail data",
     ]
-    tool_results = ["NYC: 60F sunny", "Detail forecast pulled from gov", "Long history " * 50, "Tail"]
+
+    messages: list[dict] = [
+        {"role": "user", "content": user_turn_1},
+    ]
+    # Tool array shape — content matters for token counting.
+    tools_array = [{"name": "wx", "description": "weather"}]
+    import json as _json
+
+    tools_serialised = _json.dumps(
+        tools_array, sort_keys=True, separators=(",", ":")
+    )
 
     for turn, result in enumerate(tool_results):
-        # Append the assistant tool_use + the user tool_result for
-        # every turn except the first (we want at least one tool
-        # result to exercise the path on turn 1 already).
         messages.append(
             {"role": "assistant", "content": [{"type": "tool_use", "name": "wx"}]}
         )
@@ -391,43 +501,44 @@ def test_four_turn_run_satisfies_validation_invariant() -> None:
 
         request = {
             "model": _MODEL,
-            "system": "You are a helpful weather agent.",
+            "system": system,
             "messages": list(messages),
-            "tools": [{"name": "wx", "description": "weather"}],
+            "tools": tools_array,
         }
+
+        # Recompute the expected structural sum independently from
+        # the request content.
+        expected = _independent_token_count(system)  # system_static (stable)
+        # system_dynamic = 0 because system text never changes here
+        expected += _independent_token_count(user_turn_1) if turn == 0 else 0
+        # When turn > 0, the last user message is the most recent
+        # tool_result (anthropic tool_result rides on user role).
+        # The translator excludes tool_result blocks from
+        # user_input_tokens; on those turns user_input_tokens is 0.
+        expected += _independent_token_count(tools_serialised)
+        # tool_results accumulate.
+        for previous_result in tool_results[: turn + 1]:
+            expected += _independent_token_count(previous_result)
+        # memory: every prior assistant + user turn that isn't the
+        # current user message and isn't a tool result. The
+        # assistant tool_use blocks have an empty text body and
+        # contribute 0 from this translator. The earlier user
+        # text ("Look up NYC weather.") goes to memory on turn > 0.
+        if turn > 0:
+            expected += _independent_token_count(user_turn_1)
+
         call = t.translate(
             request=request,
-            response=_response(
-                # Synthetic input total chosen to match the ledger's
-                # actual sum within tolerance — translators are pure
-                # so the ledger is deterministic given the request.
-                input_tokens=call_input_total(t, request, state.stable_system_prefix),
-                output_tokens=1,
-            ),
+            response=_response(input_tokens=expected, output_tokens=1),
             run_state=state,
             started_at=turn,
             ended_at=turn + 1,
         )
-        # input_total ≈ raw_input (by construction of the fixture).
+        # The actual ledger total should match what we independently
+        # computed within the 2% bar.
         validate_against_usage(
             call.ledger,
-            raw_input=call.ledger.input_total,
+            raw_input=expected,
             raw_output=1,
+            tolerance=0.02,
         )
-
-
-def call_input_total(t: AnthropicTranslator, request, prior_prefix: str) -> int:
-    """Helper: pre-compute what input_total *will* be by running the
-    translator against a throw-away state. We use this to drive the
-    test fixture's reported usage to match the ledger so the
-    invariant has something meaningful to check."""
-    throw = InMemoryRunState()
-    throw.stable_system_prefix = prior_prefix
-    call = t.translate(
-        request=request,
-        response=_response(input_tokens=0, output_tokens=0),
-        run_state=throw,
-        started_at=0,
-        ended_at=1,
-    )
-    return call.ledger.input_total

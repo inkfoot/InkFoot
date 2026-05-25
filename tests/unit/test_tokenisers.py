@@ -224,3 +224,117 @@ def test_tokenise_tools_propagates_estimation_flag_on_anthropic(
     tools = [{"name": "any_tool"}]
     result = tokenise_tools(tools, "claude-sonnet-4-6")
     assert result.estimated is True
+
+
+# ----------------------------------------------------------------------
+# Tool-schema accuracy baseline (E2-S3 T4 — ±5% bar)
+# ----------------------------------------------------------------------
+
+
+# A 5-tool fixture sized to a typical agent toolbox (search, fetch,
+# write, list, browse). The expected count below is computed
+# directly from ``tiktoken.o200k_base`` on the deterministic
+# JSON-serialised form (sort_keys + minimal separators), pinned so
+# regressions in either the encoding choice or the serialisation
+# format show up immediately. The ±5% bar from the spec is the
+# *upper* bound vs. a real provider count; the lower bound is
+# whatever tiktoken returns, which we pin exactly so any drift in
+# our encoder choice is loud rather than silent.
+_FIVE_TOOL_FIXTURE = [
+    {
+        "name": "search",
+        "description": "Full-text search over the corpus.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer", "default": 10},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "fetch",
+        "description": "Download a URL and return its body.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "write",
+        "description": "Write a file to the workspace.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "list",
+        "description": "List files in a workspace directory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "browse",
+        "description": "Open the rendered page in a headless browser.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
+        },
+    },
+]
+
+
+def _baseline_count_for_fixture() -> int:
+    """Compute the expected token count for ``_FIVE_TOOL_FIXTURE``
+    directly using ``tiktoken.o200k_base`` and the same JSON
+    serialisation that ``tokenise_tools`` uses internally. This is
+    the deterministic baseline the assertion pins against."""
+    import json
+    import tiktoken
+
+    serialised = json.dumps(
+        _FIVE_TOOL_FIXTURE,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return len(tiktoken.get_encoding("o200k_base").encode(serialised))
+
+
+def test_tokenise_tools_matches_deterministic_baseline() -> None:
+    """Pin tokenise_tools' output against an independently computed
+    baseline so refactors of the serialisation or encoding choice
+    show up as test failures rather than silent accuracy drift."""
+    expected = _baseline_count_for_fixture()
+    result = tokenise_tools(_FIVE_TOOL_FIXTURE, "gpt-4o")
+    assert result.value == expected, (
+        f"tokenise_tools returned {result.value}; baseline expected {expected}. "
+        f"The encoding choice or JSON-serialisation format probably drifted."
+    )
+
+
+def test_tokenise_tools_is_within_five_percent_of_baseline() -> None:
+    """Acceptance bar: the spec's ±5% target against
+    provider-reported counts. We don't have a recorded provider
+    count yet (deferred to E6's hand-labelled corpus), so we
+    bracket the bar against the deterministic baseline. This
+    catches a future refactor that swaps in a worse tokeniser
+    accidentally."""
+    baseline = _baseline_count_for_fixture()
+    result = tokenise_tools(_FIVE_TOOL_FIXTURE, "gpt-4o")
+    drift = abs(result.value - baseline) / max(1, baseline)
+    assert drift < 0.05, (
+        f"tokenise_tools drifted {drift * 100:.1f}% from the baseline "
+        f"(baseline={baseline}, actual={result.value})"
+    )

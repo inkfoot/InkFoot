@@ -135,6 +135,34 @@ def test_dict_to_neutral_call_rejects_invalid_cache_status() -> None:
         dict_to_neutral_call(payload)
 
 
+def test_neutral_call_constructor_validates_cache_status() -> None:
+    """Constructor and deserialiser enforce the same contract — a
+    translator constructing NeutralCall(cache_status='weird', ...)
+    directly must hit the same error path."""
+    with pytest.raises(ValueError, match="cache_status"):
+        NeutralCall(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            started_at=0,
+            ended_at=1,
+            ledger=CausalTokenLedger(),
+            cache_status="weird",
+        )
+
+
+def test_neutral_call_constructor_accepts_all_four_cache_status_values() -> None:
+    for status in ("hit", "partial", "miss", "n/a"):
+        call = NeutralCall(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            started_at=0,
+            ended_at=1,
+            ledger=CausalTokenLedger(),
+            cache_status=status,
+        )
+        assert call.cache_status == status
+
+
 def test_dict_to_neutral_call_requires_ledger() -> None:
     payload = asdict(_sample_call())
     del payload["ledger"]

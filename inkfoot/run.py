@@ -65,6 +65,14 @@ class Run:
     log; everything else is a primary fact written at run lifecycle
     boundaries.
 
+    **This dataclass is intended for *deserialisation* from the
+    runs table** (e.g. by the report CLI). Defaults on
+    ``started_at`` etc. are sentinels that allow tests + the
+    reflection check to construct empty instances; production code
+    should never hand-construct ``Run`` with the default
+    ``started_at=0`` (= 1970-01-01) — the storage layer's
+    ``start_run`` always passes a real timestamp.
+
     Note ``metadata_json`` is stored as a JSON-encoded string on the
     table (SQLite text). Callers that want the parsed dict should
     deserialise themselves — keeping the dataclass faithful to the
@@ -78,6 +86,7 @@ class Run:
     parent_run_id: Optional[str] = None
     run_kind: str = "root"
     divergence_flag: Optional[int] = None
+    # Sentinel default (epoch). Production callers must override.
     started_at: int = 0
     ended_at: Optional[int] = None
     status: str = "running"
