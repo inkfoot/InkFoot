@@ -1,4 +1,4 @@
-# Phase 2 — Enforce
+# Phase 2 — Enforce (detailed design)
 
 **Theme:** *Enforce contracts before waste happens. Stop being a passive profiler.*
 **Status:** approved scope; entered only after Phase 1 go-signal.
@@ -6,196 +6,1098 @@
 **Companion docs:**
 - [Roadmap §4](../roadmap-inkfoot.md#4-phase-2--enforce-weeks-2032)
 - [Architecture §4.5, §4.6, §4.7](../architecture-inkfoot.md)
+- [Phase 1 detailed design](phase-1-explain.md) — the framework
+  adapter foundation Phase 2 builds on.
 
 ---
 
-## 1. Outcome
+## 1. Context
 
-Inkfoot is no longer just a profiler — it **enforces economics**.
-**Token Contracts** ship as YAML: teams declare per-task budgets,
-runtime ceilings, and cache-hit targets, and the library blocks
-violations in runtime *and* in CI via `inkfoot contract check`. The
-**modification policies** (`LazyToolExposure`, `CheapSummariser`)
-that need framework-level control finally work, via the Phase-1
-adapters. More providers land. **Cost-per-success** becomes the
-headline metric in reports.
+Phase 1 made Inkfoot publicly usable: framework adapters,
+`inkfoot diff` in CI, OTel compatibility, a launch. Phase 2 turns
+the library from a *profiler* into an *enforcer*: declarative
+**Token Contracts** in YAML, runtime enforcement with a `degrade`
+ladder, CI gates via `inkfoot contract check`, and the **modification
+policies** (`LazyToolExposure`, `CheapSummariser`) that Phase 0's
+capability matrix has been refusing since day one.
 
-The narrative shift from Phase 1: in Phase 1 we *explained* what
-happened. In Phase 2 we **prevent** it from happening again. This is
-the phase that introduces the switching-cost moat — once a team has
-50 contracts declared per-agent, per-task, per-tier, leaving Inkfoot
-means re-implementing those contracts in a competitor's DSL.
+Phase 2 also expands the provider matrix in earnest: Gemini, AWS
+Bedrock (via the Converse API), and an OpenAI-compatible adapter
+that unlocks the long tail (vLLM, Together, Fireworks, Groq, Ollama)
+in one class. Two more framework adapters (Pydantic AI, CrewAI)
+round out the framework coverage. A **Postgres** storage backend
+joins SQLite. **Cost-per-success** is promoted from "captured in
+Phase 0, computed in Phase 1, hidden until Phase 2" to **the
+headline metric** in `inkfoot report`.
 
-## 2. What ships
+Strategically, Phase 2 is the **switching-cost moat**. Once a team
+has 50 contracts declared per-agent, per-task, per-tier, leaving
+Inkfoot means re-implementing those contracts in a competitor's
+DSL.
 
-| Deliverable | Architecture ref | Notes |
+## 2. Goals & non-goals (phase-scoped)
+
+### Goals
+
+- **Token Contracts work end-to-end** — YAML → runtime enforcement
+  → CI gate.
+- **Modification policies actually modify** — `LazyToolExposure`
+  re-shapes the tools list per turn; `CheapSummariser` intercepts
+  oversized tool results and compresses them; both gated to Pattern
+  C adapters.
+- **Six providers supported, not two.** Anthropic + OpenAI (Phase 0)
+  + Gemini + Bedrock + OpenAI-compat + (any provider behind the
+  compat adapter via `base_url`).
+- **Five additional cost smells** validated against the corpus we
+  built up in Phases 0–1.
+- **Postgres backend** with mechanical SQLite → Postgres migration.
+- **Cost-per-success is the documented headline metric** —
+  `inkfoot report` leads with it; the docs lead with it.
+
+### Non-goals
+
+- Cloud infrastructure — Phase 3.
+- Cost Replay Engine — Phase 3.
+- Static analyzer (`inkfoot lint`) — Phase 3.
+- Invoice reconciliation — Phase 3.
+- TypeScript port — Phase 4.
+- Community Cost Smell Library — Phase 4.
+- Anomaly-based alerting — Phase 4 (threshold-based with contracts
+  ships in Phase 2).
+- IAM / SSO / SOC 2 — Phase 5.
+
+## 3. High-level shape — Phase 2 only
+
+```mermaid
+flowchart TB
+  subgraph App["User's application"]
+    UserCode["Application code"]
+    Frameworks["LangGraph<br/>OpenAI Agents SDK<br/>Anthropic Agent SDK<br/>Pydantic AI<br/>CrewAI"]
+  end
+
+  subgraph Inkfoot["inkfoot package (Phase 2)"]
+    Phase1["everything from Phase 0 and 1"]
+    Contracts["contracts/<br/>YAML schema + loader"]
+    Enforcer["ContractEnforcer<br/>(degrade ladder)"]
+    Draft["inkfoot contract draft"]
+    Check["inkfoot contract check"]
+    LTE["policies/LazyToolExposure"]
+    CSum["policies/CheapSummariser"]
+    Pyd["adapters/pydantic_ai"]
+    Crew["adapters/crewai"]
+    Gemini["providers/gemini"]
+    Bedrock["providers/bedrock"]
+    Compat["providers/openai_compat"]
+    Postgres["storage/postgres"]
+    Migrate["inkfoot migrate"]
+    CPSReport["cost-per-success<br/>report renderer"]
+  end
+
+  subgraph CI["CI runner"]
+    Diff["inkfoot diff (Phase 1)"]
+    ContractCheck["inkfoot contract check"]
+  end
+
+  UserCode --> Frameworks
+  Frameworks --> Phase1
+  Contracts --> Enforcer
+  Enforcer --> Phase1
+  Phase1 --> LTE
+  Phase1 --> CSum
+  Frameworks -. "Pattern C unblocks" .-> LTE
+  Frameworks -. "Pattern C unblocks" .-> CSum
+  Phase1 --> Gemini
+  Phase1 --> Bedrock
+  Phase1 --> Compat
+  Phase1 --> Postgres
+  Phase1 --> Migrate
+  Phase1 --> CPSReport
+  Draft -. "produces" .-> Contracts
+  ContractCheck -. "reads" .-> Contracts
+  ContractCheck -. "consumes" .-> Diff
+```
+
+What's new vs Phase 1:
+
+| New component | Responsibility |
+|---|---|
+| `contracts/` | YAML loader, schema validator, resolver |
+| `ContractEnforcer` | Runtime evaluation of contract clauses against `RunContext` state; emits `contract_violation` events; triggers the `degrade` ladder |
+| `inkfoot contract draft` | Generates a contract YAML from observed history (p95 + headroom) |
+| `inkfoot contract check` | CI gate: load contracts + compare to a benchmark JSON; exit 2 on violation |
+| `LazyToolExposure` | Modification policy; narrows the tools list per turn based on classifier output |
+| `CheapSummariser` | Modification policy; intercepts oversized tool results; compresses via a per-provider cheap model |
+| Pydantic AI / CrewAI adapters | Two more Pattern C adapters |
+| Gemini / Bedrock / OpenAI-compat providers | The provider matrix expansion |
+| Postgres backend + `inkfoot migrate` | Multi-process / multi-host installs |
+| Cost-per-success report renderer | New columns in `inkfoot report`; the docs headline |
+
+---
+
+## 4. Components — detailed design
+
+### 4.1 Token Contracts — YAML schema
+
+The contract DSL stays narrow on purpose. The grammar:
+
+```yaml
+# .inkfoot/contracts/customer-support-triage.yaml
+schema_version: 1
+task: customer-support-triage
+
+# Budget clauses — evaluated per-run.
+budget:
+  max_nanodollars: 50_000_000            # $0.05
+  max_llm_calls: 8
+  max_tool_result_tokens: 1500
+  cache_hit_rate_min: 0.70
+  max_run_duration_seconds: 30
+
+# Outcome clauses — evaluated across a window of runs.
+outcome:
+  required_success_rate: 0.95
+  measure_window_runs: 100               # most-recent N runs of this task
+
+# Degrade ladder — actions at budget percentages.
+degrade:
+  - at_percent: 80
+    action: warn
+  - at_percent: 90
+    action: switch_to_cheap_model
+  - at_percent: 100
+    action: block
+
+# Optional per-tier overrides (resolved against the run's metadata.tenant_tier).
+overrides:
+  free_tier:
+    budget:
+      max_nanodollars: 10_000_000        # $0.01
+```
+
+The schema validator (Pydantic v2-based) catches typos, missing
+fields, and impossible thresholds (e.g., `at_percent` outside 1–100;
+a `switch_to_cheap_model` action when no cheap-model fallback is
+configured) at load time.
+
+**Resolution order** when a run lacks a per-tier override:
+
+1. `overrides.<tier>.<field>` if the run's metadata names a matching
+   tier.
+2. `<field>` at the top level.
+3. Default (the field doesn't apply to this run).
+
+**Where contracts live.** A contract file is loaded by:
+
+- `inkfoot.instrument(contracts=["./contracts/triage.yaml"])` at
+  init time, or
+- A directory passed via `INKFOOT_CONTRACTS_DIR` env var, or
+- `inkfoot contract check` reading from `.inkfoot/contracts/*.yaml`
+  in CI.
+
+The architecture deliberately stays file-based (Git-versioned)
+rather than database-stored. The contract is **code**.
+
+### 4.2 `ContractEnforcer` — runtime
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as User code
+  participant Run as RunContext
+  participant Enf as ContractEnforcer
+  participant Reg as PolicyRegistry
+  participant Shim as Provider shim
+  participant SDK as Provider SDK
+  participant Store as Storage
+
+  App->>Run: @agent_run(task="customer-support-triage")
+  Run->>Enf: load contract for task
+  Enf-->>Run: contract or None
+
+  loop each LLM call
+    App->>SDK: client.messages.create(...)
+    Shim->>Enf: evaluate (estimated cost + projected new total)
+    alt projected < 80% budget
+      Enf-->>Shim: action=allow
+    else projected ≥ 80% but < 90%
+      Enf->>Store: INSERT contract_violation event level=warn
+      Enf-->>Shim: action=warn (allow + log)
+    else projected ≥ 90% but < 100%
+      Enf->>Store: INSERT contract_violation event level=degrade action=switch_to_cheap_model
+      Enf-->>Shim: rewrite model param to cheap_model
+    else projected ≥ 100%
+      Enf->>Store: INSERT contract_violation event level=block
+      Enf-->>App: raise PolicyBlocked
+    end
+
+    Shim->>SDK: invoke create with (possibly modified) params
+    SDK-->>Shim: response
+  end
+
+  App->>Run: set_outcome(...)
+  Run->>Enf: outcome window check (across last N runs)
+  alt success rate < required
+    Enf->>Store: INSERT contract_violation event level=outcome
+  end
+```
+
+The degrade ladder is **deterministic** — each contract specifies
+the action at each percentage; the enforcer never improvises.
+Actions:
+
+| Action | What happens |
+|---|---|
+| `warn` | Log + `contract_violation` event with `level=warn`. Call proceeds unmodified. |
+| `switch_to_cheap_model` | The `model` kwarg is rewritten to the contract's `cheap_model` (or the provider's `CAPABILITIES.cheap_model_for_summariser` if none specified). `level=degrade` event recorded. |
+| `block` | Raise `PolicyBlocked` from the shim. `level=block` event recorded. |
+
+**Cost estimation for the projected-spend check.** Before each call,
+the enforcer needs to estimate "what will this call cost?" without
+making it. The estimator:
+
+1. Tokenises the request's messages + tools.
+2. Multiplies by the model's input price.
+3. Estimates output tokens by the moving average across recent runs
+   of the same task, defaulting to 500 if no history.
+
+Estimation is intentionally pessimistic-by-default; better to warn
+slightly too early than to miss a budget.
+
+### 4.3 `inkfoot contract draft`
+
+Writing contracts from scratch is hard. The draft command produces a
+starting point from observed history:
+
+```
+$ inkfoot contract draft --task customer-support-triage --window 30d --output ./contracts/triage.yaml
+
+  Analysing 412 runs of task 'customer-support-triage' over 30 days...
+
+  Suggested contract:
+    budget:
+      max_nanodollars: 41_000_000      # p95 + 10% headroom
+      max_llm_calls: 6                  # p99 + 1
+      max_tool_result_tokens: 1_200     # observed p95
+      cache_hit_rate_min: 0.72          # observed p25
+      max_run_duration_seconds: 28      # p95 + 10%
+    outcome:
+      required_success_rate: 0.93       # observed minus 1pp tolerance
+      measure_window_runs: 100
+
+  Outliers above budget: 3 runs (0.7%)
+  See: inkfoot report --task customer-support-triage --above-budget
+
+  Written to ./contracts/triage.yaml
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant CLI as inkfoot contract draft
+  participant Store as Storage
+  participant Stats as percentiles
+  participant Tmpl as YAML template
+
+  CLI->>Store: SELECT runs WHERE task=? AND started_at>now()-window
+  Store-->>CLI: run rows
+  CLI->>Store: SELECT total_* projections
+  CLI->>Stats: compute p50, p95, p99 per field
+  Stats-->>CLI: percentile table
+  CLI->>Tmpl: fill template with p95+headroom
+  Tmpl-->>CLI: contract YAML
+  CLI->>File: write contract YAML
+  CLI-->>User: render summary + outlier count
+```
+
+**Draft, not commit.** The output is a starting point; humans edit
+before committing. The docs make this clear.
+
+### 4.4 `inkfoot contract check` (CI gate)
+
+Composes with the Phase-1 `inkfoot diff`. In CI:
+
+```bash
+inkfoot benchmark ./tests/agent_scenarios --output current.json
+inkfoot contract check ./contracts/ --against current.json
+inkfoot diff baseline.json current.json
+```
+
+`contract check` reads every contract file in the directory, finds
+the matching benchmark scenario by task name, and evaluates the
+contract's budget clauses against the benchmark's per-scenario
+stats. Output:
+
+```
+$ inkfoot contract check ./contracts/ --against current.json
+
+  Contract: customer-support-triage
+    budget.max_nanodollars:    41_000_000 → measured p95 38_400_000 OK
+    budget.max_llm_calls:               6 → measured p95 5.2 OK
+    budget.cache_hit_rate_min:       0.72 → measured 0.47 ❌
+    budget.max_run_duration_seconds:   28 → measured 22.1 OK
+
+  Contract: email-summary
+    [all clauses OK]
+
+  Verdict: 1 contract violated. CI exit code: 2.
+```
+
+Exit-code contract:
+
+- `0` — all contracts met.
+- `1` — soft warnings (clause at 90%+ of threshold but not over).
+- `2` — at least one contract violated.
+
+The CI integration is: `inkfoot diff` flags PR-level regressions
+against baseline; `inkfoot contract check` flags absolute violations
+of the team-agreed contract. Both can fail the build; the second is
+the harder gate.
+
+### 4.5 `LazyToolExposure` — modification policy
+
+Today's loops typically expose every enabled tool on every turn. For
+a 5-tool agent that's ~3000 tokens of tool definitions sent every
+turn. `LazyToolExposure(stale_after_turns=N)` narrows the exposed
+tool set per turn based on a small classifier:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as User code
+  participant Adp as Pattern C adapter (e.g. LangGraph)
+  participant LTE as LazyToolExposure
+  participant Cls as Tool-relevance classifier
+  participant SDK as Provider SDK
+
+  App->>Adp: graph.invoke(state)
+  loop each turn
+    Adp->>LTE: before_call with ctx containing question and tools_offered and turn_number
+    LTE->>Cls: classify(question, tools_offered, recent_calls)
+    Cls-->>LTE: relevant tools are datadog_metrics and github_prs
+    Note over LTE: drop tools not seen in recent_calls AND not classified relevant
+    LTE-->>Adp: modified tools_list (subset)
+    Adp->>SDK: create(..., tools=modified)
+    SDK-->>Adp: response
+    Adp->>LTE: after_call(ctx, response)
+    LTE->>LTE: update recent_calls (sliding window of stale_after_turns)
+  end
+```
+
+**The classifier** is heuristic in Phase 2:
+
+- Tools called in the most recent `stale_after_turns` turns are
+  always kept.
+- Tools whose names appear in the user's question are kept.
+- Tools tagged as `core` in the framework adapter's metadata are
+  always kept.
+- Everything else is dropped from the current turn's tools list.
+
+When the model needs a dropped tool, it gracefully says so ("I'd
+need to look up X but don't see that tool available"); the next
+turn's classifier sees that signal in the assistant text and
+restores the tool. The policy keeps a stale-after-N moving window
+so the tool isn't immediately re-dropped.
+
+**Why this is Pattern C-only.** Pattern A (monkey-patched SDK)
+cannot reliably mutate the `tools` kwarg on the create call — the
+agent's loop may have cached the tools list earlier. Pattern C
+(framework adapter) has the framework's tool registry in hand.
+
+### 4.6 `CheapSummariser` — modification policy
+
+Oversized tool results live forever in conversation history (they're
+sent to the model every subsequent turn). `CheapSummariser` intercepts
+results above a token threshold and replaces them with a compressed
+summary produced by the provider's cheap model:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Tool as Tool implementation
+  participant Adp as Pattern C adapter
+  participant CSum as CheapSummariser
+  participant Cheap as Provider's cheap model
+  participant State as Conversation state
+
+  Tool-->>Adp: tool_result (12_500 tokens — over threshold)
+  Adp->>CSum: should_summarise?
+  CSum->>CSum: token count > threshold ?
+  CSum-->>Adp: yes
+  Adp->>CSum: summarise(result, original_question)
+  CSum->>Cheap: messages.create with SUMMARISER_PROMPT plus result plus question
+  Cheap-->>CSum: summary (≈ 1_000 tokens)
+  CSum-->>Adp: summary + _summarised_from metadata
+  Adp->>State: append summary to conversation (not the raw result)
+  Note over State: model sees the summary and raw result lives in event log only
+```
+
+`CheapSummariser(threshold_tokens=1500, max_summary_tokens=600,
+preserve_for_replay=True)`:
+
+| Knob | Meaning |
+|---|---|
+| `threshold_tokens` | Tool results below this size pass through unchanged |
+| `max_summary_tokens` | Upper bound on the summariser's output |
+| `preserve_for_replay` | When `True`, the raw result is still stored in `events.payload_json` for future Phase-3 replay; the LLM sees only the summary |
+
+**Provider-cheap-model routing.** Phase 0's `Capabilities` matrix
+declares each provider's cheap model:
+
+| Provider | Cheap model |
+|---|---|
+| Anthropic | `claude-haiku-4-5` |
+| OpenAI | `gpt-4o-mini` |
+| Gemini | `gemini-1.5-flash` |
+| Bedrock | `meta.llama-3.2-3b-instruct` (or model-family-appropriate) |
+| OpenAI-compat | configurable per-`base_url` |
+
+The summariser uses the *same provider as the active investigation*
+to avoid credential proliferation. If the provider has no cheap-model
+declared, `CheapSummariser` falls back to mechanical truncation
+(first N tokens + marker).
+
+### 4.7 Provider expansion
+
+The `LLMProvider` interface (sketched in Phase 0's architecture) gains
+three concrete classes in Phase 2.
+
+#### 4.7.1 `GeminiProvider`
+
+Uses `google-generativeai`. Capability declaration:
+
+```python
+class GeminiProvider(LLMProvider):
+    PROVIDER_TYPE = "gemini"
+    DEFAULT_MODEL = "gemini-1.5-pro"
+    CAPABILITIES = Capabilities(
+        supports_tool_use=True,
+        supports_image_input=True,
+        supports_document_block=True,
+        supports_prompt_cache=True,
+        prompt_cache_style="cache_resource",
+        cache_read_price_ratio=0.25,
+        cache_write_price_ratio=1.0,
+        supports_response_format_json=True,
+        cheap_model_for_summariser="gemini-1.5-flash",
+    )
+
+    def map_usage(self, raw): ...    # gemini's usageMetadata → TokenUsage
+```
+
+Gemini's `cache_resource` style (`CachedContent` API objects) is
+different from Anthropic's marker-based caching. Phase 0's
+`CacheControlPlacer` policy is provider-aware: on Gemini it
+creates/reuses cache resources; on Anthropic it places markers; on
+OpenAI it does nothing (caching is automatic).
+
+#### 4.7.2 `BedrockProvider`
+
+Uses `boto3` against the Bedrock Converse API. One class covers
+Claude, Llama, Titan, Mistral, Cohere on AWS:
+
+```python
+class BedrockProvider(LLMProvider):
+    PROVIDER_TYPE = "bedrock"
+    DEFAULT_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+    # Capabilities depend on the underlying model family
+    def get_capabilities(self) -> Capabilities:
+        return _BEDROCK_MODEL_CAPS[self._model_family()]
+```
+
+`_BEDROCK_MODEL_CAPS` is a dict keyed by model-family prefix:
+
+| Family prefix | Caching | Document blocks |
 |---|---|---|
-| **Token Contracts** — YAML schema + runtime enforcement | [§4.6](../architecture-inkfoot.md) | Per-task budgets, max LLM calls, max tool result tokens, cache-hit floor, degrade ladder |
-| **`inkfoot contract draft --task ...`** | §4.6 | Generates a draft contract from observed history with p95+10% headroom |
-| **`inkfoot contract check`** CI gate | §4.6 | Exit code 2 on violation; integrates with the Phase-1 `inkfoot diff` |
-| `BudgetCap` upgraded from observe to enforce | §4.5, §4.6 | Triggers the contract's degrade ladder (warn → switch_to_cheap_model → block) |
-| **Modification policy: `LazyToolExposure(stale_after_turns=N)`** | §4.5 | Requires framework adapter (Pattern C); fails at registration on Pattern A |
-| **Modification policy: `CheapSummariser(threshold_tokens=N)`** | §4.5 | Compresses oversized tool results before re-feeding |
-| Framework adapter for **Pydantic AI** | §4.1 | Real adoption among type-safety-conscious teams |
-| Framework adapter for **CrewAI** | §4.1 | Multi-agent workflow market |
-| Provider support: **Gemini** | §4.2 | Translator for Gemini's `usageMetadata`; cache_resource style; cost-competitive |
-| Provider support: **AWS Bedrock** (Converse API for Claude + Llama + Titan + Mistral + Cohere) | §4.2 | Enterprise-credentials path; one provider class for the AWS catalogue |
-| Provider support: **OpenAI-compatible** (vLLM, Together, Fireworks, Groq, Ollama) | §4.2 | Long tail in one shim; per-`base_url` capability overrides |
-| **Cost-per-success reporting** promoted to headline metric | §4.7, §4.12 | New columns in `inkfoot report`; docs promote it as *the* number |
-| `inkfoot tail` (live event tail) | §6.2 | Engineer ergonomics during development |
-| **Postgres storage backend** | §4.3 | Multi-process / multi-host installs; same schema as SQLite |
-| `inkfoot migrate --to postgres` | §6.2 | Smooth migration off SQLite |
-| **Five additional cost smells** | §4.4 | Informed by Phase 0 + Phase 1 production data |
-| `inkfoot.dev/insights` early posts | — | Anonymised case studies (opt-in customers; consent required) |
+| `anthropic.` | explicit markers | yes |
+| `meta.llama` | none | no |
+| `amazon.titan` | none | no |
+| `mistral.` | none | no |
+| `cohere.` | none | no |
 
-### Phase 2 cost smells
+#### 4.7.3 `OpenAICompatProvider`
 
-Phase 0 shipped five smells; Phase 2 adds five more, validated against
-real production usage:
+The long-tail unlocker. One class for vLLM, Together, Fireworks,
+Anyscale, DeepInfra, Groq, LM Studio, Cerebras, Ollama, and any
+future endpoint that accepts OpenAI Chat Completions requests:
 
-| Smell ID | What triggers it | Recommendation |
-|---|---|---|
-| `tool-schema-drift` | Tool schema fingerprint changes mid-run | Stabilise tool ordering; avoid mid-run tool additions |
-| `cost-skewed-by-outlier` | A single run is >10× p50 of its task | Investigate outlier; possibly enforce `BudgetCap` |
-| `unbounded-conversation-history` | Run carries >50k tokens of memory | Add memory compression; truncate older turns |
-| `over-instrumented-retries` | SDK retries firing >3× per call on average | Tune backoff; circuit-break upstream |
-| `summariser-not-firing` | Tool result tokens consistently > 2k but no summariser configured | Enable `CheapSummariser(threshold_tokens=1500)` |
+```python
+class OpenAICompatProvider(LLMProvider):
+    PROVIDER_TYPE = "openai_compat"
 
-## 3. What we deliberately do NOT build
+    def __init__(self, *, credentials, model, base_url, capabilities=None):
+        self._base_url = base_url
+        self._caps = capabilities or _conservative_compat_caps()
+```
 
-- **Cloud infrastructure** — Phase 3.
-- **Cost Replay Engine** — Phase 3.
-- **Static analyzer** (`inkfoot lint`) — Phase 3.
-- **Invoice reconciliation** — Phase 3.
-- **TypeScript port** — Phase 4.
-- **Cost Smell Library (community)** — Phase 4.
-- **Anomaly-based alerting** — Phase 4 (threshold-based lands in
-  Phase 3 with Cloud).
-- **IAM / SSO / SOC 2** — Phase 5.
+`_conservative_compat_caps()` returns:
 
-## 4. Architecture this phase exercises
+```python
+Capabilities(
+    supports_tool_use=True,
+    supports_image_input=False,
+    supports_document_block=False,
+    supports_prompt_cache=False,
+    prompt_cache_style="none",
+    cache_read_price_ratio=1.0,
+    cache_write_price_ratio=1.0,
+    supports_response_format_json=False,
+    cheap_model_for_summariser=None,  # fall back to truncation
+)
+```
 
-Newly implemented vs Phase 1:
+Operators override per-`base_url` in config when they know better
+(e.g., Together.AI's `together.xai-grok-3` has tool use; Cerebras
+doesn't have caching).
 
-- **§4.5** — capability matrix now used in anger: modification policies
-  land only behind framework adapters.
-- **§4.6** — Token Contracts (YAML schema, runtime enforcement, CI
-  gate, draft generation from history).
-- **§4.7** — outcome tracking *capture* was Phase 0; *reporting
-  promotion* is Phase 2.
-- **§4.4** — five additional smells.
-- **§4.3** — Postgres storage backend + migration tooling.
+### 4.8 Pydantic AI + CrewAI adapters
 
-The architecture's provider matrix expands materially in Phase 2:
-Anthropic + OpenAI (Phase 0) → +Gemini +Bedrock +OpenAI-compat. The
-capability flags shipped in Phase 0's ledger design now actually
-matter — Bedrock-Llama has no prompt caching, Gemini uses cache
-resources, etc.
+Two more Pattern C adapters. Internals mirror Phase 1's LangGraph
+and OpenAI Agents SDK adapters: detect framework structure (Pydantic
+AI's `Agent` class; CrewAI's `Crew` + `Agent` + `Task`); wrap entry
+points; emit framework-native event metadata.
 
-## 5. Definition of done
+The contract-test harness from Phase 1 extends to cover the two new
+adapters automatically; no new test infrastructure.
 
-- [ ] Token Contracts work end-to-end: YAML → runtime enforcement →
-      CI gate.
-- [ ] All Phase 2 framework adapters (LangGraph, OpenAI Agents SDK,
-      Anthropic SDK, Pydantic AI, CrewAI) pass the contract-test
-      harness against real LLM APIs (CI runs weekly).
-- [ ] All Phase 2 provider implementations (Gemini, Bedrock,
+### 4.9 Postgres storage backend
+
+Same schema as SQLite; same `Storage` Protocol. The migration path:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant User
+  participant CLI as inkfoot migrate --to postgres
+  participant SQLite as ~/.inkfoot/runs.db
+  participant PG as Postgres
+
+  User->>CLI: inkfoot migrate --to postgres --dsn postgresql://...
+  CLI->>PG: CREATE SCHEMA IF NOT EXISTS and apply DDL
+  CLI->>SQLite: SELECT * FROM runs
+  loop batched (1000 rows / batch)
+    SQLite-->>CLI: rows
+    CLI->>PG: INSERT
+  end
+  CLI->>SQLite: SELECT * FROM events
+  loop batched (10_000 rows / batch)
+    SQLite-->>CLI: rows
+    CLI->>PG: INSERT
+  end
+  CLI->>PG: VACUUM ANALYZE
+  CLI->>SQLite: rename → runs.db.migrated
+  CLI-->>User: migration complete and runs.db is now the Postgres URL
+```
+
+The aggregator worker is now a **separate process** when storage is
+Postgres (multi-process safe). Coordination via PG advisory locks:
+the aggregator holds `pg_advisory_lock(hash('inkfoot_aggregator'))`
+for the duration of a sweep; multiple processes contending see one
+sweeper, others wait.
+
+### 4.10 Cost-per-success report renderer
+
+The Phase 0 captured outcome; Phase 1 stored it; Phase 2 promotes
+**cost-per-success** to the headline metric:
+
+```
+$ inkfoot report --last 30d --group-by task
+
+  task                          runs   avg_$    p95_$    success%  cost/success
+  customer-support-triage        412   $0.041   $0.083    93.2%    $0.044
+  email-summary                  138   $0.083   $0.291    97.1%    $0.085
+  pricing-research                22   $0.412   $1.180    81.8%    $0.504
+                                                                     ^^^^^^
+                                                                     headline
+```
+
+The docs and marketing surface **cost-per-success** as *the* number
+to track. Raw cost without outcome is misleading; raw success rate
+without cost is incomplete. The product's job is to surface both
+together.
+
+Reports also gain "uninstrumented-outcome" buckets — runs with no
+`set_outcome` call appear as a separate row so the team can see how
+much of their data is in the dark.
+
+### 4.11 Five additional cost smells
+
+| Smell ID | Trigger | Recommendation | Suggested policy |
+|---|---|---|---|
+| `tool-schema-drift` | Tool schema fingerprint changes mid-run | Stabilise tool ordering; avoid mid-run tool additions | `LazyToolExposure` with reset-on-detection |
+| `cost-skewed-by-outlier` | A single run is > 10× p50 of its task | Investigate outlier; possibly enforce `BudgetCap` | `BudgetCap` |
+| `unbounded-conversation-history` | Run carries > 50k tokens of memory | Add memory compression; truncate older turns | (manual) |
+| `over-instrumented-retries` | SDK retries firing > 3× per call on average | Tune backoff; circuit-break upstream | `RetryThrottle` |
+| `summariser-not-firing` | Tool result tokens consistently > 2k but no summariser configured | Enable `CheapSummariser(threshold_tokens=1500)` | `CheapSummariser` |
+
+The data sources for these were Phase 0's internal corpus and
+Phase 1's broader corpus from early external users; that's the
+honest validation that they're worth shipping.
+
+---
+
+## 5. Module structure delta
+
+```
+inkfoot/
+├── ... (Phase 0 + 1 unchanged) ...
+├── contracts/
+│   ├── __init__.py
+│   ├── schema.py               # Pydantic models
+│   ├── loader.py               # YAML reader, schema validator
+│   ├── enforcer.py             # ContractEnforcer (runtime)
+│   ├── draft.py                # inkfoot contract draft
+│   └── check.py                # inkfoot contract check
+├── policy/
+│   ├── ... (Phase 0 entries unchanged) ...
+│   ├── lazy_tool_exposure.py   # LazyToolExposure
+│   └── cheap_summariser.py     # CheapSummariser
+├── providers/
+│   ├── __init__.py
+│   ├── base.py                 # LLMProvider ABC + Capabilities
+│   ├── anthropic.py            # refactor — Phase 0 shim → provider class
+│   ├── openai.py               # ditto
+│   ├── gemini.py
+│   ├── bedrock.py
+│   └── openai_compat.py
+├── adapters/
+│   ├── ... (Phase 1 entries unchanged) ...
+│   ├── pydantic_ai.py
+│   └── crewai.py
+├── storage/
+│   ├── ... (Phase 0 entries unchanged) ...
+│   ├── postgres.py             # PostgresStorage
+│   └── postgres_aggregator.py  # separate-process aggregator with advisory locks
+├── smells/
+│   ├── ... (Phase 0 entries unchanged) ...
+│   ├── tool_schema_drift.py
+│   ├── cost_skewed_by_outlier.py
+│   ├── unbounded_conversation_history.py
+│   ├── over_instrumented_retries.py
+│   └── summariser_not_firing.py
+├── reports/
+│   ├── __init__.py
+│   ├── cost_per_success.py     # the new headline renderer
+│   └── tag_groupby.py          # tag-based slices
+└── cli/
+    ├── ... (Phase 0 + 1 entries unchanged) ...
+    ├── contract.py             # contract draft / check
+    └── migrate.py              # storage migration
+```
+
+The Phase-0 `shims/` directory's content moves into `providers/`
+(now an LLM-provider abstraction, not just monkey-patches). The
+provider abstraction was implicit in Phase 0; Phase 2 makes it
+explicit because that's where the long tail of providers actually
+lands.
+
+---
+
+## 6. Public API surface (Phase 2 additions)
+
+```python
+# Contracts
+inkfoot.instrument(..., contracts=["path/to/contracts/"])
+# or env: INKFOOT_CONTRACTS_DIR=...
+
+# Modification policies
+from inkfoot.policy import LazyToolExposure, CheapSummariser
+
+# Provider-aware framework wiring (unchanged signature; new providers detected)
+import inkfoot.langgraph
+inkfoot.langgraph.instrument(graph)  # detects Gemini / Bedrock / compat automatically
+
+# Provider override (rare; for OpenAI-compat)
+from inkfoot.providers import OpenAICompatProvider
+inkfoot.instrument(
+    providers={"my-vllm": OpenAICompatProvider(
+        credentials={"api_key": "..."},
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        base_url="https://my-vllm.internal/v1",
+        capabilities=Capabilities(supports_tool_use=True, ...),
+    )},
+)
+```
+
+CLI additions:
+
+```
+inkfoot contract draft --task NAME [--window 30d] [--output PATH]
+inkfoot contract check [DIR] --against BENCHMARK.json
+inkfoot migrate --to postgres --dsn DSN
+inkfoot report --group-by tag.<NAME>
+```
+
+---
+
+## 7. Critical end-to-end flows
+
+### 7.1 Request blocked by contract
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as User code
+  participant Run as RunContext
+  participant Enf as ContractEnforcer
+  participant Shim as Anthropic provider
+  participant SDK as anthropic SDK
+  participant Store as Storage
+
+  App->>Run: @agent_run(task="customer-support-triage")
+  Run->>Enf: load contract
+  Enf-->>Run: budget.max_nanodollars = 50_000_000
+
+  Note over App,Run: --- earlier in this run ---
+  App->>SDK: client.messages.create(...)
+  Shim->>Enf: projected = 41_000_000 (within 80%)
+  Enf-->>Shim: allow
+  SDK-->>App: response
+
+  App->>SDK: client.messages.create(...)
+  Shim->>Enf: projected = 47_000_000 (95% of budget)
+  Enf->>Store: contract_violation event (level=degrade, action=switch_to_cheap_model)
+  Enf-->>Shim: rewrite model = haiku
+  Shim->>SDK: create(model="claude-haiku-4-5", ...)
+  SDK-->>App: response (Haiku output)
+
+  App->>SDK: client.messages.create(...)
+  Shim->>Enf: projected = 52_000_000 (104% of budget)
+  Enf->>Store: contract_violation event (level=block)
+  Enf-->>App: raise PolicyBlocked("budget exhausted")
+```
+
+### 7.2 `LazyToolExposure` on a LangGraph node
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Graph as LangGraph node
+  participant Adp as inkfoot.langgraph.adapter
+  participant LTE as LazyToolExposure
+  participant SDK as Provider SDK
+  participant State as PolicyState (per run)
+
+  Graph->>Adp: invoke node with tools=[t1, t2, t3, t4, t5]
+  Adp->>LTE: before_call with question tools recent_calls=t2,t3
+  LTE->>LTE: relevant set is t1, t2, t3 because t2 and t3 are recent and t1 was mentioned in question
+  LTE->>State: pin t4 and t5 as stale
+  LTE-->>Adp: modified tools = [t1, t2, t3]
+  Adp->>SDK: create(tools=[t1, t2, t3], ...)
+  SDK-->>Adp: response uses t3
+  Adp->>LTE: after_call(ctx, response, called=[t3])
+  LTE->>State: recent_calls = [t2, t3, t3] sliding window
+```
+
+### 7.3 `CheapSummariser` intercepting a tool result
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Tool as get_recent_pull_requests
+  participant Adp as Pattern C adapter
+  participant CSum as CheapSummariser
+  participant Haiku as Anthropic Haiku
+  participant State as Conversation state
+  participant Event as Event log
+
+  Tool-->>Adp: result (50 PRs, 12_500 tokens)
+  Adp->>CSum: should_summarise(result)
+  CSum->>CSum: 12_500 > threshold=1500
+  CSum-->>Adp: yes
+  Adp->>CSum: summarise(result, run.question)
+  CSum->>Haiku: messages.create with summariser prompt
+  Haiku-->>CSum: summary (~800 tokens)
+  CSum-->>Adp: summary + _summarised_from_tokens=12_500
+  Adp->>State: append summary as tool_result message
+  Adp->>Event: persist raw result in event log (preserve_for_replay=True)
+  Note over State: model sees only the summary and raw stays in events
+```
+
+### 7.4 Contract check in CI
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Dev
+  participant PR as GitHub PR
+  participant Action as inkfoot/diff-action
+  participant Inkfoot as inkfoot CLI
+  participant Scen as scenarios/
+  participant Contracts as contracts/
+
+  Dev->>PR: push commit
+  PR->>Action: workflow runs
+  Action->>Inkfoot: inkfoot benchmark scenarios/ --output current.json
+  Inkfoot->>Scen: run each scenario × fixture
+  Inkfoot-->>Action: current.json
+  Action->>Inkfoot: inkfoot contract check contracts/ --against current.json
+  Inkfoot->>Contracts: load *.yaml
+  Inkfoot->>Inkfoot: per-contract evaluation
+  Inkfoot-->>Action: contract_check.md + exit code
+  Action->>Inkfoot: inkfoot diff baseline.json current.json
+  Inkfoot-->>Action: diff.md + exit code
+  Action->>PR: post combined sticky comment (contracts + diff)
+  alt either exit code 2
+    Action-->>Dev: build fails
+  else both ok
+    Action-->>Dev: build passes
+  end
+```
+
+---
+
+## 8. ADRs — Phase 2
+
+### ADR-2-1: Token Contracts are YAML files in source control, not database records
+
+**Status:** Accepted.
+**Context:** Contracts could live in the application database, in a
+config service, or in source control. Each has different invariants.
+**Decision:** Contracts are YAML files in the application's source
+control, loaded at instrument-time or via CLI. Treated as code.
+**Alternatives considered:**
+- *Database-stored.* Loses version history; hard to review in PRs;
+  needs a separate UI.
+- *Config service.* Premature complexity; introduces a runtime
+  dependency.
+**Consequences:** Contract changes go through PR review like any
+code change. `inkfoot diff` can compare the *behaviour under* the
+contracts of two commits.
+
+### ADR-2-2: Schema versioning on every contract file
+
+**Status:** Accepted.
+**Decision:** Every contract YAML has `schema_version: N` at the
+top. Inkfoot accepts the current and previous major schemas;
+breaking changes get a 6-month deprecation window.
+**Consequences:** Schema migrations are tracked in
+`contracts/CHANGELOG.md` in the OSS repo; teams upgrade contracts
+explicitly.
+
+### ADR-2-3: Degrade ladder actions are a fixed enum
+
+**Status:** Accepted.
+**Context:** The degrade ladder could be free-form (arbitrary
+callbacks) or a fixed enum.
+**Decision:** **Fixed enum.** Actions are `warn`, `switch_to_cheap_model`,
+`block`. Adding a new action requires a new schema version.
+**Alternatives considered:**
+- *Free-form Python callbacks.* Powerful but breaks the
+  configuration-not-code property. The whole point of the contract
+  is that it lives outside the application code.
+- *Plugin system.* Defer until customer demand surfaces.
+**Consequences:** Some use cases (e.g., "page on-call when over
+budget") require a separate notification policy rather than a
+contract-action. Acceptable.
+
+### ADR-2-4: `LazyToolExposure` uses a heuristic classifier, not an LLM
+
+**Status:** Accepted.
+**Context:** The classifier could be heuristic (keyword + history)
+or LLM-based (a small classification call before each turn).
+**Decision:** Heuristic in Phase 2. LLM-based classification is a
+Phase-4 follow-up if data warrants it.
+**Why:** Phase 2 ships modification policies for the first time;
+adding "another LLM call per turn" complicates the latency and cost
+story. Heuristic is good-enough at the 80% level. LLM-classifier
+upgrade is one swap.
+**Consequences:** Some edge cases route incorrectly. Mitigation: the
+policy keeps a stale-after-N window so a missed restoration recovers
+on the next turn.
+
+### ADR-2-5: `CheapSummariser` uses the same provider as the active investigation
+
+**Status:** Accepted.
+**Context:** The summariser could use a fixed cheap provider (e.g.,
+always Anthropic Haiku) or the same provider as the main
+investigation.
+**Decision:** **Same provider, cheap model in that provider's family.**
+**Alternatives considered:**
+- *Fixed cheap provider (Anthropic Haiku regardless of main provider).*
+  Pros: cheapest possible. Cons: forces two providers to be
+  configured; complicates the credential model.
+- *Per-policy provider override.* Power feature; deferred until
+  asked.
+**Consequences:** Providers without a `cheap_model_for_summariser`
+fall back to mechanical truncation. The OpenAI-compat provider is
+the common case; operators set the cheap model per-`base_url`.
+
+### ADR-2-6: Aggregator worker is a separate process under Postgres
+
+**Status:** Accepted.
+**Context:** SQLite supports an in-process aggregator (Phase 0).
+Postgres-backed deployments often run multiple processes (worker
+pools); the aggregator can't be a thread in each one.
+**Decision:** Under Postgres, the aggregator is a **separate
+process** coordinated by Postgres advisory locks.
+**Alternatives considered:**
+- *Thread in every process (without locking).* Multiple aggregators
+  doing the same work; harmless but wasteful and produces deadlock
+  potential on the dirty-flag.
+- *External cron triggered process.* Indirection for no benefit.
+**Consequences:** Operators must run `inkfoot aggregator-worker` as
+a separate process under Postgres mode. Documented in the migration
+runbook.
+
+### ADR-2-7: Contract overrides resolve by run metadata, not by user
+
+**Status:** Accepted.
+**Context:** Per-tier overrides need a way to know which tier a run
+is in. Two ways: look up by user identity, or carry tier on the run.
+**Decision:** **Carry on the run.** The application populates
+`run.metadata["tenant_tier"]` (or similar) when starting the run;
+the contract resolver reads that.
+**Alternatives considered:**
+- *User-table lookup.* Tightly couples to a user model we don't yet
+  have (Phase 5).
+**Consequences:** Until the user provides the tier metadata, all
+runs resolve against top-level (default) contract clauses.
+
+---
+
+## 9. Cross-cutting concerns
+
+### 9.1 Performance budgets (deltas)
+
+| Operation | Budget (p95) |
+|---|---|
+| Contract evaluation (per call) | < 50 µs |
+| `LazyToolExposure` classifier | < 100 µs |
+| `CheapSummariser` LLM call | governed by the cheap model's latency (~0.5–1 s for Haiku); the policy is async-friendly |
+| Postgres event insert | < 5 ms (p95, RDS-class hardware) |
+| Postgres aggregator sweep (50 dirty runs) | < 200 ms |
+
+### 9.2 Testing strategy
+
+- **Contract loader tests** — Pydantic schema; positive + negative.
+- **Enforcer tests** — synthesised RunContext; assert degrade ladder
+  triggers correctly.
+- **Modification-policy tests** — `LazyToolExposure` invariants
+  (recent tools never dropped); `CheapSummariser` integration with
+  a fake cheap model.
+- **Provider contract tests** — same matrix as Phase 1, extended to
+  Gemini + Bedrock + OpenAI-compat; live tests behind
+  `@pytest.mark.live_<provider>`.
+- **Postgres backend** — Docker-Compose Postgres; integration tests
+  parameterised over SQLite vs Postgres.
+
+### 9.3 Documentation
+
+`inkfoot.dev` (from Phase 1) gains:
+
+- A whole **"Token Contracts" guide** (the load-bearing new
+  concept): authoring, draft-then-edit workflow, CI gating, per-tier
+  overrides.
+- A **modification-policies guide** with concrete examples per
+  framework.
+- **Provider matrix**: which features work with which provider × model.
+- **Migration runbook**: SQLite → Postgres step-by-step.
+
+### 9.4 Versioning
+
+Phase 2 lands `1.1.x` (minor bump from Phase 1's `1.0`). The contract
+schema is `schema_version: 1`. Breaking changes to the schema
+require a `2.0` of the schema, not a major bump of the library.
+
+---
+
+## 10. Risks & mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| **Contract DSL feature creep.** People will ask for arbitrary expressions, time-of-day budgets, per-customer overrides. | High | Medium | Strict schema; reject extensions in Phase 2; reconsider feature-by-feature in later phases with explicit ADRs |
+| **Cost-per-success promotion exposes our outcome-tagging gap.** Most runs lack outcome tags → metric is undefined for most data. | Medium | Medium | Report surfaces uninstrumented-outcome runs as a separate bucket; docs prominently flag the requirement; helper `set_outcome_from_heuristic()` provided for common patterns |
+| **`CheapSummariser` quality regression.** Bad summaries cost downstream accuracy. | Medium | Medium | Per-run summariser-quality metric; A/B mode that records both the summary and the raw next-turn behaviour; kill-switch flag |
+| **Postgres backend introduces a write-race regression.** | Low | High | Two-tier write semantics from Phase 0 already anticipate this; aggregator is single-writer (PG advisory lock); fuzz tests run against multi-process workloads |
+| **Provider matrix scope.** Five providers in one phase is ambitious. | Medium | Medium | OpenAICompatProvider covers ~50 backends in one class; only Anthropic + OpenAI + Bedrock + Gemini get direct integrations |
+| **Schema-version churn.** Contracts get a v2 before customers have settled into v1. | Medium | Low | Six-month deprecation window per ADR-2-2; the loader accepts current + previous; CI lint catches stale schemas |
+| **`LazyToolExposure` mis-routes critical tools.** Model can't find what it needs; loop stalls or fails. | Medium | High | Stale-after-N restoration window; metric on "tool restored after exclusion" rate; explicit `core` tag for tools that must never be dropped |
+
+---
+
+## 11. Definition of done
+
+- [ ] Token Contracts work end-to-end: YAML → runtime enforcement
+      → CI gate.
+- [ ] All Phase-2 framework adapters (LangGraph, OpenAI Agents SDK,
+      Anthropic Agent SDK, Pydantic AI, CrewAI) pass the
+      contract-test harness against real LLM APIs (CI weekly).
+- [ ] All Phase-2 provider implementations (Gemini, Bedrock,
       OpenAI-compat) pass the contract-test harness.
 - [ ] `LazyToolExposure` and `CheapSummariser` work end-to-end via
       framework adapters; refuse cleanly on Pattern A.
 - [ ] Cost-per-success appears in `inkfoot report` and is the
-      *promoted* headline number in docs.
-- [ ] At least 10 external users have starred *and* opened a real
-      issue or PR.
-- [ ] Postgres backend has a migration path with documented runbook;
-      SQLite → Postgres migration tested on a 100k-event corpus.
+      promoted headline number in docs.
+- [ ] At least **10 external users** have starred *and* opened a
+      real issue or PR.
+- [ ] Postgres backend has a migration path with documented
+      runbook; SQLite → Postgres migration tested on a 100k-event
+      corpus.
 - [ ] `inkfoot contract draft` produces a sensible draft from a
       real-world fixture (≥ 100-run history).
-- [ ] CI in this repo includes `inkfoot contract check` as a required
-      gate.
+- [ ] CI in this repo includes `inkfoot contract check` as a
+      required gate.
 
-## 6. Go/no-go signal — Phase 2 → Phase 3
+## 12. Go/no-go signal — Phase 2 → Phase 3
 
-Phase 2 transitions to Phase 3 (Cloud beta) **if at the 8-week mark
-post-Phase-2 launch** all three signals are true:
+Phase 2 → Phase 3 at the 8-week mark post-launch if **all three** of:
 
-- ≥ 2000 GitHub stars, AND
-- ≥ 50 weekly active installs (PyPI estimate), AND
-- ≥ 1 company has emailed asking about commercial options *("can we
-  use this internally? do you offer support?")*
+- ≥ 2000 GitHub stars, **AND**
+- ≥ 50 weekly active installs (PyPI estimate), **AND**
+- ≥ 1 company has emailed asking about commercial options.
 
-**Only two of three:** slow-roll Phase 3 and prioritise OSS
-hardening — make sure adapters work cleanly across edge cases, add a
-sixth+seventh adapter, deepen the recommendation engine. The Cloud
+If only two of three: slow-roll Phase 3; deepen Phase 2. The Cloud
 bet is premature without the OSS retention signal.
 
-**None or one:** stop and reshape the product. Building Cloud for an
-OSS user base that doesn't exist is the failure mode of every
-OSS-to-SaaS pivot that didn't work.
+If none or one: stop and reshape. Cloud built for an OSS user base
+that doesn't exist is the canonical OSS-to-SaaS failure mode.
 
-## 7. Phase-specific risks
+## 13. Suggested epic breakdown — prefix `EN`
 
-| Risk | Mitigation |
+| Epic | Title |
 |---|---|
-| **Token Contract DSL gets too complex.** Trying to express everything in YAML produces a not-quite-Turing-complete language people hate. | Constrain the schema strictly to the architecture's contract spec (§4.6); reject feature creep ("dynamic budgets based on time-of-day", "per-customer overrides") to Phase 3+ if at all. |
-| **Cost-per-success promotion exposes our outcome-tagging adoption gap.** If most runs lack outcome tags, "cost per success" is undefined or worse. | Surface uninstrumented-outcome runs as a separate bucket in reports; warn-loudly in docs about needing the tag; provide a "set_outcome from heuristic" helper for common patterns (e.g., LangGraph `END` state → success). |
-| **Five frameworks × three patterns × five providers = test surface explosion.** | Contract test harness: one parametrised matrix; mark slow-live tests as `@pytest.mark.live_<provider>` and run weekly. CI runs the matrix against `FakeLLMProvider` fixtures on every commit. |
-| **`CheapSummariser` quality on tool outputs.** Bad summaries cost downstream accuracy. | Use Haiku (Anthropic) / gpt-4o-mini (OpenAI) / Flash (Gemini) per provider's `cheap_model_for_summariser` (a Sleuth architecture pattern — borrowed); fall back to mechanical truncation if no cheap model is declared; per-run summariser-quality metric. |
-| **Postgres backend introduces a multi-process write race.** | The two-tier write semantics from Phase 0 already anticipate this; the aggregator is single-writer; multi-process is a Postgres-only path; SQLite stays single-process. |
-| **Provider expansion vs maintenance burden.** Five providers in one phase is ambitious. | OpenAI-compat covers ~50 effective backends in one class; treat that as the long-tail solution. Direct integrations only for Anthropic + OpenAI + Bedrock + Gemini. |
-
-## 8. Suggested epic breakdown (for later)
-
-Prefix **EN** (Enforce). Suggested:
-
-- **EN1** — Token Contract YAML schema + parser + validation.
-- **EN2** — Runtime contract enforcement (degrade ladder; `warn` /
-  `switch_to_cheap_model` / `block` actions; `contract_violation`
-  events).
-- **EN3** — `inkfoot contract draft` (history-based draft generation
-  with p95+10% defaults).
-- **EN4** — `inkfoot contract check` CI gate + integration with
-  Phase-1 `inkfoot diff`.
-- **EN5** — `LazyToolExposure` policy (Pattern C only).
-- **EN6** — `CheapSummariser` policy (Pattern C only; per-provider
-  summariser routing).
-- **EN7** — Pydantic AI framework adapter.
-- **EN8** — CrewAI framework adapter.
-- **EN9** — Gemini provider (translator + `cache_resource` cache
-  style + capability declaration).
-- **EN10** — AWS Bedrock provider (Converse API; multi-model class).
-- **EN11** — OpenAI-compatible provider (one class for vLLM /
-  Together / Fireworks / Groq / Ollama; per-`base_url` capability
-  override).
-- **EN12** — Postgres storage backend + `inkfoot migrate --to
-  postgres`.
-- **EN13** — Five additional cost smells (Phase 2 list above).
-- **EN14** — Cost-per-success report promotion (new columns;
-  uninstrumented-runs bucket; docs update).
-- **EN15** — `inkfoot tail` live event tail.
+| **EN1** | Token Contract YAML schema + parser + validation |
+| **EN2** | Runtime contract enforcement + degrade ladder |
+| **EN3** | `inkfoot contract draft` |
+| **EN4** | `inkfoot contract check` CI gate + integration with `inkfoot diff` |
+| **EN5** | `LazyToolExposure` (Pattern C only; heuristic classifier) |
+| **EN6** | `CheapSummariser` (Pattern C only; provider-cheap-model routing) |
+| **EN7** | Pydantic AI framework adapter |
+| **EN8** | CrewAI framework adapter |
+| **EN9** | Gemini provider (translator + `cache_resource` cache style) |
+| **EN10** | AWS Bedrock provider (Converse API; multi-model family) |
+| **EN11** | OpenAI-compatible provider (one class; per-`base_url` capability overrides) |
+| **EN12** | Postgres storage backend + `inkfoot migrate --to postgres` |
+| **EN13** | Five additional cost smells |
+| **EN14** | Cost-per-success report promotion (new columns; uninstrumented bucket; docs update) |
+| **EN15** | `inkfoot tail` live event tail |
+| **EN16** | Provider abstraction refactor (Phase 0's shims become formal provider classes) |
 
 EN1 + EN2 + EN3 + EN4 are the contracts critical path. EN5 + EN6
 unlock the modification-policy promise from Phase 1. EN9 + EN10 +
 EN11 expand the provider matrix. EN12 + EN14 are the
 single-developer-readable wins.
 
-## 9. Open questions
+## 14. Open questions
 
-- **Should contracts be per-task or per-(task, tenant) once
-  multi-tenant lands in Phase 5?** Decision: per-task at the file
-  level; tenant overrides are a Phase-5 layer that doesn't change
-  the schema, only the resolution order.
-- **What happens when the degrade ladder's `switch_to_cheap_model`
-  fires on a provider that has no obvious cheap model in its family
-  (e.g., a Bedrock-Mistral deployment)?** Decision: fall through to
-  `block`; surface a clear log line; document.
-- **Should `CheapSummariser` use the *current run's* provider or a
-  separately-configured cheap-summary provider?** Decision: same
-  provider (avoids credential proliferation; matches the multi-
-  provider architecture's pattern). Override is possible per-policy
-  for the edge case.
+- **Should contracts be per-task or per-(task, tenant)?** Phase 2:
+  per-task at the file level; tenant overrides resolve by metadata
+  (ADR-2-7). When IAM lands in Phase 5, tenants become first-class
+  but the schema doesn't change.
+- **`switch_to_cheap_model` on a provider with no obvious cheap
+  family member (e.g., Bedrock-Mistral).** Decision: fall through
+  to `block`; surface a clear log line; document the fallback path.
 - **`inkfoot contract draft` and adversarial history.** If the
-  observed history was already abnormal (e.g., one bad week
-  inflated p95), the draft inherits the abnormality. Mitigation:
-  surface the source window prominently; suggest narrower windows
-  for noisy datasets.
+  observed history was already abnormal, the draft inherits the
+  abnormality. Mitigation: surface the source window prominently;
+  suggest narrower windows for noisy datasets.
+- **Postgres backend default vs SQLite default.** Phase 2 keeps
+  SQLite as the default (zero-config local). Phase 3 Cloud forces
+  Postgres. Self-hosted-OSS-but-Postgres-backed users are the
+  middle ground; documented as the recommendation for any
+  multi-process deployment.
+- **Contract schema extension policy.** Six-month deprecation
+  window is the published policy; whether to accept community PRs
+  extending the schema before Phase 4's community phase is an open
+  question.

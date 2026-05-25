@@ -1,11 +1,18 @@
 # Inkfoot — Phases
 
-This folder holds **one document per phase** of the
+This folder holds **one architecture-per-phase document** of the
 [Inkfoot roadmap](../roadmap-inkfoot.md). Each phase doc is a
-self-contained scope statement: what ships, what deliberately doesn't,
-which sections of the [architecture](../architecture-inkfoot.md) it
-exercises, the definition of done, and the go/no-go signal that
-determines whether the next phase begins.
+self-contained design spec for that slice: context, goals, a
+high-level diagram for the phase's surface, detailed component
+internals, data-model deltas, sequence diagrams for the critical
+flows, phase-specific ADRs, risks, definition of done, the go/no-go
+signal that determines whether the next phase begins, and a
+suggested epic breakdown.
+
+Phase docs are deliberately **not** restatements of
+[architecture-inkfoot.md](../architecture-inkfoot.md) — they zoom in
+on what's actually built in their slice and reference the main
+architecture for shared design.
 
 Epics for each phase will be drafted later in companion files
 (`epics-phase-N-<slug>.md`). The phase docs are the bridge from
