@@ -228,6 +228,91 @@ def test_metadata_mode_writes_zero_content_rows(tmp_path) -> None:
     assert _content_rows_count(storage) == 0
 
 
+def test_replay_mode_does_not_write_content_rows_for_policy_events(
+    tmp_path,
+) -> None:
+    """Finding #3: policy events (e.g. budget_warning) don't carry
+    request/response content, so even in replay mode the
+    event_contents table should grow only by the llm_call count."""
+    fakes = install_fake_anthropic()
+    storage = SQLiteStorage(path=tmp_path / "runs.db")
+    _seed_run(storage)
+
+    from inkfoot.policy import BudgetCap
+
+    # max_nd=0 → the running total is 0 (no prior calls), so the
+    # very first call doesn't fire — but call 2's before_call sees
+    # the post-call total from call 1 (>0) and fires. So we expect
+    # one policy event after >= 2 calls.
+    instrument_mod.instrument(
+        storage=storage,
+        capture_mode="replay",
+        policies=[BudgetCap(max_nd=0)],
+    )
+    _set_current_run("test-run")
+
+    client = fakes["Messages"]()
+    for _ in range(3):
+        client.create(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+    n_llm_call = sum(
+        1 for e in storage.iter_events("test-run") if e["kind"] == "llm_call"
+    )
+    n_policy = sum(
+        1
+        for e in storage.iter_events("test-run")
+        if e["kind"] == "budget_warning"
+    )
+    n_content = _content_rows_count(storage)
+    assert n_llm_call == 3
+    assert n_policy >= 1
+    # Crucially: content rows == llm_call count. Policy events
+    # don't produce empty content rows even though they were
+    # written under capture_mode="replay".
+    assert n_content == n_llm_call
+
+
+def test_provider_error_still_emits_an_llm_call_event(tmp_path) -> None:
+    """Finding #4: when the SDK raises, the run must still grow by
+    one llm_call event carrying NeutralError; the user-visible
+    exception is identical to the un-instrumented behaviour."""
+    fakes = install_fake_anthropic()
+
+    class ProviderRateLimit(Exception):
+        pass
+
+    def boom(self, *args, **kwargs):
+        raise ProviderRateLimit("rate limited")
+
+    fakes["Messages"].create = boom
+    storage = SQLiteStorage(path=tmp_path / "runs.db")
+    _seed_run(storage)
+    instrument_mod.instrument(storage=storage)
+    _set_current_run("test-run")
+
+    client = fakes["Messages"]()
+    with pytest.raises(ProviderRateLimit, match="rate limited"):
+        client.create(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    events = list(storage.iter_events("test-run"))
+    assert len(events) == 1
+    assert events[0]["kind"] == "llm_call"
+
+    import json as _json
+
+    payload = _json.loads(events[0]["payload_json"])
+    assert payload["error"] is not None
+    assert payload["error"]["type"] == "ProviderRateLimit"
+    assert "rate limited" in payload["error"]["message"]
+    assert payload["ledger"]["output_tokens"] == 0  # all-zeros ledger
+
+
 def test_replay_mode_writes_one_content_row_per_event(tmp_path) -> None:
     fakes = install_fake_anthropic()
     storage = SQLiteStorage(path=tmp_path / "runs.db")

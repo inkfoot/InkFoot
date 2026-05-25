@@ -8,9 +8,9 @@ event. This module factors out that shared tail.
 
 from __future__ import annotations
 
-import itertools
 import json
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -33,15 +33,37 @@ _LOG = logging.getLogger("inkfoot.shims")
 
 # Process-wide monotonic sequence-per-run counter — guarantees event
 # ordering within a run even when wall-clock ms collide.
-_sequence_counters: dict[str, itertools.count] = {}
+#
+# Stored as plain ints rather than ``itertools.count`` so the
+# increment is a single atomic step under ``_sequence_lock`` —
+# itertools.count is thread-safe at the C level but the dict
+# check-then-set wrapper around it isn't, which let two concurrent
+# same-run calls land identical sequences (Finding #1 in the CL3
+# review). The current shape is "lock, read-or-init, increment,
+# return" — one critical section, no race.
+#
+# TODO(phase-5/end_run): once E5's ``end_run`` lands, plumb
+# :func:`_drop_sequence_counter` into the run-cleanup path so this
+# dict doesn't grow unbounded in long-lived processes (Finding #7).
+_sequence_lock = threading.Lock()
+_sequence_counters: dict[str, int] = {}
 
 
 def _next_sequence(run_id: str) -> int:
-    counter = _sequence_counters.get(run_id)
-    if counter is None:
-        counter = itertools.count(1)
-        _sequence_counters[run_id] = counter
-    return next(counter)
+    with _sequence_lock:
+        nxt = _sequence_counters.get(run_id, 0) + 1
+        _sequence_counters[run_id] = nxt
+        return nxt
+
+
+def _drop_sequence_counter(run_id: str) -> None:
+    """Release the per-run counter when the run ends. Idempotent.
+
+    Public so tests + the eventual ``end_run`` path can keep memory
+    bounded. Calling this on an unknown ``run_id`` is a no-op.
+    """
+    with _sequence_lock:
+        _sequence_counters.pop(run_id, None)
 
 
 def _now_ms() -> int:
@@ -144,6 +166,103 @@ def emit_llm_call(
     )
 
     # Write any policy events the before_call decisions produced.
+    _emit_policy_events(
+        ctx=ctx,
+        before_decisions=before_decisions,
+        ended_at=ended_at,
+        storage=storage,
+        capture_mode=capture_mode,
+    )
+
+
+# Cap on serialised error messages so a giant provider trace doesn't
+# blow out a JSON column. 1 KB matches the §9.3 privacy guidance
+# for user-facing error text (only one place in Phase 0 stores it).
+_MAX_ERROR_MESSAGE_CHARS = 1024
+
+
+def emit_llm_call_error(
+    *,
+    ctx: "CallContext",
+    exc: BaseException,
+    started_at: int,
+    ended_at: int,
+    storage: "Storage",
+    capture_mode: str,
+    before_decisions: list["PolicyDecision"],
+) -> None:
+    """Emit an ``llm_call`` event for a *failed* SDK call.
+
+    The user's call still raises (the shim re-raises after this);
+    we record a failure event with a :class:`NeutralError` so
+    reports can show ``run with N attempted calls, 1 failed``
+    instead of a missing event. The ledger is left at the
+    all-zeros default — there's no usage data on a failure.
+
+    Without this, E4's runaway-retry-loop smell would under-count
+    by exactly the failure rate.
+    """
+    from dataclasses import asdict
+
+    from inkfoot.ledger import CausalTokenLedger
+    from inkfoot.normalise import NeutralCall, NeutralError
+
+    message = ""
+    try:
+        message = str(exc)[:_MAX_ERROR_MESSAGE_CHARS]
+    except Exception:  # pylint: disable=broad-except  # pragma: no cover
+        message = ""
+
+    neutral_call = NeutralCall(
+        provider=ctx.provider,
+        model=ctx.model,
+        started_at=started_at,
+        ended_at=ended_at,
+        ledger=CausalTokenLedger(),
+        sequence=_next_sequence(ctx.run_id),
+        error=NeutralError(type=type(exc).__name__, message=message),
+        cache_status="n/a",
+    )
+
+    payload_json = json.dumps(asdict(neutral_call), default=str)
+    safely_run(
+        storage.insert_event,
+        event_id=str(ULID()),
+        run_id=ctx.run_id,
+        kind="llm_call",
+        occurred_at=ended_at,
+        sequence=neutral_call.sequence,
+        payload_json=payload_json,
+        # Errors never carry replay content even in replay mode —
+        # there's no successful response to record. The gating in
+        # storage.insert_event suppresses the event_contents row.
+        capture_mode=capture_mode,
+        hook_label="storage.insert_event(error)",
+    )
+
+    # Policy events still get a chance to land — a BudgetCap warning
+    # raised pre-call should still be recorded even if the SDK then
+    # blew up.
+    _emit_policy_events(
+        ctx=ctx,
+        before_decisions=before_decisions,
+        ended_at=ended_at,
+        storage=storage,
+        capture_mode=capture_mode,
+    )
+
+
+def _emit_policy_events(
+    *,
+    ctx: "CallContext",
+    before_decisions: list["PolicyDecision"],
+    ended_at: int,
+    storage: "Storage",
+    capture_mode: str,
+) -> None:
+    """Write one event row per non-``allow`` policy decision. The
+    success and failure paths both call this so any policy ``warn``
+    decision is recorded regardless of whether the SDK succeeded."""
     for decision in before_decisions:
         if decision.action == "allow" or not decision.emit_event_kind:
             continue
@@ -160,6 +279,8 @@ def emit_llm_call(
             occurred_at=ended_at,
             sequence=_next_sequence(ctx.run_id),
             payload_json=json.dumps(policy_payload, default=str),
+            # Policy events never carry content; pass through the
+            # current capture_mode for consistency.
             capture_mode=capture_mode,
             hook_label="storage.insert_event(policy)",
         )

@@ -17,6 +17,7 @@ Per §5.2:
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import time
@@ -24,7 +25,11 @@ from typing import Any, Callable, Optional
 
 from inkfoot.normalise.anthropic import AnthropicTranslator
 from inkfoot.policy.registry import PolicyRegistry
-from inkfoot.shims._emit import build_call_context, emit_llm_call
+from inkfoot.shims._emit import (
+    build_call_context,
+    emit_llm_call,
+    emit_llm_call_error,
+)
 from inkfoot.shims._isolation import safely_run
 
 _LOG = logging.getLogger("inkfoot.shims.anthropic")
@@ -118,10 +123,13 @@ class AnthropicShim:
     ) -> Callable[..., Any]:
         shim = self
 
+        @functools.wraps(original)
         def wrapper(client_self: Any, *args: Any, **kwargs: Any) -> Any:
             return shim._dispatch_sync(original, client_self, args, kwargs)
 
         wrapper.__inkfoot_shim__ = True  # type: ignore[attr-defined]
+        # functools.wraps already sets __wrapped__; the line below is
+        # a no-op but kept explicit for grep'ability.
         wrapper.__wrapped__ = original  # type: ignore[attr-defined]
         return wrapper
 
@@ -130,6 +138,7 @@ class AnthropicShim:
     ) -> Callable[..., Any]:
         shim = self
 
+        @functools.wraps(original)
         async def wrapper(client_self: Any, *args: Any, **kwargs: Any) -> Any:
             return await shim._dispatch_async(
                 original, client_self, args, kwargs
@@ -151,8 +160,20 @@ class AnthropicShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
-        # Invoke original — provider exceptions must propagate.
-        response = original(client_self, *args, **kwargs)
+        # Provider exceptions must propagate to the user — but we
+        # record a NeutralError event first so the run shows
+        # "N attempted, 1 failed" instead of a silent gap (Finding
+        # #4 in the CL3 review). Re-raise after the emit so user
+        # call sites see the exact same exception they would have
+        # without instrumentation.
+        try:
+            response = original(client_self, *args, **kwargs)
+        except Exception as exc:
+            ended_at = int(time.time() * 1000)
+            self._on_provider_error(
+                ctx, exc, before_decisions, started_at, ended_at
+            )
+            raise
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
@@ -165,10 +186,41 @@ class AnthropicShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
-        response = await original(client_self, *args, **kwargs)
+        try:
+            response = await original(client_self, *args, **kwargs)
+        except Exception as exc:
+            ended_at = int(time.time() * 1000)
+            self._on_provider_error(
+                ctx, exc, before_decisions, started_at, ended_at
+            )
+            raise
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
+
+    def _on_provider_error(
+        self,
+        ctx: Any,
+        exc: Exception,
+        before_decisions: list,
+        started_at: int,
+        ended_at: int,
+    ) -> None:
+        """Best-effort failure-event emit. Wrapped in ``safely_run``
+        so a bug *in our error-emit path* still can't propagate."""
+        if ctx is None:
+            return
+        safely_run(
+            emit_llm_call_error,
+            ctx=ctx,
+            exc=exc,
+            started_at=started_at,
+            ended_at=ended_at,
+            storage=self._storage,
+            capture_mode=self._capture_mode_getter(),
+            before_decisions=before_decisions,
+            hook_label="emit_llm_call_error",
+        )
 
     def _before(self, kwargs: dict):
         started_at = int(time.time() * 1000)

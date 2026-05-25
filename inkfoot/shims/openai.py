@@ -10,6 +10,7 @@ OpenAI one; everything else flows through the shared
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import time
@@ -17,7 +18,11 @@ from typing import Any, Callable, Optional
 
 from inkfoot.normalise.openai import OpenAITranslator
 from inkfoot.policy.registry import PolicyRegistry
-from inkfoot.shims._emit import build_call_context, emit_llm_call
+from inkfoot.shims._emit import (
+    build_call_context,
+    emit_llm_call,
+    emit_llm_call_error,
+)
 from inkfoot.shims._isolation import safely_run
 
 _LOG = logging.getLogger("inkfoot.shims.openai")
@@ -100,6 +105,7 @@ class OpenAIShim:
     ) -> Callable[..., Any]:
         shim = self
 
+        @functools.wraps(original)
         def wrapper(client_self: Any, *args: Any, **kwargs: Any) -> Any:
             return shim._dispatch_sync(original, client_self, args, kwargs)
 
@@ -112,6 +118,7 @@ class OpenAIShim:
     ) -> Callable[..., Any]:
         shim = self
 
+        @functools.wraps(original)
         async def wrapper(client_self: Any, *args: Any, **kwargs: Any) -> Any:
             return await shim._dispatch_async(
                 original, client_self, args, kwargs
@@ -129,7 +136,19 @@ class OpenAIShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
-        response = original(client_self, *args, **kwargs)
+        # Provider exceptions propagate; we record a NeutralError
+        # event first so reports don't under-count failures
+        # (Finding #4 in the CL3 review). Re-raised exception is
+        # identical to what the user would have seen without
+        # instrumentation.
+        try:
+            response = original(client_self, *args, **kwargs)
+        except Exception as exc:
+            ended_at = int(time.time() * 1000)
+            self._on_provider_error(
+                ctx, exc, before_decisions, started_at, ended_at
+            )
+            raise
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
@@ -142,10 +161,42 @@ class OpenAIShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
-        response = await original(client_self, *args, **kwargs)
+        try:
+            response = await original(client_self, *args, **kwargs)
+        except Exception as exc:
+            ended_at = int(time.time() * 1000)
+            self._on_provider_error(
+                ctx, exc, before_decisions, started_at, ended_at
+            )
+            raise
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
+
+    def _on_provider_error(
+        self,
+        ctx: Any,
+        exc: Exception,
+        before_decisions: list,
+        started_at: int,
+        ended_at: int,
+    ) -> None:
+        """Wrap the failure-event emit in ``safely_run`` so a bug
+        inside our own error path still can't propagate to the
+        user."""
+        if ctx is None:
+            return
+        safely_run(
+            emit_llm_call_error,
+            ctx=ctx,
+            exc=exc,
+            started_at=started_at,
+            ended_at=ended_at,
+            storage=self._storage,
+            capture_mode=self._capture_mode_getter(),
+            before_decisions=before_decisions,
+            hook_label="emit_llm_call_error",
+        )
 
     def _before(self, kwargs: dict):
         started_at = int(time.time() * 1000)

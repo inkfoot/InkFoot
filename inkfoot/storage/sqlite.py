@@ -322,7 +322,18 @@ class SQLiteStorage:
                     "UPDATE runs SET aggregates_dirty = 1 WHERE id = ?",
                     (run_id,),
                 )
-                if capture_mode == "replay":
+                # Replay-mode content row (Finding #3 in CL3 review):
+                # we only write when there's actual content to record.
+                # The shim's policy-event branch doesn't carry content
+                # — writing a row of all-NULLs would pollute the
+                # event_contents table and confuse readers who join
+                # to it expecting "this is a replayable LLM call".
+                has_content = (
+                    request_json is not None
+                    or response_json is not None
+                    or tool_result_json is not None
+                )
+                if capture_mode == "replay" and has_content:
                     conn.execute(
                         """
                         INSERT INTO event_contents (

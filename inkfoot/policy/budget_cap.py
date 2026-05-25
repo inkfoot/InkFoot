@@ -37,11 +37,22 @@ class BudgetCap(Policy):
     ``max_nd`` nanodollars.
 
     ``max_nd`` is the total budget for the *run*, not per-call.
-    Each ``before_call`` adds the current call's estimate to the
-    run's running total; the policy fires once per breach (a
-    follow-up call that would have also breached doesn't re-fire
-    until the totals are reset, which only happens when the run
-    ends).
+
+    **Phase 0 timing quirk** (Finding #5 in the CL3 review):
+    ``before_call`` doesn't know the *current* call's cost yet —
+    that's populated by the shim's ``after_call`` once the
+    translator has run on the response. So the policy fires on the
+    call *after* the one that breaches: call N puts the running
+    total over ``max_nd`` and call N+1's ``before_call`` is what
+    emits ``budget_warning``. Reports still surface the breach
+    correctly; the event's ``occurred_at`` just lags by one call.
+    Phase 2's ``ContractEnforcer`` will gain a pre-call estimator
+    and shift the warning to fire on the breach call itself, but
+    the Phase 0 observe-only posture (ADR-0-2) accepts the lag.
+
+    The policy fires *once* per run — a follow-up call that would
+    have also breached doesn't re-fire until the totals are reset
+    (next run).
     """
 
     NAME = "BudgetCap"

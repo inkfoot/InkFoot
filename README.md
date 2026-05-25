@@ -59,7 +59,7 @@ CI (`.github/workflows/ci.yml`) runs unit tests on Python 3.10 / 3.11
 inkfoot/                                    # the Python package
   __init__.py                               # public re-exports (frozen surface)
   _version.py                               # SemVer skeleton
-  _instrument.py                            # inkfoot.instrument() entry point (E3)
+  _instrument.py                            # inkfoot.instrument() entry point (E3) — leading underscore so the submodule doesn't shadow the public callable on the package
   _run_context.py                           # ContextVar-based active-run pointer
   _shim_install.py                          # SDK auto-detect + install/uninstall
   errors.py                                 # InkfootError, PolicyNotSupported, ...
@@ -92,8 +92,8 @@ inkfoot/                                    # the Python package
     main.py                                 # `inkfoot` entry point
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
 tests/
-  unit/                                     # 248 unit tests (E1 + E2 + E3)
-  benchmarks/                               # `pytest-benchmark` hot-path budgets
+  unit/                                     # 260 unit tests (E1 + E2 + E3)
+  benchmarks/                               # `pytest-benchmark` hot-path budgets (storage + aggregator + shim)
 .github/workflows/ci.yml                    # unit + benchmark on every PR
 ```
 
