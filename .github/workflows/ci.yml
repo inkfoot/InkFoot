@@ -28,7 +28,7 @@ jobs:
         run: pytest tests/unit -v --tb=short
 
   benchmark:
-    name: Storage hot-path benchmark
+    name: Storage + aggregator benchmarks
     runs-on: ubuntu-latest
     # Run after unit tests pass — no point benchmarking broken code.
     needs: test
@@ -42,7 +42,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Run storage benchmark (p95 < 1 ms gate)
+      - name: Run benchmarks (insert p95 < 1 ms, drain 50 < 50 ms gates)
         run: |
           pytest tests/benchmarks --benchmark-only \
             --benchmark-json=benchmark.json

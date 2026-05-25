@@ -632,14 +632,36 @@ sequenceDiagram
     Worker->>DB: SELECT dirty run ids limit 50
     DB-->>Worker: dirty run ids
     loop each dirty run
+      Worker->>DB: UPDATE runs SET dirty=0 WHERE id=X AND dirty=1
+      Note over Worker,DB: atomic claim — only proceeds when the<br/>CAS matched a dirty row
       Worker->>DB: SELECT events ORDER BY sequence
       DB-->>Worker: event stream
       Worker->>Worker: sum totals and extract outcome
-      Worker->>DB: UPDATE runs SET totals and dirty=0 WHERE id=X AND dirty=1
-      Note over DB: conditional WHERE prevents lost updates<br/>when new events land mid-sweep
+      Worker->>DB: UPDATE runs SET totals WHERE id=X
+      Note over DB: unconditional write. Any insert_event that<br/>lands after the claim re-dirties the row<br/>so the next pass picks it up.
     end
   end
 ```
+
+**Why this order matters (the claim-and-project pattern).** The
+naive single-statement variant — `UPDATE runs SET totals=…, dirty=0
+WHERE id=X AND dirty=1` — has a race: the aggregator reads events at
+T0, an `insert_event` lands at T1 (writes a row + sets `dirty=1`,
+which it already was), the aggregator computes from the T0 snapshot
+at T2 and writes totals that exclude the T1 event. The conditional
+`WHERE dirty=1` still matches because nothing changed it back to 0,
+and the late event is silently dropped from totals until something
+else re-dirties the row (potentially never). The architecture's
+"event log is source of truth, projection is recomputable" invariant
+demands a structural fix, not a tighter predicate:
+
+1. **Claim** the dirty bit *before* reading: atomic CAS, 1 → 0.
+2. **Read** the event log.
+3. **Write** totals unconditionally (no dirty change).
+
+If an `insert_event` lands between (1) and (3), it sets `dirty=1` and
+the next aggregator pass re-projects. Lost updates are impossible by
+construction.
 
 **Why an aggregator instead of trigger-style synchronous
 recomputation?** Triggers would fire on every event insert and

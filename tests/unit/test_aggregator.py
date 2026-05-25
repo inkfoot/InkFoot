@@ -195,53 +195,184 @@ def test_drain_once_batches_in_groups(storage: SQLiteStorage) -> None:
 
 
 # ----------------------------------------------------------------------
-# Lost-update guard
+# Lost-update guard — the claim-and-project pattern
 # ----------------------------------------------------------------------
 
 
-def test_event_arriving_mid_sweep_leaves_row_dirty(storage: SQLiteStorage) -> None:
-    """We can't easily race in-process, so we simulate: read the events,
-    re-dirty the row (representing a new event arriving), then call
-    ``update_aggregates``. The conditional guard means our update
-    should match nothing and the row should stay dirty=1."""
+def test_claim_clean_is_atomic_compare_and_swap(storage: SQLiteStorage) -> None:
+    """claim_clean returns True iff the row was dirty (1 → 0). On a
+    clean row it's a no-op returning False. This is the building
+    block the aggregator uses to atomically take ownership of a
+    projection."""
     _seed_run_with_events(storage)
-    events = list(storage.iter_events("run-1"))
-    totals = project_run_totals(events)
+    assert storage.get_run("run-1")["aggregates_dirty"] == 1
 
-    # Simulate a new event arriving mid-sweep by re-dirtying. The row
-    # is already dirty=1, but the point is: update_aggregates fires
-    # *after* this and the contract is that it succeeds. The true
-    # lost-update race is the inverse — see below.
-    storage.mark_dirty("run-1")
-    ok = storage.update_aggregates(run_id="run-1", totals=totals)
-    assert ok is True
+    first = storage.claim_clean("run-1")
+    assert first is True
+    assert storage.get_run("run-1")["aggregates_dirty"] == 0
 
-    # Now the inverse: aggregator already cleared the row, and a new
-    # insert flips dirty back to 1. The next aggregator pass should
-    # pick it up.
+    second = storage.claim_clean("run-1")
+    assert second is False  # already clean
+
+
+def test_write_totals_does_not_touch_dirty_flag(storage: SQLiteStorage) -> None:
+    """write_totals is unconditional: it updates only the projection
+    columns. Touching aggregates_dirty is claim_clean's job and
+    insert_event's natural consequence. Verified by re-dirtying the
+    row first and confirming write_totals does NOT clear it."""
+    _seed_run_with_events(storage)
+    storage.write_totals(
+        run_id="run-1",
+        totals={"total_input_tokens": 42},
+    )
+    run = storage.get_run("run-1")
+    assert run["total_input_tokens"] == 42
+    assert run["aggregates_dirty"] == 1  # untouched
+
+
+def test_late_event_landing_after_claim_is_not_lost(
+    storage: SQLiteStorage,
+) -> None:
+    """The T0→T1→T2 race the reviewer described:
+
+    * T0: aggregator reads events (only the two seeded so far).
+    * T1: shim writes a late event via insert_event → dirty=1 again.
+    * T2: aggregator writes totals from the T0 snapshot.
+
+    Under the pre-fix one-statement UPDATE-with-WHERE guard, the
+    late event would be permanently dropped from totals because
+    the WHERE clause would still match (dirty was 1 the whole
+    time) and clear the flag. Under claim-and-project, the
+    aggregator clears dirty *before* the read, so the late
+    insert_event flips dirty back to 1 and the next pass picks the
+    row up.
+    """
+    _seed_run_with_events(storage)  # 2 events, totals input=300
+
+    # T0: claim the row + read its event log.
+    assert storage.claim_clean("run-1") is True
+    snapshot_events = list(storage.iter_events("run-1"))
+    assert len(snapshot_events) == 2
+
+    # T1: a late event arrives during the projection window.
     storage.insert_event(
-        event_id="late-event",
+        event_id="late",
         run_id="run-1",
         kind="llm_call",
         occurred_at=1_700_000_000_500,
         sequence=99,
-        payload_json=json.dumps({"input_tokens": 1}),
+        payload_json=json.dumps({"input_tokens": 17}),
+    )
+
+    # T2: aggregator writes totals from the T0 snapshot.
+    totals = project_run_totals(snapshot_events)
+    storage.write_totals(run_id="run-1", totals=totals)
+
+    # After T2: stored totals reflect the snapshot (300, not 317),
+    # but the row is dirty=1 because of T1's insert_event. The late
+    # event is *not* lost — it sits in the events table and will be
+    # picked up on the next aggregator pass.
+    run = storage.get_run("run-1")
+    assert run["total_input_tokens"] == 300
+    assert run["aggregates_dirty"] == 1
+
+    # Next pass — full claim/project/write.
+    n = AggregatorWorker(storage).drain_once()
+    assert n == 1
+    final = storage.get_run("run-1")
+    assert final["total_input_tokens"] == 317  # includes the late event
+    assert final["aggregates_dirty"] == 0
+
+
+def test_insert_event_landing_after_drain_re_dirties_the_row(
+    storage: SQLiteStorage,
+) -> None:
+    """After drain clears the row, a subsequent insert must re-dirty
+    it so the next sweep aggregates the new event."""
+    _seed_run_with_events(storage)
+    AggregatorWorker(storage).drain_once()
+    assert storage.get_run("run-1")["aggregates_dirty"] == 0
+
+    storage.insert_event(
+        event_id="post-drain",
+        run_id="run-1",
+        kind="llm_call",
+        occurred_at=1_700_000_000_900,
+        sequence=99,
+        payload_json=json.dumps({"input_tokens": 5}),
     )
     assert "run-1" in storage.read_dirty(limit=10)
 
 
-def test_update_aggregates_returns_false_when_dirty_already_cleared(
+def test_update_aggregates_composite_returns_true_when_dirty(
+    storage: SQLiteStorage,
+) -> None:
+    """update_aggregates is the legacy convenience wrapper —
+    equivalent to claim_clean + write_totals. Returns True on a
+    dirty row."""
+    _seed_run_with_events(storage)
+    ok = storage.update_aggregates(
+        run_id="run-1",
+        totals={"total_input_tokens": 10},
+    )
+    assert ok is True
+    assert storage.get_run("run-1")["total_input_tokens"] == 10
+    assert storage.get_run("run-1")["aggregates_dirty"] == 0
+
+
+def test_update_aggregates_composite_returns_false_when_already_clean(
     storage: SQLiteStorage,
 ) -> None:
     _seed_run_with_events(storage)
-    worker = AggregatorWorker(storage)
-    worker.drain_once()
-    # Row is now clean. Calling update_aggregates again should be a no-op.
+    AggregatorWorker(storage).drain_once()
     ok = storage.update_aggregates(
         run_id="run-1", totals={"total_input_tokens": 999}
     )
     assert ok is False
+    # The totals from the prior drain still stand.
     assert storage.get_run("run-1")["total_input_tokens"] == 300
+
+
+def test_concurrent_insert_during_drain_does_not_lose_event(
+    storage: SQLiteStorage,
+) -> None:
+    """End-to-end race driven by a monkey-patched iter_events that
+    side-effects an insert_event between claim and write. Verifies
+    that the late event ends up in totals after one extra pass."""
+    _seed_run_with_events(storage)
+    original_iter = storage.iter_events
+    fired = {"yes": False}
+
+    def racy_iter(run_id: str):
+        events = list(original_iter(run_id))
+        if not fired["yes"]:
+            fired["yes"] = True
+            # Simulate the shim writing a late event between the
+            # aggregator's claim and write_totals.
+            storage.insert_event(
+                event_id="racy-late",
+                run_id=run_id,
+                kind="llm_call",
+                occurred_at=1_700_000_000_777,
+                sequence=88,
+                payload_json=json.dumps({"input_tokens": 23}),
+            )
+        return iter(events)
+
+    storage.iter_events = racy_iter  # type: ignore[method-assign]
+    try:
+        worker = AggregatorWorker(storage)
+        worker.drain_once()  # writes T0 snapshot
+        # The late event re-dirtied the row — the next pass should
+        # find it and project the full set.
+        assert "run-1" in storage.read_dirty(limit=10)
+        worker.drain_once()
+    finally:
+        storage.iter_events = original_iter  # type: ignore[method-assign]
+
+    final = storage.get_run("run-1")
+    assert final["total_input_tokens"] == 300 + 23
+    assert final["aggregates_dirty"] == 0
 
 
 # ----------------------------------------------------------------------
@@ -313,6 +444,37 @@ def test_worker_start_is_idempotent(storage: SQLiteStorage) -> None:
     worker.start()
     worker.start()
     worker.stop()
+
+
+def test_worker_stop_on_never_started_worker_is_safe(
+    storage: SQLiteStorage,
+) -> None:
+    """Constructing a worker and immediately calling stop() (without
+    start()) must not drain — there is nothing to flush."""
+    worker = AggregatorWorker(storage, interval_seconds=0.05)
+    worker.stop()  # must not raise + must not call drain_once
+
+
+def test_worker_stop_when_storage_already_closed_warns(
+    tmp_path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """atexit ordering: storage closes before the worker. ``stop``
+    must log a warning and return — the daemon thread is already
+    joined so there's nothing else to clean up."""
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    worker = AggregatorWorker(s, interval_seconds=0.05)
+    worker.start()
+    # Pretend something else closed the storage out from under the
+    # worker (the atexit-ordering bug).
+    s.close()
+    with caplog.at_level("WARNING"):
+        worker.stop()
+    assert any(
+        "final drain" in r.message.lower() for r in caplog.records
+    ), "expected a warning about the failed final drain"
 
 
 def test_batch_size_must_be_positive(storage: SQLiteStorage) -> None:

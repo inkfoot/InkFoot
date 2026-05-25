@@ -69,12 +69,14 @@ def tag(*args, **kwargs):
 
 def tag_retrieval(*args, **kwargs):
     """Mark a span of messages as retrieved context (lifts the
-    ``retrieved_context`` ledger field). Ships in **E2 — Causal Token
-    Ledger**.
+    ``retrieved_context`` ledger field). Ships in **E5 — Report CLI +
+    Outcome Tagging** alongside ``set_outcome`` / ``tag``; the
+    underlying ``retrieved_context`` ledger field is populated by
+    E2's attribution recipes.
     """
     raise NotImplementedError(
-        "inkfoot.tag_retrieval() ships in Phase 0 epic E2 (Causal "
-        "Token Ledger)."
+        "inkfoot.tag_retrieval() ships in Phase 0 epic E5 (Report CLI "
+        "+ Outcome Tagging)."
     )
 
 

@@ -5,14 +5,26 @@ ADR-0-1: ``runs.total_*`` and ``runs.outcome`` are *projections*, not
 primary facts. The shim hot path writes only events + the dirty flag
 (synchronous, under 1 ms). This worker catches up asynchronously.
 
-Idempotence comes from two places:
+**The claim-and-project pattern.** Each row is aggregated by:
 
-1. Aggregating an already-clean row is a no-op (we ``SELECT`` the
-   dirty queue and only touch rows where ``aggregates_dirty=1``).
-2. The ``UPDATE ... WHERE id=? AND aggregates_dirty=1`` pattern in
-   :meth:`SQLiteStorage.update_aggregates` is the lost-update guard:
-   if a new event lands mid-sweep and re-dirties the row, our UPDATE
-   matches nothing and the row stays dirty for the next pass.
+1. :meth:`SQLiteStorage.claim_clean` — atomic CAS, dirty 1 → 0.
+2. :meth:`SQLiteStorage.iter_events` — read the log.
+3. :meth:`SQLiteStorage.write_totals` — unconditional UPDATE of
+   the projection columns.
+
+The crucial property is that the claim happens *before* the read. If
+a new :meth:`SQLiteStorage.insert_event` lands between (1) and (3),
+it flips ``aggregates_dirty`` back to 1 and the next aggregator pass
+picks the row up. Events are never lost; totals may be momentarily
+behind by one pass; the next pass always converges. The event log is
+the source of truth — the projection is recomputable.
+
+Pre-fix history: an earlier draft used a single
+``UPDATE ... SET dirty=0 WHERE id=? AND dirty=1`` with totals
+computed from a snapshot read taken *before* the WHERE-clause check,
+which had a race where a late insert could leave the projection
+permanently stale. The fix is structural — claim_clean / iter /
+write_totals — not a tighter SQL predicate.
 """
 
 from __future__ import annotations
@@ -45,8 +57,8 @@ _AGG_FIELDS_FROM_PAYLOAD = (
 def _interval_seconds() -> float:
     """Read ``INKFOOT_AGGREGATOR_INTERVAL_MS`` from env, falling back
     to 500 ms. Caller-friendly clamp: under 10 ms is almost certainly
-    a typo (e.g. ``50`` meaning seconds), so we clamp up to 10 ms with
-    a warning rather than burn a CPU."""
+    a typo (e.g. ``50`` meaning seconds), so we clamp up to 10 ms
+    with a warning rather than burn a CPU."""
     raw = os.environ.get("INKFOOT_AGGREGATOR_INTERVAL_MS")
     if raw is None:
         return _DEFAULT_INTERVAL_MS / 1000.0
@@ -88,7 +100,7 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
       precedence over any other claim; if multiple outcome events
       exist, the *last* by sequence wins.
     """
-    totals = {
+    totals: dict[str, Any] = {
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_cache_read_tokens": 0,
@@ -115,7 +127,9 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
             if isinstance(value, bool) or not isinstance(value, int):
                 # bool is a subclass of int — reject explicitly.
                 continue
-            dest = f"total_{src}" if src != "nanodollars" else "total_nanodollars"
+            dest = (
+                f"total_{src}" if src != "nanodollars" else "total_nanodollars"
+            )
             totals[dest] += value
 
         if ev.get("kind") == "outcome":
@@ -152,6 +166,10 @@ class AggregatorWorker:
         self._batch_size = batch_size
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        # Tracks whether the worker was ever started — used by
+        # :meth:`stop` to avoid the final-drain side-effect when no
+        # work could possibly have queued up.
+        self._ever_started = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -161,21 +179,46 @@ class AggregatorWorker:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._ever_started = True
         self._thread = threading.Thread(
             target=self._run, name="inkfoot-aggregator", daemon=True
         )
         self._thread.start()
 
     def stop(self, *, timeout: float = 5.0) -> None:
-        """Signal the worker and join its thread. Drains one final
-        pass before exit so tests don't race on the last sweep."""
+        """Signal the worker, join its thread, and drain one final
+        pass so events that arrived just before ``stop`` are
+        reflected.
+
+        Resilient to two failure modes the reviewer flagged:
+
+        * **Never started.** If the worker was never started (e.g. a
+          unit test instantiates one and bails), the final drain is
+          skipped — there is nothing to flush.
+        * **Storage already closed.** If an ``atexit`` ordering
+          closes the storage before the worker stops, the final
+          drain logs a warning and returns instead of raising. The
+          worker thread is already joined at that point so callers
+          don't see a partial shutdown.
+        """
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
             self._thread = None
-        # Drain one final time so any events that arrived just before
-        # ``stop`` are reflected.
-        self.drain_once()
+        if not self._ever_started:
+            return
+        try:
+            self.drain_once()
+        except Exception:
+            # The most likely cause is the storage having been closed
+            # already (RuntimeError from SQLiteStorage._conn). Log
+            # once at WARNING and proceed — the daemon thread is
+            # already joined so there's nothing to clean up.
+            _LOG.warning(
+                "final drain after stop failed; the storage may have "
+                "been closed before the worker",
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # Pumping
@@ -209,6 +252,12 @@ class AggregatorWorker:
         return processed
 
     def _aggregate_one(self, run_id: str) -> bool:
+        """Claim-and-project. Returns ``True`` when this call wrote
+        new totals; ``False`` when another worker beat us or the row
+        was already clean."""
+        if not self._storage.claim_clean(run_id):
+            return False
         events = list(self._storage.iter_events(run_id))
         totals = project_run_totals(events)
-        return self._storage.update_aggregates(run_id=run_id, totals=totals)
+        self._storage.write_totals(run_id=run_id, totals=totals)
+        return True

@@ -1,21 +1,25 @@
-"""Storage layer Protocol + default SQLite implementation.
+"""Storage layer Protocol + lazy default-backend factory.
 
 The Protocol is the contract every storage backend honours (SQLite in
 Phase 0, Postgres in Phase 2). The contract is *narrow* — just the
 methods the shim hot path and aggregator need.
+
+``SQLiteStorage`` is intentionally **not** imported at module load:
+the Protocol module shouldn't pull in SQLite-specific symbols when a
+test only wants the type. The lazy ``__getattr__`` below keeps
+``from inkfoot.storage import SQLiteStorage`` working for callers
+that do need it, while decoupling import cost.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable, Optional, Protocol, runtime_checkable
 
-from inkfoot.storage.sqlite import SQLiteStorage
-
-__all__ = ["Storage", "SQLiteStorage", "RunRow", "DirtyRun"]
+__all__ = ["Storage", "SQLiteStorage", "default_storage", "RunRow", "DirtyRun"]
 
 
-# Type aliases used by the Protocol surface. These are loose by design;
-# the SQLite implementation tightens them.
+# Type aliases used by the Protocol surface. These are loose by
+# design; the SQLite implementation tightens them.
 RunRow = dict[str, Any]
 DirtyRun = dict[str, Any]
 
@@ -24,12 +28,14 @@ DirtyRun = dict[str, Any]
 class Storage(Protocol):
     """Phase 0 storage Protocol (phase-0-classify §5.5, §5.6).
 
-    The five core methods listed in the E1-S3 spec are
-    ``connect``, ``insert_event``, ``mark_dirty``, ``read_dirty``,
-    and ``update_aggregates``. We also expose ``start_run`` and
-    ``end_run`` because ADR-0-1's two-tier write semantics require
-    a synchronous status write; without them the protocol can't
-    honour the architecture's fail-fast guarantee.
+    The methods listed in the E1-S3 spec are ``connect``,
+    ``insert_event``, ``mark_dirty``, ``read_dirty``, and
+    ``update_aggregates``. We also expose ``start_run`` and
+    ``end_run`` because ADR-0-1's two-tier write semantics require a
+    synchronous status write, and ``claim_clean`` / ``write_totals``
+    because the never-lost-update guarantee requires the projection
+    flow to read the event log *between* the claim and the write
+    (see the SQLite implementation for the full explanation).
     """
 
     def connect(self) -> None:
@@ -85,17 +91,53 @@ class Storage(Protocol):
         """Return up to ``limit`` dirty run IDs for the aggregator
         to drain."""
 
+    def claim_clean(self, run_id: str) -> bool:
+        """Atomic CAS that clears ``aggregates_dirty`` iff it was 1.
+        Returns ``True`` when the caller successfully claimed the
+        row's projection responsibility."""
+
+    def write_totals(
+        self,
+        *,
+        run_id: str,
+        totals: dict[str, Any],
+    ) -> None:
+        """Unconditional update of the projection columns. Does NOT
+        touch ``aggregates_dirty``; that's :meth:`claim_clean`'s job
+        and any concurrent :meth:`insert_event`'s natural
+        consequence."""
+
     def update_aggregates(
         self,
         *,
         run_id: str,
         totals: dict[str, Any],
     ) -> bool:
-        """Update the projection columns for one run and clear its
-        dirty flag, *iff* it's still dirty. Returns ``True`` if the
-        row was updated, ``False`` if it was already clean (lost-
-        update guard per §5.6)."""
+        """Convenience: composite ``claim_clean`` + ``write_totals``.
+        Returns ``True`` if the row was dirty and the totals were
+        written; ``False`` otherwise."""
 
     def iter_events(self, run_id: str) -> Iterable[dict[str, Any]]:
         """Stream a run's events in sequence order — what the
         aggregator projects from."""
+
+
+def default_storage(path: Optional[Any] = None) -> "SQLiteStorage":
+    """Return the default Phase 0 backend (:class:`SQLiteStorage`).
+
+    Imported lazily so plain ``import inkfoot.storage`` doesn't pay
+    the cost of pulling in the SQLite implementation module.
+    """
+    from inkfoot.storage.sqlite import SQLiteStorage as _SQLiteStorage
+
+    return _SQLiteStorage(path=path)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy attribute access — re-exports :class:`SQLiteStorage`
+    without paying the import cost at module-load time."""
+    if name == "SQLiteStorage":
+        from inkfoot.storage.sqlite import SQLiteStorage as _SQLiteStorage
+
+        return _SQLiteStorage
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

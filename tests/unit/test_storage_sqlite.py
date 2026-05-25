@@ -98,11 +98,14 @@ def test_required_indexes_exist(file_storage: SQLiteStorage) -> None:
 
 
 def test_runs_dirty_is_a_partial_index(file_storage: SQLiteStorage) -> None:
+    import re
+
     conn = file_storage._conn()
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE name = 'runs_dirty'"
     ).fetchone()
-    assert "aggregates_dirty = 1" in row["sql"].lower().replace(" ", " ")
+    normalised = re.sub(r"\s+", " ", row["sql"].lower())
+    assert "aggregates_dirty = 1" in normalised
 
 
 def test_runs_parent_is_a_partial_index(file_storage: SQLiteStorage) -> None:
@@ -270,11 +273,70 @@ def test_end_run_rejects_unknown_status(memory_storage: SQLiteStorage) -> None:
 
 
 # ----------------------------------------------------------------------
-# update_aggregates contract (the lost-update guard)
+# claim_clean / write_totals (the lost-update fix)
 # ----------------------------------------------------------------------
 
 
-def test_update_aggregates_clears_dirty_when_row_was_dirty(memory_storage: SQLiteStorage) -> None:
+def test_claim_clean_returns_true_on_dirty_row(memory_storage: SQLiteStorage) -> None:
+    _seed_run(memory_storage)
+    memory_storage.insert_event(
+        event_id="e1",
+        run_id="run-1",
+        kind="llm_call",
+        occurred_at=1,
+        sequence=1,
+        payload_json="{}",
+    )
+    assert memory_storage.claim_clean("run-1") is True
+    assert memory_storage.get_run("run-1")["aggregates_dirty"] == 0
+
+
+def test_claim_clean_returns_false_on_clean_row(memory_storage: SQLiteStorage) -> None:
+    _seed_run(memory_storage)
+    # start_run leaves dirty=0; nothing has flipped it.
+    assert memory_storage.claim_clean("run-1") is False
+
+
+def test_write_totals_updates_columns_without_touching_dirty(
+    memory_storage: SQLiteStorage,
+) -> None:
+    _seed_run(memory_storage)
+    memory_storage.insert_event(
+        event_id="e1",
+        run_id="run-1",
+        kind="llm_call",
+        occurred_at=1,
+        sequence=1,
+        payload_json="{}",
+    )
+    # dirty=1 after insert_event; write_totals must leave it alone.
+    memory_storage.write_totals(
+        run_id="run-1",
+        totals={"total_input_tokens": 99, "total_output_tokens": 7},
+    )
+    run = memory_storage.get_run("run-1")
+    assert run["total_input_tokens"] == 99
+    assert run["total_output_tokens"] == 7
+    assert run["aggregates_dirty"] == 1
+
+
+def test_write_totals_rejects_unknown_keys(memory_storage: SQLiteStorage) -> None:
+    _seed_run(memory_storage)
+    with pytest.raises(ValueError):
+        memory_storage.write_totals(run_id="run-1", totals={"sneaky": 1})
+
+
+def test_write_totals_requires_at_least_one_total(memory_storage: SQLiteStorage) -> None:
+    _seed_run(memory_storage)
+    with pytest.raises(ValueError):
+        memory_storage.write_totals(run_id="run-1", totals={})
+
+
+def test_update_aggregates_composite_claims_then_writes(
+    memory_storage: SQLiteStorage,
+) -> None:
+    """``update_aggregates`` is the legacy convenience wrapper:
+    composite claim_clean + write_totals."""
     _seed_run(memory_storage)
     memory_storage.insert_event(
         event_id="e1",
@@ -295,12 +357,14 @@ def test_update_aggregates_clears_dirty_when_row_was_dirty(memory_storage: SQLit
 
 def test_update_aggregates_no_op_when_already_clean(memory_storage: SQLiteStorage) -> None:
     _seed_run(memory_storage)
-    # Run is clean from the start (start_run leaves dirty=0).
     ok = memory_storage.update_aggregates(
         run_id="run-1",
         totals={"total_input_tokens": 5},
     )
     assert ok is False
+    # Confirm write_totals did NOT fire (the composite short-circuits
+    # when claim_clean returns False).
+    assert memory_storage.get_run("run-1")["total_input_tokens"] == 0
 
 
 def test_update_aggregates_rejects_unknown_keys(memory_storage: SQLiteStorage) -> None:
@@ -355,6 +419,55 @@ def test_file_storage_gives_each_thread_its_own_connection(tmp_path: Path) -> No
 
     assert not errors, errors
     assert sum(seen) == 4
+
+
+def test_close_closes_connections_opened_on_other_threads(tmp_path: Path) -> None:
+    """The pre-fix close() only closed the caller's thread-local
+    connection, leaking per-thread connections on every worker
+    thread that touched storage. After the fix every connection
+    created across every thread is closed."""
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    _seed_run(s)
+
+    # Force connections to be opened on three worker threads.
+    def open_conn():
+        s.insert_event(
+            event_id=f"e-{threading.get_ident()}",
+            run_id="run-1",
+            kind="llm_call",
+            occurred_at=1,
+            sequence=threading.get_ident() % 1_000_000,
+            payload_json="{}",
+        )
+
+    threads = [threading.Thread(target=open_conn) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # At this point the storage tracks four connections (main + 3
+    # workers). After close, every one of them should be unusable.
+    tracked = list(s._connections)
+    assert len(tracked) >= 4
+    s.close()
+
+    for conn in tracked:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1").fetchone()
+
+
+def test_close_is_idempotent_after_cross_thread_close(tmp_path: Path) -> None:
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    s.close()
+    s.close()  # second call must not raise
+
+
+import sqlite3  # noqa: E402 — used by the cross-thread close test
 
 
 # ----------------------------------------------------------------------
