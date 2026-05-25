@@ -118,6 +118,12 @@ class InMemoryRunState:
       the event log.
     * ``retry_counts`` — ``{cause_signature: count}`` rolling map
       used by the retry-overhead attribution.
+    * ``pending_retrieved_context_tokens`` — count of tokens the
+      user called :func:`inkfoot.tag_retrieval` with since the last
+      LLM call. The next translator invocation pulls this into the
+      ledger's ``retrieved_context_tokens`` field and resets it to
+      zero. Lives on in-memory state (not events) because it's a
+      pure pre-call marker — only the *next* call sees it.
 
     There's no save/load helper on this class on purpose: the
     instrumented process owns its lifetime, full stop. A test that
@@ -127,3 +133,4 @@ class InMemoryRunState:
     stable_system_prefix: str = ""
     recent_calls: list = field(default_factory=list)
     retry_counts: dict[str, int] = field(default_factory=dict)
+    pending_retrieved_context_tokens: int = 0

@@ -68,6 +68,12 @@ class CostSmell:
     recommendation: str
     suggested_policy: Optional[str] = None
     evidence_query: str = ""
+    # Optional ledger field this smell primarily explains. The
+    # ``inkfoot report`` renderer puts a "⚠" marker on the matching
+    # bar-chart row. ``None`` means the smell doesn't anchor to a
+    # single category (``runaway-retry-loop`` is a run-shape
+    # pattern, not a category problem).
+    primary_category: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.severity not in _VALID_SEVERITIES:

@@ -152,3 +152,67 @@ def revision_date() -> date:
     time without re-parsing the constant everywhere.
     """
     return date.fromisoformat(PRICING_TABLE_REVISION)
+
+
+def estimate_per_category(
+    provider: str,
+    model: str,
+    ledger: CausalTokenLedger,
+) -> dict[str, Nanodollar]:
+    """Per-ledger-field nanodollar split used by ``inkfoot report``.
+
+    Each of the 14 ledger fields gets priced at the rate that
+    applies to its category:
+
+    * Structural cause categories (11 fields) → ``row.input`` rate.
+      Their tokens were part of the request body the provider billed
+      at the fresh-input rate (cache_read / cache_creation are
+      separate overlays, see below).
+    * ``cache_read_tokens`` → ``row.cache_read`` rate.
+    * ``cache_creation_tokens`` → ``row.cache_write`` rate.
+    * ``output_tokens`` → ``row.output`` rate.
+
+    Unknown ``(provider, model)`` returns all-zeros so the renderer
+    can show "tokens only, no $" — never raises.
+
+    The per-category sum should equal :func:`estimate_nanodollars`'s
+    total for the same ledger (modulo rounding), since both methods
+    are pricing the same fields against the same row — just one
+    splits per-field and the other aggregates.
+
+    **Note on the structural cats**: this prices them at full input
+    rate, while :func:`estimate_nanodollars` subtracts cache_read +
+    cache_creation from the structural sum before pricing the fresh
+    portion. The per-category renderer can't do that subtraction
+    because the cached tokens are scattered across multiple
+    structural fields (we don't know which ones), so the bar chart
+    shows the "what they'd cost at full input rate" view. The
+    headline total at the top of the report uses
+    ``estimate_nanodollars`` so the dollar figure stays faithful;
+    bar-chart percentages are then a *share of structural cost* —
+    the gap is named explicitly in the report docstring.
+    """
+    from inkfoot.ledger import INPUT_CATEGORIES  # noqa: PLC0415
+
+    row = PRICING_ND_PER_TOKEN.get((provider, model))
+    if row is None:
+        return {
+            name: Nanodollar(0)
+            for name in INPUT_CATEGORIES
+            + ("cache_read_tokens", "cache_creation_tokens", "output_tokens")
+        }
+
+    per_category: dict[str, Nanodollar] = {}
+    for name in INPUT_CATEGORIES:
+        tokens = getattr(ledger, name, 0)
+        per_category[name] = Nanodollar(tokens * row.input)
+    per_category["cache_read_tokens"] = Nanodollar(
+        ledger.cache_read_tokens * row.cache_read
+    )
+    per_category["cache_creation_tokens"] = Nanodollar(
+        ledger.cache_creation_tokens * row.cache_write
+    )
+    per_category["output_tokens"] = Nanodollar(
+        ledger.output_tokens * row.output
+    )
+    return per_category

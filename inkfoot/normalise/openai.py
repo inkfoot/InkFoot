@@ -270,6 +270,11 @@ class OpenAITranslator:
             or 0
         )
 
+        # E5: consume any pending tag_retrieval marker — see
+        # AnthropicTranslator.translate for the full rationale.
+        retrieved = int(getattr(run_state, "pending_retrieved_context_tokens", 0) or 0)
+        run_state.pending_retrieved_context_tokens = 0
+
         ledger = CausalTokenLedger(
             system_static_tokens=sys_static.value,
             system_dynamic_tokens=sys_dynamic.value,
@@ -277,7 +282,7 @@ class OpenAITranslator:
             tool_schema_tokens=tool_schema.value,
             tool_result_tokens=tool_result.value,
             memory_tokens=memory.value,
-            retrieved_context_tokens=0,
+            retrieved_context_tokens=retrieved,
             retry_overhead_tokens=0,
             summariser_tokens=0,
             reasoning_tokens=reasoning,

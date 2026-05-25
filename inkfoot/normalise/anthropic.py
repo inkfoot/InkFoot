@@ -319,6 +319,14 @@ class AnthropicTranslator:
         cache_create = int(usage.get("cache_creation_input_tokens") or 0)
         reasoning = _reasoning_token_count(response)
 
+        # E5: consume any pending tag_retrieval marker. The user
+        # called ``inkfoot.tag_retrieval(text)`` before this LLM
+        # call; the resulting token count rides on *this* call's
+        # ledger as retrieved_context_tokens and the pending
+        # counter resets to zero so the next call gets a fresh slate.
+        retrieved = int(getattr(run_state, "pending_retrieved_context_tokens", 0) or 0)
+        run_state.pending_retrieved_context_tokens = 0
+
         ledger = CausalTokenLedger(
             system_static_tokens=sys_static.value,
             system_dynamic_tokens=sys_dynamic.value,
@@ -326,8 +334,8 @@ class AnthropicTranslator:
             tool_schema_tokens=tool_schema.value,
             tool_result_tokens=tool_result.value,
             memory_tokens=memory.value,
-            retrieved_context_tokens=0,  # E5
-            retry_overhead_tokens=0,  # E4
+            retrieved_context_tokens=retrieved,
+            retry_overhead_tokens=0,  # E4 — populated when retry classifier ships
             summariser_tokens=0,  # Phase 2
             reasoning_tokens=reasoning,
             guardrail_tokens=0,

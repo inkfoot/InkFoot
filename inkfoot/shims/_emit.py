@@ -42,9 +42,9 @@ _LOG = logging.getLogger("inkfoot.shims")
 # review). The current shape is "lock, read-or-init, increment,
 # return" — one critical section, no race.
 #
-# TODO(phase-5/end_run): once E5's ``end_run`` lands, plumb
-# :func:`_drop_sequence_counter` into the run-cleanup path so this
-# dict doesn't grow unbounded in long-lived processes (Finding #7).
+# Cleanup is wired: ``_run_lifecycle._RunHandle.end`` (and the
+# abandoned-run cleanup in ``_mark_abandoned_runs``) call
+# :func:`_drop_sequence_counter` so this dict stays bounded.
 _sequence_lock = threading.Lock()
 _sequence_counters: dict[str, int] = {}
 

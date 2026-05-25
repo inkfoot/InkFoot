@@ -32,6 +32,13 @@ is :class:`inkfoot.policy.BudgetCap` / ``RetryThrottle`` /
 from inkfoot._version import __version__
 from inkfoot.errors import InkfootError, PolicyNotSupported, StorageError
 from inkfoot._instrument import instrument  # E3 — Pattern A Instrumentation
+from inkfoot._run_lifecycle import (  # E5 — Report CLI + Outcome Tagging
+    agent_run,
+    report_cost,
+    set_outcome,
+    tag,
+    tag_retrieval,
+)
 
 __all__ = [
     "__version__",
@@ -47,50 +54,7 @@ __all__ = [
 ]
 
 
-def agent_run(*args, **kwargs):
-    """Context manager / decorator that scopes events to a run.
-    Ships in **E5 — Report CLI + Outcome Tagging**.
-    """
-    raise NotImplementedError(
-        "inkfoot.agent_run() ships in Phase 0 epic E5 (Report CLI + "
-        "Outcome Tagging). E1 delivers the storage foundation only."
-    )
-
-
-def set_outcome(*args, **kwargs):
-    """Mark the current run's outcome. Ships in **E5**."""
-    raise NotImplementedError(
-        "inkfoot.set_outcome() ships in Phase 0 epic E5 (Report CLI + "
-        "Outcome Tagging)."
-    )
-
-
-def tag(*args, **kwargs):
-    """Attach a free-form tag to the current run. Ships in **E5**."""
-    raise NotImplementedError(
-        "inkfoot.tag() ships in Phase 0 epic E5 (Report CLI + Outcome "
-        "Tagging)."
-    )
-
-
-def tag_retrieval(*args, **kwargs):
-    """Mark a span of messages as retrieved context (lifts the
-    ``CausalTokenLedger.retrieved_context_tokens`` field). Ships in
-    **E5 — Report CLI + Outcome Tagging** alongside ``set_outcome`` /
-    ``tag``. The underlying ledger field exists today (E2) but no
-    translator populates it until the E5 marker API lands.
-    """
-    raise NotImplementedError(
-        "inkfoot.tag_retrieval() ships in Phase 0 epic E5 (Report CLI "
-        "+ Outcome Tagging)."
-    )
-
-
-def report_cost(*args, **kwargs):
-    """Return a cost summary for one run or an aggregate. Ships in
-    **E5 — Report CLI + Outcome Tagging**.
-    """
-    raise NotImplementedError(
-        "inkfoot.report_cost() ships in Phase 0 epic E5 (Report CLI "
-        "+ Outcome Tagging)."
-    )
+# ``agent_run`` / ``set_outcome`` / ``tag`` / ``tag_retrieval`` /
+# ``report_cost`` are real callables imported from
+# ``inkfoot._run_lifecycle`` above (E5). The previous stubs that
+# raised ``NotImplementedError`` are gone.

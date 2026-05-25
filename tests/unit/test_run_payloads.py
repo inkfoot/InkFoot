@@ -189,7 +189,14 @@ def test_in_memory_run_state_has_no_storage_helpers() -> None:
     contract."""
     state = InMemoryRunState()
     public = {n for n in dir(state) if not n.startswith("_")}
-    expected = {"stable_system_prefix", "recent_calls", "retry_counts"}
+    expected = {
+        "stable_system_prefix",
+        "recent_calls",
+        "retry_counts",
+        # E5 added a pre-call token counter for inkfoot.tag_retrieval.
+        # Process-local; not persisted.
+        "pending_retrieved_context_tokens",
+    }
     assert public == expected, (
         f"InMemoryRunState public surface drifted: {public ^ expected}"
     )

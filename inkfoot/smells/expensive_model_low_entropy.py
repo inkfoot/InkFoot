@@ -129,4 +129,5 @@ EXPENSIVE_MODEL_LOW_ENTROPY = CostSmell(
         "SELECT model, output_tokens, reasoning_tokens "
         "FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"
     ),
+    primary_category="output_tokens",
 )
