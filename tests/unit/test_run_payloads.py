@@ -196,6 +196,14 @@ def test_in_memory_run_state_has_no_storage_helpers() -> None:
         # E5 added a pre-call token counter for inkfoot.tag_retrieval.
         # Process-local; not persisted.
         "pending_retrieved_context_tokens",
+        # Phase 1 E1 (ADR-1-1): adapter / tag_node-supplied node name
+        # the translator stamps onto NeutralCall.metadata["node_name"].
+        # Process-local; not persisted.
+        "node_name",
+        # Phase 1 E1: LangGraph adapter snapshots a stable fingerprint
+        # of the compiled graph's tools array. Process-local; not
+        # persisted.
+        "tools_fingerprint",
     }
     assert public == expected, (
         f"InMemoryRunState public surface drifted: {public ^ expected}"

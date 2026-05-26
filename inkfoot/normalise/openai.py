@@ -26,7 +26,12 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from inkfoot.ledger import CausalTokenLedger
-from inkfoot.normalise import NeutralCall, NeutralError, update_stable_prefix
+from inkfoot.normalise import (
+    NeutralCall,
+    NeutralError,
+    _collect_runtime_metadata,
+    update_stable_prefix,
+)
 from inkfoot.pricing import estimate_nanodollars
 from inkfoot.run import InMemoryRunState
 from inkfoot.tokenisers import tokenise_tools, tokenise_with_flags
@@ -304,6 +309,10 @@ class OpenAITranslator:
             if tc.estimated:
                 flags.append(name)
 
+        # ADR-1-1 — Pattern-C metadata pass-through (mirror of the
+        # Anthropic translator's handling).
+        metadata = _collect_runtime_metadata(run_state)
+
         return NeutralCall(
             provider=_PROVIDER,
             model=model,
@@ -320,4 +329,5 @@ class OpenAITranslator:
             parent_run_id=parent_run_id,
             sequence=sequence,
             estimation_flags=tuple(flags),
+            metadata=metadata,
         )

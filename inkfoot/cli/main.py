@@ -73,8 +73,13 @@ def _build_parser() -> argparse.ArgumentParser:
     rep.add_argument(
         "--group-by",
         default="task",
-        choices=["task", "agent_kind"],
-        help="Bucket the aggregate view by this column.",
+        choices=["task", "agent_kind", "node"],
+        help=(
+            "Bucket the report. 'task' / 'agent_kind' apply to the "
+            "aggregate view (--last); 'node' applies to single-run "
+            "view (--run) and slices the ledger by LangGraph / "
+            "Pattern-B node_name (ADR-1-1)."
+        ),
     )
     rep.add_argument(
         "--show-zero",

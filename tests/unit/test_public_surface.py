@@ -21,8 +21,10 @@ EXPECTED_SURFACE = frozenset(
         "__version__",
         "instrument",
         "agent_run",
+        "checkpoint",  # Phase 1 / E1-S5
         "set_outcome",
         "tag",
+        "tag_node",  # Phase 1 / E1-S5
         "tag_retrieval",
         "report_cost",
         "InkfootError",
@@ -73,6 +75,8 @@ def test_version_is_a_pep440_string() -> None:
         ("set_outcome", "inkfoot._run_lifecycle"),
         ("tag", "inkfoot._run_lifecycle"),
         ("tag_retrieval", "inkfoot._run_lifecycle"),
+        ("tag_node", "inkfoot._run_lifecycle"),
+        ("checkpoint", "inkfoot._run_lifecycle"),
         ("report_cost", "inkfoot._run_lifecycle"),
     ],
 )

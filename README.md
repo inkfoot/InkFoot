@@ -10,26 +10,36 @@ automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
-**Status:** Phase 0 is **code-complete**. Epics E1 (Project + Storage
-Foundation), E2 (Causal Token Ledger), E3 (Pattern A
-Instrumentation), E4 (Smell Engine + Recommendations), E5 (Report
-CLI + Outcome Tagging), and E6's code half (validation harness +
-fixture extractor + missing benchmarks + process doc templates) all
-landed. The remaining Phase 0 work is the *operator-process* half
-of E6 — six weeks of production exposure on our own agents,
-labelling 50 real runs against the validation harness, weekly
-smell-review meetings, and the go/no-go decision. The architecture
-spec + roadmap + Phase 0 epic doc live in a separate documentation
+**Status:** Phase 0 is **code-complete** and Phase 1 E1 (Framework
+Adapter Foundation) is now landed. Phase 0 epics E1–E6 shipped the
+Pattern-A SDK shims, the 14-field Causal Token Ledger, the smell
+engine, the report CLI, the validation harness, and the perf gates.
+Phase 1 E1 ships Pattern-C framework adapters (LangGraph, OpenAI
+Agents SDK, Anthropic Agent SDK) + the Pattern-B ergonomic helpers
+(`tag_node`, `checkpoint`) — `inkfoot.langgraph.instrument(graph)`
+gives per-node attribution via `inkfoot report --run <id>
+--group-by node`. The remaining Phase 0 work is the
+*operator-process* half of E6 (six weeks of production exposure,
+50 labelled runs, weekly smell review, go/no-go decision). Phase 1
+E2–E6 (benchmark CLI + diff + GitHub Action, OTel ingest/export,
+docs site, OSS launch) are still ahead. The architecture spec +
+roadmap + per-phase epic docs live in a separate documentation
 repository (see project owner).
 
 The user-facing surface today: `inkfoot.instrument()` to monkey-
 patch the SDKs, `@inkfoot.agent_run(task=...)` decorator + context
 manager for run scoping, `inkfoot.set_outcome / tag / tag_retrieval
-/ report_cost` for in-run metadata, the rule-based smell engine
-with five built-in cost smells, and the `inkfoot` CLI with `report`
-(single-run attribution bar chart + smells, or aggregate
-`--last 7d --group-by task` with runs / avg_$ / p95_$ / success% /
-cost-per-success), `tag` (late tagging), and `rebuild-aggregates`.
+/ tag_node / checkpoint / report_cost` for in-run metadata,
+`inkfoot.langgraph.instrument(graph)` /
+`inkfoot.openai_agents.instrument(agent)` /
+`inkfoot.anthropic_agent.instrument(agent)` for framework
+adapters (Pattern C — per-node attribution + tool-dispatch events),
+the rule-based smell engine with five built-in cost smells, and
+the `inkfoot` CLI with `report` (single-run attribution bar chart +
+smells, or aggregate `--last 7d --group-by task` with runs / avg_$
+/ p95_$ / success% / cost-per-success, or single-run
+`--group-by node` for per-LangGraph-node ledger totals), `tag`
+(late tagging), and `rebuild-aggregates`.
 Under it: nanodollar money type, SQLite storage with WAL + two-tier
 writes, claim-and-project aggregator, the 14-field Causal Token
 Ledger, per-provider Anthropic + OpenAI translators with
@@ -94,6 +104,16 @@ inkfoot/                                    # the Python package
     _emit.py                                # shared event-emit pipeline
     anthropic.py                            # AnthropicShim (sync + async)
     openai.py                               # OpenAIShim (sync + async)
+  adapters/                                 # Phase 1 / E1: framework adapters (Pattern C)
+    __init__.py                             # FrameworkAdapter Protocol re-export
+    base.py                                 # FrameworkAdapter + Instrumentation Protocols
+    _registry.py                            # AdapterRegistry singleton + get_active_adapter
+    langgraph.py                            # LangGraph adapter (per-node attribution + tools fingerprint)
+    openai_agents.py                        # OpenAI Agents SDK adapter (tool-dispatched events)
+    anthropic_agent.py                      # Anthropic Agent SDK adapter
+  langgraph.py                              # Top-level convenience: inkfoot.langgraph.instrument(graph)
+  openai_agents.py                          # Top-level convenience: inkfoot.openai_agents.instrument(agent)
+  anthropic_agent.py                        # Top-level convenience: inkfoot.anthropic_agent.instrument(agent)
   smells/
     __init__.py                             # CostSmell + DetectionResult + DEFAULT_SMELLS + registry
     engine.py                               # SmellEngine (lazy, off the hot path)
@@ -118,7 +138,8 @@ scripts/
   validate_attribution.py                   # E6: validation harness — fails CI when per-category mean error > 10%
   extract_run_fixtures.py                   # E6: nightly extractor for the validation corpus
 tests/
-  unit/                                     # 403 unit tests (E1 + E2 + E3 + E4 + E5 + E6)
+  unit/                                     # 461 unit tests (Phase 0 E1–E6 + Phase 1 E1)
+  integration/                              # Phase 1 E1: per-framework e2e tests (skip without the optional extra installed)
   benchmarks/                               # 6 §9.1 perf gates (storage + aggregator + shim metadata/replay + report + smells)
   fixtures/
     validation/                             # E6: hand-labelled corpus consumed by validate_attribution.py

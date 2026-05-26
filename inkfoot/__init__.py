@@ -5,17 +5,27 @@ modules are private and not part of the SemVer contract. The public
 surface — what users ``from inkfoot import`` — is the names in
 ``__all__`` below.
 
-Phase 0 progress:
+Phase 0 (code-complete):
 
-* E1 (storage foundation + money type + CLI) — landed.
-* E2 (Causal Token Ledger + per-provider translators + pricing) — landed.
-* E3 (``inkfoot.instrument()`` + Pattern A SDK shims + policy
-  registry + 3 observation policies) — landed.
-* E4 / E5 / E6 — not yet shipped. The public callables they
-  add (``agent_run``, ``set_outcome``, ``tag``, ``tag_retrieval``,
-  ``report_cost``) are *declared* here so the import contract is
-  stable across phases; they raise ``NotImplementedError`` with a
-  pointer to the epic where they land.
+* E1 — storage foundation + money type + CLI.
+* E2 — Causal Token Ledger + per-provider translators + pricing.
+* E3 — ``inkfoot.instrument()`` + Pattern A SDK shims + policy
+  registry + 3 observation policies.
+* E4 — Smell engine + 5 built-in smells.
+* E5 — ``@agent_run`` decorator/context manager, ``set_outcome``,
+  ``tag``, ``tag_retrieval``, ``report_cost``, and ``inkfoot report``
+  CLI (single-run + aggregate).
+* E6 — Validation harness + corpus + perf benchmarks + CI gate.
+
+Phase 1 progress:
+
+* E1 — Framework adapter foundation (Pattern C). Ships:
+  ``inkfoot.langgraph.instrument`` / ``inkfoot.openai_agents.instrument``
+  / ``inkfoot.anthropic_agent.instrument``, plus the Pattern-B
+  ergonomic helpers ``inkfoot.tag_node`` / ``inkfoot.checkpoint``.
+  ``inkfoot report --run <id> --group-by node`` shows per-node
+  ledger totals when a Pattern-C adapter is wired in.
+* E2 / E3 / E4 / E5 / E6 — not yet shipped.
 
 E2 + E3 internals (``CausalTokenLedger``, ``NeutralCall``,
 ``AnthropicTranslator``, ``OpenAITranslator``,
@@ -34,9 +44,11 @@ from inkfoot.errors import InkfootError, PolicyNotSupported, StorageError
 from inkfoot._instrument import instrument  # E3 — Pattern A Instrumentation
 from inkfoot._run_lifecycle import (  # E5 — Report CLI + Outcome Tagging
     agent_run,
+    checkpoint,  # Phase 1 / E1-S5
     report_cost,
     set_outcome,
     tag,
+    tag_node,  # Phase 1 / E1-S5
     tag_retrieval,
 )
 
@@ -44,8 +56,10 @@ __all__ = [
     "__version__",
     "instrument",
     "agent_run",
+    "checkpoint",
     "set_outcome",
     "tag",
+    "tag_node",
     "tag_retrieval",
     "report_cost",
     "InkfootError",
