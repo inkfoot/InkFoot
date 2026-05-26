@@ -277,8 +277,172 @@ def test_shipped_starter_corpus_passes() -> None:
     corpus = _REPO_ROOT / "tests" / "fixtures" / "validation"
     if not corpus.exists():
         pytest.skip("starter corpus not present")
-    passed, _ = _validate.run_validation(corpus_dir=corpus)
+    passed, report = _validate.run_validation(corpus_dir=corpus)
     assert passed is True
+    # And the ground-truth subset must be non-empty — Finding #1
+    # asks for at least one fixture whose labels are derived from
+    # raw text + provider usage, not snapshotted from the translator.
+    assert report["ground_truth_fixture_count"] >= 1
+
+
+# ----------------------------------------------------------------------
+# Ground-truth fixture handling (Finding #1)
+# ----------------------------------------------------------------------
+
+
+def test_ground_truth_fixtures_tracked_separately(tmp_path: Path) -> None:
+    """Two fixtures: one snapshot-labelled, one marked
+    ``ground_truth: true``. Both contribute to the full-corpus
+    aggregate; the GT bucket only counts the second."""
+    from inkfoot.ledger import INPUT_CATEGORIES
+    from inkfoot.normalise.anthropic import AnthropicTranslator
+    from inkfoot.run import InMemoryRunState
+
+    _simple_anthropic(tmp_path, name="snapshot.json")
+    _simple_anthropic(tmp_path, name="ground-truth.json")
+
+    fixture_data = json.loads((tmp_path / "snapshot.json").read_text())
+    call = AnthropicTranslator().translate(
+        request=fixture_data["request"],
+        response=fixture_data["response"],
+        run_state=InMemoryRunState(),
+        started_at=0,
+        ended_at=1,
+    )
+    snapshot_label = {cat: int(getattr(call.ledger, cat)) for cat in INPUT_CATEGORIES}
+    _write_labels(
+        tmp_path,
+        {
+            "snapshot.json": {"expected": snapshot_label},
+            "ground-truth.json": {
+                "expected": snapshot_label,
+                "ground_truth": True,
+            },
+        },
+    )
+    passed, report = _validate.run_validation(corpus_dir=tmp_path)
+    assert passed is True
+    assert report["ground_truth_fixture_count"] == 1
+    assert report["ground_truth_fixtures"] == ["ground-truth.json"]
+    # Headline + ground-truth means both at 0%.
+    assert all(
+        v == 0.0 for v in report["per_category_mean_error"].values()
+    )
+    assert all(
+        v == 0.0
+        for v in report["ground_truth_per_category_mean_error"].values()
+    )
+
+
+def test_ground_truth_failure_surfaces_independently(tmp_path: Path) -> None:
+    """A ground-truth fixture whose label disagrees with the
+    translator must fail CI even if no snapshot-labelled fixture
+    sees the same disagreement."""
+    from inkfoot.ledger import INPUT_CATEGORIES
+    from inkfoot.normalise.anthropic import AnthropicTranslator
+    from inkfoot.run import InMemoryRunState
+
+    _simple_anthropic(tmp_path)
+    fixture_data = json.loads((tmp_path / "fixture.json").read_text())
+    call = AnthropicTranslator().translate(
+        request=fixture_data["request"],
+        response=fixture_data["response"],
+        run_state=InMemoryRunState(),
+        started_at=0,
+        ended_at=1,
+    )
+    expected = {cat: int(getattr(call.ledger, cat)) for cat in INPUT_CATEGORIES}
+    # Sabotage system_static by claiming twice the actual count —
+    # this label is "ground truth" so the harness must fail even
+    # though the translator's output would match its own snapshot.
+    expected["system_static_tokens"] = max(2, call.ledger.system_static_tokens * 2)
+    _write_labels(
+        tmp_path,
+        {"fixture.json": {"expected": expected, "ground_truth": True}},
+    )
+    passed, report = _validate.run_validation(corpus_dir=tmp_path)
+    assert passed is False
+    assert (
+        "system_static_tokens"
+        in report["failing_ground_truth_categories"]
+    )
+
+
+def test_shipped_ground_truth_fixture_uses_tiktoken_label_provenance() -> None:
+    """The labels.json entry for the shipped ground-truth fixture
+    must declare itself as ground-truth so the harness counts it
+    separately. Catches a future re-snapshot script that
+    accidentally erases the flag."""
+    corpus = _REPO_ROOT / "tests" / "fixtures" / "validation"
+    if not corpus.exists():
+        pytest.skip("starter corpus not present")
+    labels = json.loads((corpus / "labels.json").read_text())
+    gt = labels.get("anthropic-ground-truth-tiktoken.json")
+    assert gt is not None, (
+        "expected anthropic-ground-truth-tiktoken.json in labels.json"
+    )
+    assert gt.get("ground_truth") is True
+    # The label_source string explains how to verify the counts
+    # independently. If a future contributor re-snapshots from the
+    # translator without realising it, this string is the safety
+    # net that calls attention to the override.
+    assert "tiktoken" in (gt.get("label_source") or "").lower()
+
+
+# ----------------------------------------------------------------------
+# --report-json flag (Finding #2)
+# ----------------------------------------------------------------------
+
+
+def test_main_report_json_flag_writes_file_and_prints_human_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """``--report-json PATH`` writes the JSON to disk AND still
+    prints the human-friendly report to stdout — one invocation
+    serves both jobs (CI used to run the harness twice)."""
+    _simple_anthropic(tmp_path)
+    from inkfoot.ledger import INPUT_CATEGORIES
+    from inkfoot.normalise.anthropic import AnthropicTranslator
+    from inkfoot.run import InMemoryRunState
+
+    fixture_data = json.loads((tmp_path / "fixture.json").read_text())
+    call = AnthropicTranslator().translate(
+        request=fixture_data["request"],
+        response=fixture_data["response"],
+        run_state=InMemoryRunState(),
+        started_at=0,
+        ended_at=1,
+    )
+    _write_labels(
+        tmp_path,
+        {
+            "fixture.json": {
+                "expected": {
+                    cat: int(getattr(call.ledger, cat))
+                    for cat in INPUT_CATEGORIES
+                }
+            }
+        },
+    )
+
+    report_path = tmp_path / "report.json"
+    rc = _validate.main(
+        [
+            "--corpus",
+            str(tmp_path),
+            "--report-json",
+            str(report_path),
+        ]
+    )
+    assert rc == 0
+    # JSON file written.
+    assert report_path.exists()
+    payload = json.loads(report_path.read_text())
+    assert payload["passed"] is True
+    # Human report still printed to stdout.
+    captured = capsys.readouterr()
+    assert "Validation corpus" in captured.out
+    assert "PASS" in captured.out
 
 
 # ----------------------------------------------------------------------

@@ -132,27 +132,50 @@ def extract(
     output_dir: Path,
     since_ms: int,
     include_content: bool = False,
+    complete_only: bool = False,
 ) -> int:
     """Export every llm_call event recorded since ``since_ms`` as a
     fixture file. Returns the number of fixtures written.
 
-    Output filename shape: ``<provider>-<model>-<runid>-<seq>.json``.
+    By default exports events from runs of *any* status —
+    in-progress runs (``status='running'``) get their partial event
+    stream too, which is useful when debugging a hang or a
+    mid-investigation cost spike. Pass ``complete_only=True`` to
+    restrict to runs that have already ended (``status='complete'``
+    or ``'error'``); the nightly cron job typically wants this.
+
+    Output filename shape:
+    ``<provider>-<model>-<runid>-<seq>.json``. The full ULID is in
+    the name so two runs created in the same millisecond never
+    collide on disk (ULIDs are millisecond-prefixed; the random
+    suffix disambiguates).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     storage = SQLiteStorage(path=db_path)
     storage.connect()
     try:
+        # TODO(phase-2/postgres): the Storage Protocol has no
+        # ``iter_events_since(occurred_at_ms, kind=...)`` method
+        # yet so we reach into the SQLite connection directly.
+        # Phase 2's Postgres backend will need a Protocol method
+        # (CL5 review Finding #3 enumerates the other call sites
+        # that share this pattern).
         conn = storage._conn()  # type: ignore[attr-defined]
+        where = "e.kind = 'llm_call' AND e.occurred_at >= ?"
+        params: list[Any] = [since_ms]
+        if complete_only:
+            where += " AND r.status IN ('complete', 'error')"
         cur = conn.execute(
-            """
+            f"""
             SELECT e.id, e.run_id, e.sequence, e.payload_json,
                    ec.request_json, ec.response_json
             FROM events e
             LEFT JOIN event_contents ec ON ec.event_id = e.id
-            WHERE e.kind = 'llm_call' AND e.occurred_at >= ?
+            JOIN runs r ON r.id = e.run_id
+            WHERE {where}
             ORDER BY e.run_id, e.sequence
             """,
-            (since_ms,),
+            params,
         )
         count = 0
         for row in cur.fetchall():
@@ -177,12 +200,14 @@ def extract(
                 "/", "_"
             )
             model = (fixture.get("model") or "unknown").replace("/", "_")
-            # ULIDs are 26 chars; trim to a short id for the
-            # filename (prefix collision is fine — sequence
-            # disambiguates within a run).
-            short_run = (row["run_id"] or "unknown")[:14]
+            # Use the full run id so two runs created in the same
+            # millisecond don't collide (ULIDs share their
+            # timestamp-derived prefix; only the random suffix
+            # disambiguates). Sanitise just in case some non-ULID
+            # id shape lands.
+            run_id = (row["run_id"] or "unknown").replace("/", "_")
             fname = (
-                f"{provider}-{model}-{short_run}-seq{row['sequence']:04d}.json"
+                f"{provider}-{model}-{run_id}-seq{row['sequence']:04d}.json"
             )
             (output_dir / fname).write_text(
                 json.dumps(fixture, indent=2, default=str)
@@ -234,6 +259,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             "recorded under capture_mode='replay'."
         ),
     )
+    parser.add_argument(
+        "--complete-only",
+        action="store_true",
+        help=(
+            "Skip runs that are still in progress (status='running'). "
+            "The nightly cron typically wants this; default off so "
+            "ad-hoc invocations can debug mid-run failures."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -253,6 +287,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         output_dir=output_dir,
         since_ms=since_ms,
         include_content=args.include_content,
+        complete_only=args.complete_only,
     )
     print(f"extract_run_fixtures: wrote {count} fixture(s) to {output_dir}")
     return 0

@@ -198,6 +198,14 @@ def run_validation(
     every category's *mean relative error* across the corpus is
     under ``threshold``. The report dict is JSON-serialisable and
     suitable for both CI output and `--json` mode.
+
+    Ground-truth fixtures (those whose label entry sets
+    ``ground_truth: true``) are counted in the headline aggregate
+    AND tracked in a separate ``ground_truth_per_category_mean_error``
+    bucket. That bucket is the load-bearing check — labels are
+    derived from raw text + provider usage, not snapshotted from
+    the translator — so a translator regression that the snapshot-
+    based labels would hide still surfaces here.
     """
     if not corpus_dir.exists():
         raise RuntimeError(
@@ -215,47 +223,75 @@ def run_validation(
         )
 
     all_errors: list[PerCategoryError] = []
+    ground_truth_errors: list[PerCategoryError] = []
     skipped: list[str] = []
+    ground_truth_fixtures: list[str] = []
     for path in fixtures:
         label = labels.get(path.name)
         if label is None:
             skipped.append(path.name)
             continue
-        all_errors.extend(_run_one_fixture(fixture_path=path, label=label))
+        errors = _run_one_fixture(fixture_path=path, label=label)
+        all_errors.extend(errors)
+        if isinstance(label, dict) and label.get("ground_truth") is True:
+            ground_truth_errors.extend(errors)
+            ground_truth_fixtures.append(path.name)
 
     # Aggregate: per-category mean relative error across the corpus.
-    per_category_mean: dict[str, float] = {}
-    for category in INPUT_CATEGORIES:
-        cat_errors = [e for e in all_errors if e.category == category]
-        if not cat_errors:
-            per_category_mean[category] = 0.0
-            continue
-        per_category_mean[category] = sum(
-            e.relative for e in cat_errors
-        ) / len(cat_errors)
+    per_category_mean = _mean_per_category(all_errors)
+    ground_truth_mean = _mean_per_category(ground_truth_errors)
 
     failing = {
         cat: err
         for cat, err in per_category_mean.items()
         if err > threshold
     }
-    passed = not failing
+    # Ground-truth failures are reported independently so a
+    # snapshot-passing-but-ground-truth-failing run surfaces both
+    # facts in the same report.
+    failing_ground_truth = {
+        cat: err
+        for cat, err in ground_truth_mean.items()
+        if err > threshold
+    }
+    passed = not failing and not failing_ground_truth
     report = {
         "corpus_dir": str(corpus_dir),
         "fixture_count": len(fixtures) - len(skipped),
+        "ground_truth_fixture_count": len(ground_truth_fixtures),
+        "ground_truth_fixtures": ground_truth_fixtures,
         "skipped_fixtures": skipped,
         "threshold": threshold,
         "per_category_mean_error": per_category_mean,
+        "ground_truth_per_category_mean_error": ground_truth_mean,
         "failing_categories": failing,
+        "failing_ground_truth_categories": failing_ground_truth,
         "passed": passed,
     }
     return passed, report
 
 
+def _mean_per_category(
+    errors: list[PerCategoryError],
+) -> dict[str, float]:
+    """Per-category mean relative error across the given list. A
+    category with no errors lands at 0.0 — there's nothing to
+    measure."""
+    out: dict[str, float] = {}
+    for category in INPUT_CATEGORIES:
+        cat_errors = [e for e in errors if e.category == category]
+        if not cat_errors:
+            out[category] = 0.0
+            continue
+        out[category] = sum(e.relative for e in cat_errors) / len(cat_errors)
+    return out
+
+
 def _render_human_report(report: dict[str, Any]) -> str:
     lines = [
         f"Validation corpus: {report['corpus_dir']}",
-        f"Fixtures evaluated: {report['fixture_count']}",
+        f"Fixtures evaluated: {report['fixture_count']}"
+        f"  (ground-truth: {report['ground_truth_fixture_count']})",
     ]
     if report["skipped_fixtures"]:
         lines.append(
@@ -266,21 +302,44 @@ def _render_human_report(report: dict[str, Any]) -> str:
         f"{report['threshold'] * 100:.1f}%"
     )
     lines.append("")
-    lines.append("Per-category mean error:")
+    lines.append("Per-category mean error (full corpus):")
     per_cat = report["per_category_mean_error"]
     for category in INPUT_CATEGORIES:
         err = per_cat.get(category, 0.0)
         marker = "❌" if err > report["threshold"] else "✓"
         lines.append(f"  {marker} {category:<32} {err * 100:6.2f}%")
-    if report["failing_categories"]:
+
+    if report["ground_truth_fixture_count"] > 0:
         lines.append("")
         lines.append(
-            f"FAIL: {len(report['failing_categories'])} categor(ies) "
-            f"exceed the {report['threshold'] * 100:.1f}% threshold."
+            "Per-category mean error (ground-truth subset only — "
+            "labels independent of translator):"
         )
+        gt_per_cat = report["ground_truth_per_category_mean_error"]
+        for category in INPUT_CATEGORIES:
+            err = gt_per_cat.get(category, 0.0)
+            marker = "❌" if err > report["threshold"] else "✓"
+            lines.append(f"  {marker} {category:<32} {err * 100:6.2f}%")
+
+    failed_full = bool(report["failing_categories"])
+    failed_gt = bool(report["failing_ground_truth_categories"])
+    if failed_full or failed_gt:
+        lines.append("")
+        if failed_full:
+            lines.append(
+                f"FAIL: {len(report['failing_categories'])} categor(ies) "
+                f"exceed the {report['threshold'] * 100:.1f}% threshold "
+                f"on the full corpus."
+            )
+        if failed_gt:
+            lines.append(
+                f"FAIL: {len(report['failing_ground_truth_categories'])} "
+                f"categor(ies) exceed the {report['threshold'] * 100:.1f}% "
+                f"threshold on the ground-truth subset."
+            )
     else:
         lines.append("")
-        lines.append("PASS: every category under threshold.")
+        lines.append("PASS: every category under threshold (incl. ground-truth).")
     return "\n".join(lines)
 
 
@@ -306,7 +365,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Emit machine-readable JSON instead of the human-friendly report.",
+        help=(
+            "Emit machine-readable JSON to stdout instead of the "
+            "human-friendly report."
+        ),
+    )
+    parser.add_argument(
+        "--report-json",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write the machine-readable JSON report to ``PATH`` while "
+            "still printing the human-friendly report to stdout. "
+            "Lets CI emit both formats in one harness invocation."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -319,10 +391,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    json_blob = json.dumps(report, indent=2, sort_keys=True)
     if args.json:
-        print(json.dumps(report, indent=2, sort_keys=True))
+        # ``--json`` mode: machine-readable to stdout, nothing else.
+        print(json_blob)
     else:
         print(_render_human_report(report))
+
+    # ``--report-json PATH`` writes the JSON regardless of the
+    # ``--json`` flag — CI uses this to upload an artefact in the
+    # same step that gates the build.
+    if args.report_json:
+        Path(args.report_json).write_text(json_blob)
 
     return 0 if passed else 1
 

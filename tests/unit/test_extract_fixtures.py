@@ -198,3 +198,139 @@ def test_fixture_filename_carries_provider_model_run_sequence(
     assert any("openai-gpt-4o" in n for n in names)
     assert any("seq0001" in n for n in names)
     assert any("seq0002" in n for n in names)
+
+
+def test_filename_uses_full_run_id_avoiding_millisecond_collisions(
+    tmp_path: Path,
+) -> None:
+    """Two distinct ULIDs that share their millisecond-derived
+    prefix must not produce colliding filenames (Finding #3). The
+    full run id rides in the name; only the ULID's random suffix
+    differs between concurrently-started runs."""
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+    # Two ULIDs that share the first 14 chars (timestamp-derived
+    # prefix). The pre-fix filename truncated to 14 → collision.
+    shared_prefix = "01ABCDEFGHIJKL"
+    run_ids = [shared_prefix + "MNOPQRSTUV", shared_prefix + "WXYZ012345"]
+    for rid in run_ids:
+        s.start_run(
+            run_id=rid,
+            task="t",
+            agent_kind="a",
+            started_at=1_700_000_000_000,
+        )
+        s.insert_event(
+            event_id=f"e-{rid}",
+            run_id=rid,
+            kind="llm_call",
+            occurred_at=1_700_000_000_001,
+            sequence=1,
+            payload_json=json.dumps(
+                {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "ledger": {"output_tokens": 1},
+                }
+            ),
+        )
+    s.close()
+
+    output = tmp_path / "fixtures"
+    count = _extract.extract(
+        db_path=db,
+        output_dir=output,
+        since_ms=0,
+        include_content=False,
+    )
+    assert count == 2
+    files = sorted(output.glob("*.json"))
+    assert len(files) == 2, (
+        f"expected two files, got {[f.name for f in files]}"
+    )
+
+
+def test_complete_only_skips_in_progress_runs(tmp_path: Path) -> None:
+    """``--complete-only`` filters out runs whose status is still
+    'running' — useful for the nightly cron that wants only
+    finished runs."""
+    from inkfoot.storage.sqlite import SQLiteStorage
+
+    db = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db)
+    s.connect()
+
+    # Run 1: completed.
+    s.start_run(
+        run_id="r-complete",
+        task="t",
+        agent_kind="a",
+        started_at=1_700_000_000_000,
+    )
+    s.insert_event(
+        event_id="e-1",
+        run_id="r-complete",
+        kind="llm_call",
+        occurred_at=1_700_000_000_001,
+        sequence=1,
+        payload_json=json.dumps(
+            {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+                "ledger": {"output_tokens": 1},
+            }
+        ),
+    )
+    s.end_run(
+        run_id="r-complete", ended_at=1_700_000_000_500, status="complete"
+    )
+
+    # Run 2: still running.
+    s.start_run(
+        run_id="r-running",
+        task="t",
+        agent_kind="a",
+        started_at=1_700_000_000_000,
+    )
+    s.insert_event(
+        event_id="e-2",
+        run_id="r-running",
+        kind="llm_call",
+        occurred_at=1_700_000_000_001,
+        sequence=1,
+        payload_json=json.dumps(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "ledger": {"output_tokens": 2},
+            }
+        ),
+    )
+    s.close()
+
+    # Default mode: both runs extracted.
+    output_all = tmp_path / "fixtures_all"
+    n_all = _extract.extract(
+        db_path=db,
+        output_dir=output_all,
+        since_ms=0,
+        include_content=False,
+        complete_only=False,
+    )
+    assert n_all == 2
+
+    # complete_only mode: only the finished run.
+    output_complete = tmp_path / "fixtures_complete"
+    n_complete = _extract.extract(
+        db_path=db,
+        output_dir=output_complete,
+        since_ms=0,
+        include_content=False,
+        complete_only=True,
+    )
+    assert n_complete == 1
+    files = list(output_complete.glob("*.json"))
+    assert all("r-complete" in p.name for p in files)
