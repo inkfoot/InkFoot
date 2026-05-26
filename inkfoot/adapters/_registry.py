@@ -14,11 +14,15 @@ ordering surprises us.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.adapters.base import FrameworkAdapter
+
+
+_LOG = logging.getLogger("inkfoot.adapters.registry")
 
 
 class DuplicateAdapterName(ValueError):
@@ -61,7 +65,18 @@ class _AdapterRegistry:
     def set_active(self, adapter: "FrameworkAdapter") -> None:
         """Mark ``adapter`` as the active Pattern-C adapter. Registers
         it first if not yet known so the common
-        ``register-and-activate`` path is one call."""
+        ``register-and-activate`` path is one call.
+
+        When a process activates two *different-named* adapters in
+        sequence (e.g. ``langgraph`` then ``openai_agents``), the
+        second call silently wins — both instrumentations stay
+        installed on their respective targets, but policy capability
+        checks now consult the newest adapter only. A WARNING is
+        logged to flag the switch (CL-E1 review Finding #2): a real
+        process that mixes frameworks probably wants to be aware
+        that its ``BudgetCap`` registration will no longer go
+        through the same capability surface.
+        """
         with self._lock:
             existing = self._by_name.get(adapter.name)
             if existing is None:
@@ -72,7 +87,21 @@ class _AdapterRegistry:
                     f"name {adapter.name!r} is already registered to a "
                     f"different instance ({type(existing).__name__})."
                 )
+            previous = self._active
             self._active = adapter
+        # WARNING is emitted *outside* the lock so a logging handler
+        # that grabs another lock can't deadlock with us.
+        if previous is not None and previous is not adapter:
+            _LOG.warning(
+                "adapter registry: replacing active adapter %r with %r — "
+                "policy capability surface now reflects %r only; prior "
+                "instrumentation on the previous adapter's targets stays "
+                "in place but new register_policies() calls consult the "
+                "new adapter's supported_policies().",
+                previous.name,
+                adapter.name,
+                adapter.name,
+            )
 
     def clear_active(self) -> None:
         """Drop the active-adapter pointer. Tests + adapter shutdown

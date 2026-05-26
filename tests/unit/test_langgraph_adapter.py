@@ -35,16 +35,24 @@ from inkfoot.adapters.langgraph import (
 def _isolated_state(tmp_path: Path) -> Any:
     """Boot ``inkfoot.instrument()`` against a fresh DB per test.
     The adapter writes events through the configured storage, so we
-    need a real storage backend to assert on what it emitted."""
+    need a real storage backend to assert on what it emitted.
+
+    Resets the module-level default adapter's install count so the
+    auto-deactivate test logic (Finding #4) isn't fouled by counter
+    leakage between tests that use the convenience ``instrument()``
+    function."""
     from inkfoot._instrument import shutdown
     from inkfoot._run_context import _clear_current_run
+    from inkfoot.adapters.langgraph import _default_adapter
     from inkfoot.storage.sqlite import SQLiteStorage
 
+    _default_adapter._install_count = 0
     db_path = tmp_path / "runs.db"
     inkfoot.instrument(sdks=[], storage=SQLiteStorage(path=db_path))
     yield db_path
     _clear_current_run()
     AdapterRegistry.clear()
+    _default_adapter._install_count = 0
     shutdown()
 
 
@@ -341,4 +349,37 @@ def test_shutdown_clears_active_adapter_via_LangGraphAdapter_shutdown() -> None:
     instrument(g, task="t")
     assert AdapterRegistry.get_active() is not None
     LangGraphAdapter().shutdown()
+    assert AdapterRegistry.get_active() is None
+
+
+def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
+    """CL-E1 review Finding #4: a user calling ``inst.shutdown()``
+    on the only live handle should leave the adapter registry's
+    active pointer clean. Previously the pointer lingered until
+    ``LangGraphAdapter.shutdown()`` was called explicitly."""
+    g = _StubGraph()
+    inst = instrument(g, task="t")
+    assert AdapterRegistry.get_active() is not None
+
+    inst.shutdown()
+    assert AdapterRegistry.get_active() is None
+
+
+def test_instrumentation_shutdown_keeps_adapter_active_while_other_handles_live() -> None:
+    """Two graphs instrumented → shutting down one leaves the other
+    + the registry pointer intact. Auto-deactivation only fires when
+    the install count hits zero."""
+    g1 = _StubGraph()
+    g2 = _StubGraph()
+    inst1 = instrument(g1, task="t1")
+    inst2 = instrument(g2, task="t2")
+    assert AdapterRegistry.get_active() is not None
+
+    inst1.shutdown()
+    # The second instrumentation still live, so the registry pointer
+    # MUST stay set.
+    assert AdapterRegistry.get_active() is not None
+
+    inst2.shutdown()
+    # Now the last handle is gone — auto-deactivate fires.
     assert AdapterRegistry.get_active() is None

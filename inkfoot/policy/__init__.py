@@ -169,20 +169,27 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     if type(policy) in supported_classes:
         return
 
-    # Phase-0 observation policies declare ``{A, B, C}`` — they work
-    # without adapter-specific wiring (the shim handles them). Let
-    # them through on the legacy pattern check so a Pattern-C adapter
-    # that hasn't enumerated them doesn't accidentally reject the
-    # BudgetCap users already had registered.
+    # The fallback path: a policy that declares it works across
+    # *every* integration pattern (``{A, B, C}``) — i.e. the Phase-0
+    # observation-policy shape — doesn't need adapter-specific
+    # wiring. The shim handles it identically under any adapter, so
+    # an adapter that hasn't enumerated ``BudgetCap`` / ``RetryThrottle``
+    # / ``CacheControlPlacer`` still accepts the registration.
     #
-    # A Phase-2 *modification* policy ships with ``{C}`` only — those
-    # need the adapter to know how to wire them, so the explicit
-    # enumeration is mandatory and the fallback path doesn't fire.
-    patterns = policy.SUPPORTED_PATTERNS
-    if (
-        IntegrationPattern.A in patterns
-        or IntegrationPattern.B in patterns
-    ) and IntegrationPattern.C in patterns:
+    # Anything narrower than the full set (``{C}``, ``{B, C}``,
+    # ``{A, C}``, ...) is a policy that needs the adapter to know
+    # how to wire it — a hypothetical Phase-2 modification policy
+    # declared ``{B, C}`` ("works in raw decorator + framework
+    # adapter, but not under the bare SDK shim") should NOT silently
+    # pass a registration against an adapter that hasn't enumerated
+    # it. CL-E1 review Finding #1 tightened this from
+    # ``has-C and has-A-or-B`` to ``equals {A, B, C}`` to make the
+    # contract match phase-1-explain.md §4.1.
+    if policy.SUPPORTED_PATTERNS == {
+        IntegrationPattern.A,
+        IntegrationPattern.B,
+        IntegrationPattern.C,
+    }:
         return
 
     policy_name = policy.NAME or type(policy).__name__

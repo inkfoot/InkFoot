@@ -30,13 +30,16 @@ from inkfoot.adapters.openai_agents import (
 def _isolated_state(tmp_path: Path) -> Any:
     from inkfoot._instrument import shutdown
     from inkfoot._run_context import _clear_current_run
+    from inkfoot.adapters.openai_agents import _default_adapter
     from inkfoot.storage.sqlite import SQLiteStorage
 
+    _default_adapter._install_count = 0
     db_path = tmp_path / "runs.db"
     inkfoot.instrument(sdks=[], storage=SQLiteStorage(path=db_path))
     yield db_path
     _clear_current_run()
     AdapterRegistry.clear()
+    _default_adapter._install_count = 0
     shutdown()
 
 
@@ -182,3 +185,29 @@ def test_shutdown_restores_originals_and_is_idempotent() -> None:
     assert agent.run is original_run or agent.run == original_run
     assert agent._call_tool is original_dispatch or agent._call_tool == original_dispatch
     inst.shutdown()  # idempotent
+
+
+def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
+    """CL-E1 review Finding #4 — same auto-deactivate semantics as
+    the LangGraph adapter. ``inst.shutdown()`` on the only live
+    handle clears the registry's active pointer."""
+    agent = _StubAgent()
+    inst = instrument(agent, task="t")
+    assert AdapterRegistry.get_active() is not None
+
+    inst.shutdown()
+    assert AdapterRegistry.get_active() is None
+
+
+def test_two_instrumented_agents_keep_adapter_active_until_both_shutdown() -> None:
+    a1 = _StubAgent()
+    a2 = _StubAgent()
+    inst1 = instrument(a1, task="t1")
+    inst2 = instrument(a2, task="t2")
+    assert AdapterRegistry.get_active() is not None
+
+    inst1.shutdown()
+    assert AdapterRegistry.get_active() is not None
+
+    inst2.shutdown()
+    assert AdapterRegistry.get_active() is None

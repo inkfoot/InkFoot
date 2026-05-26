@@ -28,13 +28,16 @@ from inkfoot.adapters.anthropic_agent import (
 def _isolated_state(tmp_path: Path) -> Any:
     from inkfoot._instrument import shutdown
     from inkfoot._run_context import _clear_current_run
+    from inkfoot.adapters.anthropic_agent import _default_adapter
     from inkfoot.storage.sqlite import SQLiteStorage
 
+    _default_adapter._install_count = 0
     db_path = tmp_path / "runs.db"
     inkfoot.instrument(sdks=[], storage=SQLiteStorage(path=db_path))
     yield db_path
     _clear_current_run()
     AdapterRegistry.clear()
+    _default_adapter._install_count = 0
     shutdown()
 
 
@@ -136,3 +139,14 @@ def test_top_level_module_reexports_instrument() -> None:
     import inkfoot.anthropic_agent as anth_pkg
 
     assert anth_pkg.instrument is instrument
+
+
+def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
+    """CL-E1 review Finding #4 — symmetric with the OpenAI Agents +
+    LangGraph adapters."""
+    agent = _StubAnthAgent()
+    inst = instrument(agent, task="t")
+    assert AdapterRegistry.get_active() is not None
+
+    inst.shutdown()
+    assert AdapterRegistry.get_active() is None

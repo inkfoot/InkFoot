@@ -82,6 +82,24 @@ class _FakeLazyToolExposure(Policy):
         return None
 
 
+class _FakeMixedPatternPolicy(Policy):
+    """Hypothetical Phase-2 policy that supports raw-SDK Pattern B
+    + framework adapters (Pattern C) but not the bare SDK shim
+    (Pattern A). The CL-E1 review (Finding #1) flagged that the old
+    fallback would let this through any adapter regardless of the
+    adapter's ``supported_policies()`` — the tightened predicate
+    requires explicit enumeration."""
+
+    NAME = "MixedPatternPolicy"
+    SUPPORTED_PATTERNS = {IntegrationPattern.B, IntegrationPattern.C}
+
+    def before_call(self, ctx: Any) -> PolicyDecision:  # pragma: no cover
+        return PolicyDecision(action="allow")
+
+    def after_call(self, ctx: Any, response: Any) -> None:  # pragma: no cover
+        return None
+
+
 @pytest.fixture(autouse=True)
 def _reset_state() -> Any:
     """Clear adapter + policy registry before each test."""
@@ -239,3 +257,104 @@ def test_no_active_adapter_keeps_legacy_pattern_a_check() -> None:
 def test_no_active_adapter_accepts_observation_policy_on_pattern_a() -> None:
     register_policies([BudgetCap(max_nd=10)])
     assert len(PolicyRegistry) == 1
+
+
+def test_mixed_pattern_policy_requires_explicit_adapter_enumeration() -> None:
+    """CL-E1 review Finding #1: the fallback path is now restricted
+    to the observation-policy shape (``SUPPORTED_PATTERNS == {A, B,
+    C}``). A hypothetical Phase-2 policy with a narrower set like
+    ``{B, C}`` MUST be enumerated by the active adapter; the legacy
+    fallback no longer waves it through."""
+    adapter = _StubAdapter(supports=set())  # adapter doesn't know it
+    AdapterRegistry.set_active(adapter)
+
+    with pytest.raises(PolicyNotSupported, match="MixedPatternPolicy"):
+        register_policies([_FakeMixedPatternPolicy()])
+
+
+def test_mixed_pattern_policy_registers_when_adapter_enumerates_it() -> None:
+    """The companion case — when the adapter does declare support,
+    the policy registers cleanly. This proves the explicit
+    enumeration path is the way through."""
+    adapter = _StubAdapter(supports={_FakeMixedPatternPolicy})
+    AdapterRegistry.set_active(adapter)
+
+    register_policies([_FakeMixedPatternPolicy()])
+    assert len(PolicyRegistry) == 1
+
+
+# ----------------------------------------------------------------------
+# CL-E1 review Finding #2 — cross-adapter conflict
+# ----------------------------------------------------------------------
+
+
+class _StubAdapterB(_StubAdapter):
+    """Second adapter shape so we can exercise the two-adapter switch
+    (different ``name`` so no DuplicateAdapterName collision)."""
+
+    name = "stub_b"
+
+
+def test_switching_active_adapter_logs_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two consecutive ``instrument()`` calls against different
+    frameworks land both adapters in the registry. The second
+    silently wins the active-pointer slot; the WARNING tells the
+    operator that the policy capability surface now reflects the
+    new adapter only."""
+    import logging as _logging
+
+    first = _StubAdapter()
+    second = _StubAdapterB()
+
+    AdapterRegistry.set_active(first)
+    with caplog.at_level(_logging.WARNING, logger="inkfoot.adapters.registry"):
+        AdapterRegistry.set_active(second)
+
+    assert get_active_adapter() is second
+    # The first adapter is still registered (instrumentation on its
+    # targets stays in place) — only the active pointer moved.
+    assert AdapterRegistry.get("stub") is first
+    assert AdapterRegistry.get("stub_b") is second
+    # The WARNING fires with both adapter names in the message so
+    # the operator can identify the swap.
+    warnings = [
+        r for r in caplog.records if r.levelno >= _logging.WARNING
+    ]
+    assert any("stub" in r.getMessage() for r in warnings)
+    assert any("stub_b" in r.getMessage() for r in warnings)
+
+
+def test_set_active_same_adapter_twice_does_not_log_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Re-activating the *same* adapter instance is idempotent and
+    must not emit the swap warning — otherwise every legitimate
+    re-instrument call would spam the logs."""
+    import logging as _logging
+
+    adapter = _StubAdapter()
+    AdapterRegistry.set_active(adapter)
+    with caplog.at_level(_logging.WARNING, logger="inkfoot.adapters.registry"):
+        AdapterRegistry.set_active(adapter)
+    warnings = [
+        r for r in caplog.records if r.levelno >= _logging.WARNING
+    ]
+    assert warnings == []
+
+
+def test_first_set_active_does_not_log_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The very first activation (previous == None) is just a fresh
+    install — no warning."""
+    import logging as _logging
+
+    adapter = _StubAdapter()
+    with caplog.at_level(_logging.WARNING, logger="inkfoot.adapters.registry"):
+        AdapterRegistry.set_active(adapter)
+    warnings = [
+        r for r in caplog.records if r.levelno >= _logging.WARNING
+    ]
+    assert warnings == []

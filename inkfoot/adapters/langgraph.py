@@ -35,6 +35,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from inkfoot.adapters._registry import AdapterRegistry
+from inkfoot.adapters._shared import install_attr
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.policy import Policy
@@ -366,15 +367,30 @@ def _set_fp(run_id: str, tools_fingerprint: Optional[str]) -> None:
 
 class _LangGraphInstrumentation:
     """Returned by :func:`instrument`. Holds the restore-callables so
-    :meth:`shutdown` can fully reverse the monkey-patches."""
+    :meth:`shutdown` can fully reverse the monkey-patches.
+
+    ``shutdown()`` also releases the adapter's install count — when
+    the last live instrumentation goes away, the active-adapter
+    pointer in :data:`~inkfoot.adapters._registry.AdapterRegistry`
+    clears automatically. This was added under CL-E1 review Finding
+    #4: previously a user calling ``inst.shutdown()`` would leave
+    the registry pointing at a "dead" adapter, so subsequent
+    ``register_policies()`` calls would consult its
+    ``supported_policies()`` even though no instrumentation was
+    still installed. Operators who want to force a global
+    deactivation regardless of install count can call
+    :meth:`LangGraphAdapter.shutdown` directly.
+    """
 
     def __init__(
         self,
+        adapter: "LangGraphAdapter",
         graph: Any,
         restorers: list[Callable[[], None]],
         *,
         tools_fingerprint: Optional[str],
     ) -> None:
+        self._adapter = adapter
         self._graph = graph
         self._restorers = restorers
         self._tools_fingerprint = tools_fingerprint
@@ -400,6 +416,7 @@ class _LangGraphInstrumentation:
         except AttributeError:  # pragma: no cover
             pass
         self._shutdown = True
+        self._adapter._release_install()
 
 
 # ----------------------------------------------------------------------
@@ -412,6 +429,12 @@ class LangGraphAdapter:
     LangGraph (LangChain's ``langgraph`` package)."""
 
     name = "langgraph"
+
+    def __init__(self) -> None:
+        # Install count — tracked so the adapter's active-pointer in
+        # :data:`AdapterRegistry` auto-clears when the last live
+        # instrumentation shuts down (CL-E1 review Finding #4).
+        self._install_count = 0
 
     def detect(self) -> bool:
         try:
@@ -433,6 +456,19 @@ class LangGraphAdapter:
         ``task`` is the value passed to the wrapping
         :func:`inkfoot.agent_run`. Defaults to ``"langgraph"`` so a
         report can still bucket by task without the user passing it.
+
+        **Idempotence + mutation caveat** (CL-E1 review Finding #6):
+        a second ``instrument(graph)`` call returns the *same*
+        handle that the first call produced — keyed on the graph
+        instance via :data:`_INSTRUMENTED_MARKER`. This is the right
+        shape for the common "compile once, invoke many" pattern.
+        However, if a caller adds a node to ``graph.nodes`` *after*
+        instrumenting and re-calls ``instrument(graph)``, the new
+        node will not be wrapped — the cached handle short-circuits
+        the rewrap. The fix in that case is ``inst.shutdown()`` then
+        re-``instrument(graph)``. LangGraph users typically compile
+        the graph once and don't mutate it afterwards, so this is a
+        documented edge case rather than a daily concern.
         """
         existing = getattr(target, _INSTRUMENTED_MARKER, None)
         if isinstance(existing, _LangGraphInstrumentation):
@@ -458,7 +494,7 @@ class LangGraphAdapter:
                 original, task=task or "langgraph",
                 tools_fingerprint=tools_fingerprint,
             )
-            _install_attr(target, entry_name, wrapped, restorers)
+            install_attr(target, entry_name, wrapped, restorers)
 
         # 2. Wrap each node function. The compiled-graph shape varies
         # across LangGraph versions; support the two common attribute
@@ -487,6 +523,7 @@ class LangGraphAdapter:
                 )
 
         instrumentation = _LangGraphInstrumentation(
+            self,
             target,
             restorers,
             tools_fingerprint=tools_fingerprint,
@@ -510,8 +547,23 @@ class LangGraphAdapter:
             _LOG.warning(
                 "adapters.langgraph: failed to activate adapter", exc_info=True
             )
+        self._install_count += 1
 
         return instrumentation
+
+    def _release_install(self) -> None:
+        """Called by an instrumentation's ``shutdown()`` to decrement
+        the install count. When it reaches zero, the active-pointer
+        auto-clears so subsequent ``register_policies()`` calls
+        don't consult this adapter's ``supported_policies()`` after
+        the last instrumentation has been torn down (CL-E1 review
+        Finding #4)."""
+        if self._install_count > 0:
+            self._install_count -= 1
+        if self._install_count == 0:
+            active = AdapterRegistry.get_active()
+            if active is self:
+                AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
         """Phase 1 ships only observation policies — which all
@@ -523,10 +575,16 @@ class LangGraphAdapter:
         return set()
 
     def shutdown(self) -> None:
-        """Adapter-level teardown. Clears the active-adapter pointer
-        in the registry so a follow-up Pattern-A test/run isn't
-        wrongly capability-checked against this adapter."""
+        """Force the adapter to deactivate immediately, regardless of
+        how many live instrumentations exist. Use sparingly — the
+        per-instrumentation ``shutdown()`` already auto-deactivates
+        on the last release (CL-E1 review Finding #4). Use this
+        method when you need to clear the registry pointer without
+        having a handle on the individual ``_LangGraphInstrumentation``
+        objects (e.g. test teardown, force-rebind to a different
+        framework)."""
         AdapterRegistry.clear_active()
+        self._install_count = 0
 
 
 # Module-singleton for the most common ``inkfoot.langgraph.instrument(graph)``
@@ -549,40 +607,10 @@ def instrument(
 
 
 # ----------------------------------------------------------------------
-# Helpers — small enough they don't earn their own module
+# LangGraph-specific helpers (the entry-point ``install_attr`` lives
+# in :mod:`inkfoot.adapters._shared` since both Agent-SDK adapters
+# share it).
 # ----------------------------------------------------------------------
-
-
-def _install_attr(
-    target: Any,
-    name: str,
-    wrapped: Any,
-    restorers: list[Callable[[], None]],
-) -> None:
-    """Stash a wrapped attribute on ``target`` and register the
-    matching restorer."""
-    sentinel: Any = object()
-    original = target.__dict__.get(name, sentinel) if hasattr(
-        target, "__dict__"
-    ) else sentinel
-    try:
-        setattr(target, name, wrapped)
-    except (AttributeError, TypeError):  # pragma: no cover
-        return
-
-    def _restore() -> None:
-        if original is sentinel:
-            try:
-                delattr(target, name)
-            except AttributeError:  # pragma: no cover
-                pass
-        else:
-            try:
-                setattr(target, name, original)
-            except (AttributeError, TypeError):  # pragma: no cover
-                pass
-
-    restorers.append(_restore)
 
 
 def _node_holders(target: Any) -> list[Any]:
