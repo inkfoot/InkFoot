@@ -1,0 +1,28 @@
+{
+  "provider": "anthropic",
+  "model": "claude-opus-4-7",
+  "request": {
+    "model": "claude-opus-4-7",
+    "system": "You are a long-context analyst with detailed instructions for handling complex queries.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Summarise the prior conversation."
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "input_tokens": 22,
+      "output_tokens": 88,
+      "cache_read_input_tokens": 500,
+      "cache_creation_input_tokens": 0
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Summary: ..."
+      }
+    ]
+  }
+}

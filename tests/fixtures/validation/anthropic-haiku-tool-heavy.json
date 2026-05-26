@@ -1,0 +1,52 @@
+{
+  "provider": "anthropic",
+  "model": "claude-haiku-4-5",
+  "request": {
+    "model": "claude-haiku-4-5",
+    "system": "You are a tool-using agent.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Look up the weather for NYC."
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "name": "weather"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "content": "NYC: 60F sunny"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "weather",
+        "description": "Look up the current weather for a city."
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "input_tokens": 80,
+      "output_tokens": 24,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "It is 60F and sunny."
+      }
+    ]
+  }
+}

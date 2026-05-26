@@ -1,0 +1,32 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o",
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": "What is 2+2?"
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "prompt_tokens": 28,
+      "completion_tokens": 6,
+      "total_tokens": 34
+    },
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "4."
+        }
+      }
+    ]
+  }
+}
