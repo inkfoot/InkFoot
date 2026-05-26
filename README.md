@@ -10,26 +10,33 @@ automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
-**Status:** Phase 0 epics **E1** (Project + Storage Foundation),
-**E2** (Causal Token Ledger), **E3** (Pattern A Instrumentation),
-**E4** (Smell Engine + Recommendations), and **E5** (Report CLI +
-Outcome Tagging) have landed. The Phase 0 user-facing surface is
-complete: `inkfoot.instrument()` to monkey-patch the SDKs,
-`@inkfoot.agent_run(task=...)` decorator + context manager for run
-scoping, `inkfoot.set_outcome / tag / tag_retrieval / report_cost`
-for in-run metadata, the rule-based smell engine with five built-in
-cost smells, and the `inkfoot` CLI with `report` (single-run
-attribution bar chart + smells, or aggregate `--last 7d --group-by
-task`), `tag` (late tagging), and `rebuild-aggregates`. Underlying
-that: nanodollar money type, SQLite storage with WAL + two-tier
+**Status:** Phase 0 is **code-complete**. Epics E1 (Project + Storage
+Foundation), E2 (Causal Token Ledger), E3 (Pattern A
+Instrumentation), E4 (Smell Engine + Recommendations), E5 (Report
+CLI + Outcome Tagging), and E6's code half (validation harness +
+fixture extractor + missing benchmarks + process doc templates) all
+landed. The remaining Phase 0 work is the *operator-process* half
+of E6 — six weeks of production exposure on our own agents,
+labelling 50 real runs against the validation harness, weekly
+smell-review meetings, and the go/no-go decision. The architecture
+spec + roadmap + Phase 0 epic doc live in a separate documentation
+repository (see project owner).
+
+The user-facing surface today: `inkfoot.instrument()` to monkey-
+patch the SDKs, `@inkfoot.agent_run(task=...)` decorator + context
+manager for run scoping, `inkfoot.set_outcome / tag / tag_retrieval
+/ report_cost` for in-run metadata, the rule-based smell engine
+with five built-in cost smells, and the `inkfoot` CLI with `report`
+(single-run attribution bar chart + smells, or aggregate
+`--last 7d --group-by task` with runs / avg_$ / p95_$ / success% /
+cost-per-success), `tag` (late tagging), and `rebuild-aggregates`.
+Under it: nanodollar money type, SQLite storage with WAL + two-tier
 writes, claim-and-project aggregator, the 14-field Causal Token
 Ledger, per-provider Anthropic + OpenAI translators with
 stable-prefix detection, `tiktoken`-based tokenisers with
 estimation flags, the pricing module, and the three Phase 0
 observation policies (`BudgetCap`, `RetryThrottle`,
-`CacheControlPlacer`). Only **E6** (internal rollout + validation
-harness) remains. The architecture spec + roadmap live in a separate
-documentation repository (see project owner).
+`CacheControlPlacer`). Six §9.1 perf gates run on every PR.
 
 ## Quickstart (development)
 
@@ -107,10 +114,16 @@ inkfoot/                                    # the Python package
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
     report.py                               # `inkfoot report` — bar chart + smells (renderer is pure)
     tag.py                                  # `inkfoot tag <run-id> <key> <value>` — late tagging
+scripts/
+  validate_attribution.py                   # E6: validation harness — fails CI when per-category mean error > 10%
+  extract_run_fixtures.py                   # E6: nightly extractor for the validation corpus
 tests/
-  unit/                                     # 373 unit tests (E1 + E2 + E3 + E4 + E5)
-  benchmarks/                               # `pytest-benchmark` hot-path budgets (storage + aggregator + shim)
-.github/workflows/ci.yml                    # unit + benchmark on every PR
+  unit/                                     # 403 unit tests (E1 + E2 + E3 + E4 + E5 + E6)
+  benchmarks/                               # 6 §9.1 perf gates (storage + aggregator + shim metadata/replay + report + smells)
+  fixtures/
+    validation/                             # E6: hand-labelled corpus consumed by validate_attribution.py
+    internal-smells/                        # E6: per-smell fixture preservation (logbook companion)
+.github/workflows/ci.yml                    # unit + benchmark + attribution-validation on every PR
 ```
 
 The architecture spec, roadmap, and per-phase epic docs live in a

@@ -1,0 +1,32 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "request": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Classify the user's intent."
+      },
+      {
+        "role": "user",
+        "content": "Cancel my subscription."
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "prompt_tokens": 22,
+      "completion_tokens": 3,
+      "total_tokens": 25
+    },
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "cancel"
+        }
+      }
+    ]
+  }
+}

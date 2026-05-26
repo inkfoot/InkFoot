@@ -1,0 +1,52 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "request": {
+    "model": "claude-sonnet-4-6",
+    "system": "You are a careful assistant.",
+    "tools": [
+      {
+        "name": "lookup",
+        "description": "Look up a fact."
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the capital of France?"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "name": "lookup"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "content": "Paris is the capital."
+          }
+        ]
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "input_tokens": 42,
+      "output_tokens": 7,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Paris."
+      }
+    ]
+  }
+}

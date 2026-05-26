@@ -1,0 +1,28 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "request": {
+    "model": "claude-sonnet-4-6",
+    "system": "You are a careful assistant.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ]
+  },
+  "response": {
+    "usage": {
+      "input_tokens": 12,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Hello."
+      }
+    ]
+  }
+}

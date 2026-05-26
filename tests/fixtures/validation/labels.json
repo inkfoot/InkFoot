@@ -1,0 +1,123 @@
+{
+  "anthropic-ground-truth-tiktoken.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 7,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 6,
+      "tool_result_tokens": 5,
+      "tool_schema_tokens": 14,
+      "user_input_tokens": 0
+    },
+    "ground_truth": true,
+    "label_source": "Independently computed by direct tiktoken.o200k_base encoding of the raw request text pieces. Not snapshotted from the translator. See tests/fixtures/validation/anthropic-ground-truth-tiktoken.json for the full provenance.",
+    "model": "claude-sonnet-4-6",
+    "provider": "anthropic"
+  },
+  "anthropic-haiku-tool-heavy.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 7,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 8,
+      "tool_result_tokens": 7,
+      "tool_schema_tokens": 18,
+      "user_input_tokens": 0
+    },
+    "model": "claude-haiku-4-5",
+    "provider": "anthropic"
+  },
+  "anthropic-opus-cache-hit.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 0,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 14,
+      "tool_result_tokens": 0,
+      "tool_schema_tokens": 0,
+      "user_input_tokens": 7
+    },
+    "model": "claude-opus-4-7",
+    "provider": "anthropic"
+  },
+  "anthropic-sonnet-short.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 0,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 6,
+      "tool_result_tokens": 0,
+      "tool_schema_tokens": 0,
+      "user_input_tokens": 3
+    },
+    "model": "claude-sonnet-4-6",
+    "provider": "anthropic"
+  },
+  "openai-4o-mini-classification.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 0,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 6,
+      "tool_result_tokens": 0,
+      "tool_schema_tokens": 0,
+      "user_input_tokens": 4
+    },
+    "model": "gpt-4o-mini",
+    "provider": "openai"
+  },
+  "openai-4o-short.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 0,
+      "reasoning_tokens": 0,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 6,
+      "tool_result_tokens": 0,
+      "tool_schema_tokens": 0,
+      "user_input_tokens": 7
+    },
+    "model": "gpt-4o",
+    "provider": "openai"
+  },
+  "openai-o1-reasoning.json": {
+    "expected": {
+      "guardrail_tokens": 0,
+      "memory_tokens": 0,
+      "reasoning_tokens": 250,
+      "retrieved_context_tokens": 0,
+      "retry_overhead_tokens": 0,
+      "summariser_tokens": 0,
+      "system_dynamic_tokens": 0,
+      "system_static_tokens": 5,
+      "tool_result_tokens": 0,
+      "tool_schema_tokens": 0,
+      "user_input_tokens": 10
+    },
+    "model": "o1",
+    "provider": "openai"
+  }
+}
