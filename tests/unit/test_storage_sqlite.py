@@ -399,21 +399,27 @@ def test_file_storage_gives_each_thread_its_own_connection(tmp_path: Path) -> No
     seen: list[int] = []
     errors: list[BaseException] = []
 
-    def worker() -> None:
+    def worker(idx: int) -> None:
         try:
+            # Use the explicit per-worker index for both event_id and
+            # sequence. ``threading.get_ident()`` previously fed both
+            # of these but Linux can reuse POSIX TIDs once a thread
+            # exits — the short-lived workers below were hitting that
+            # reuse on busy CI runners and producing UNIQUE-constraint
+            # collisions on events.id (CL-E1 review follow-up).
             s.insert_event(
-                event_id=f"e-{threading.get_ident()}",
+                event_id=f"e-{idx}",
                 run_id="run-1",
                 kind="llm_call",
                 occurred_at=1,
-                sequence=1,
+                sequence=idx + 1,
                 payload_json="{}",
             )
             seen.append(1)
         except BaseException as exc:  # pragma: no cover — defensive
             errors.append(exc)
 
-    threads = [threading.Thread(target=worker) for _ in range(4)]
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
     for t in threads:
         t.start()
     for t in threads:
@@ -434,18 +440,24 @@ def test_close_closes_connections_opened_on_other_threads(tmp_path: Path) -> Non
     s.connect()
     _seed_run(s)
 
-    # Force connections to be opened on three worker threads.
-    def open_conn():
+    # Force connections to be opened on three worker threads. Use an
+    # explicit per-worker index for event_id / sequence so two
+    # quickly-cycling threads with the same recycled POSIX TID can't
+    # collide on the UNIQUE events.id constraint (same flake as the
+    # sibling thread-isolation test above).
+    def open_conn(idx: int) -> None:
         s.insert_event(
-            event_id=f"e-{threading.get_ident()}",
+            event_id=f"e-{idx}",
             run_id="run-1",
             kind="llm_call",
             occurred_at=1,
-            sequence=threading.get_ident() % 1_000_000,
+            sequence=idx + 1,
             payload_json="{}",
         )
 
-    threads = [threading.Thread(target=open_conn) for _ in range(3)]
+    threads = [
+        threading.Thread(target=open_conn, args=(i,)) for i in range(3)
+    ]
     for t in threads:
         t.start()
     for t in threads:
