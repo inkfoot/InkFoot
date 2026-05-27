@@ -42,7 +42,12 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from inkfoot.ledger import CausalTokenLedger
-from inkfoot.normalise import NeutralCall, NeutralError, update_stable_prefix
+from inkfoot.normalise import (
+    NeutralCall,
+    NeutralError,
+    _collect_runtime_metadata,
+    update_stable_prefix,
+)
 from inkfoot.pricing import estimate_nanodollars
 from inkfoot.run import InMemoryRunState
 from inkfoot.tokenisers import tokenise_tools, tokenise_with_flags
@@ -367,6 +372,12 @@ class AnthropicTranslator:
             if isinstance(t, dict) and t.get("name")
         )
 
+        # Pattern-C metadata pass-through (ADR-1-1). When a
+        # framework adapter or :func:`inkfoot.tag_node` has set
+        # ``run_state.node_name``, attach it to the neutral payload
+        # so ``inkfoot report --group-by node`` can slice the ledger.
+        metadata = _collect_runtime_metadata(run_state)
+
         return NeutralCall(
             provider=_PROVIDER,
             model=model,
@@ -383,6 +394,7 @@ class AnthropicTranslator:
             parent_run_id=parent_run_id,
             sequence=sequence,
             estimation_flags=tuple(flags),
+            metadata=metadata,
         )
 
 

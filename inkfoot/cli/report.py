@@ -279,6 +279,11 @@ def run(args: Any) -> int:
             return 1
 
         events = list(storage.iter_events(run_id))
+
+        if getattr(args, "group_by", None) == "node":
+            print(_render_per_node(row, events))
+            return 0
+
         ledger_totals = _aggregate_ledger_totals(events)
         smells = SmellEngine(list(DEFAULT_SMELLS)).evaluate(row, events)
         print(
@@ -292,6 +297,87 @@ def run(args: Any) -> int:
         return 0
     finally:
         storage.close()
+
+
+def _render_per_node(
+    run: dict[str, Any], events: list[dict[str, Any]]
+) -> str:
+    """Per-node ledger summary for ``inkfoot report --run <id>
+    --group-by node`` (ADR-1-1).
+
+    Groups every ``llm_call`` event by its
+    ``payload.metadata.node_name`` and emits one row per node with
+    fresh-input tokens, output tokens, dollar cost (sum of
+    per-category estimates), and call count. Calls without a
+    ``node_name`` land under ``(no node)`` — important to show so
+    the user spots adapters that aren't tagging their nodes.
+    """
+    from inkfoot.smells._helpers import (  # noqa: PLC0415
+        ledger_from_payload,
+    )
+
+    rows: dict[str, dict[str, int]] = {}
+    for ev in events:
+        if not isinstance(ev, dict) or ev.get("kind") != "llm_call":
+            continue
+        raw = ev.get("payload_json")
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        metadata = payload.get("metadata") or {}
+        node_name = (
+            metadata.get("node_name") if isinstance(metadata, dict) else None
+        )
+        bucket = node_name or "(no node)"
+        ledger = ledger_from_payload(payload)
+        provider = payload.get("provider", "")
+        model = payload.get("model", "")
+        per_cat = estimate_per_category(provider, model, ledger)
+        bucket_row = rows.setdefault(
+            bucket,
+            {"calls": 0, "input": 0, "output": 0, "nanodollars": 0},
+        )
+        bucket_row["calls"] += 1
+        bucket_row["input"] += sum(
+            int(getattr(ledger, name, 0) or 0) for name in INPUT_CATEGORIES
+        )
+        bucket_row["output"] += int(getattr(ledger, "output_tokens", 0) or 0)
+        bucket_row["nanodollars"] += sum(int(nd) for nd in per_cat.values())
+
+    if not rows:
+        return (
+            f"Run {run.get('id') or '?'} · {run.get('task') or '(no task)'}\n"
+            "No node-tagged LLM calls in this run.\n"
+            "Hint: install a Pattern-C adapter (inkfoot.langgraph.instrument) "
+            "or call inkfoot.tag_node('phase') before LLM calls."
+        )
+
+    lines = [
+        (
+            f"Run {run.get('id') or '?'} · "
+            f"{run.get('task') or '(no task)'} · per-node ledger"
+        ),
+        "",
+        (
+            f"  {'node':<24} {'calls':>6} {'input_tok':>10} "
+            f"{'output_tok':>11} {'cost':>10}"
+        ),
+    ]
+    # Sort by nanodollar spend desc so the eye lands on the most
+    # expensive node first; ``(no node)`` floats wherever its total
+    # places.
+    for bucket, agg in sorted(
+        rows.items(), key=lambda kv: kv[1]["nanodollars"], reverse=True
+    ):
+        lines.append(
+            f"  {bucket[:24]:<24} {agg['calls']:>6} "
+            f"{agg['input']:>10} {agg['output']:>11} "
+            f"{format_usd(agg['nanodollars'], decimals=4):>10}"
+        )
+    return "\n".join(lines)
 
 
 def _aggregate_ledger_totals(
@@ -376,10 +462,16 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
         params.append(task_filter)
 
     group_by = getattr(args, "group_by", None) or "task"
+    if group_by == "node":
+        return (
+            "inkfoot report: --group-by node only applies to a single "
+            "run (pair with --run, not --last). Per-node aggregates "
+            "across runs are deferred to Phase 4."
+        )
     if group_by not in {"task", "agent_kind"}:
         return (
             f"inkfoot report: invalid --group-by value {group_by!r} "
-            f"(expected 'task' or 'agent_kind')"
+            f"(expected 'task', 'agent_kind', or 'node' with --run)"
         )
 
     # Per-bucket aggregates SQLite can compute natively. p95 is

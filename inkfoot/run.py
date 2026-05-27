@@ -134,3 +134,16 @@ class InMemoryRunState:
     recent_calls: list = field(default_factory=list)
     retry_counts: dict[str, int] = field(default_factory=dict)
     pending_retrieved_context_tokens: int = 0
+    # Phase 1 (ADR-1-1) — the framework adapter (LangGraph) or Pattern
+    # B's :func:`inkfoot.tag_node` sets this before an LLM call so the
+    # translator can attach it to ``NeutralCall.metadata["node_name"]``.
+    # Free-form string; ``None`` when no node context applies. Stays
+    # set until overwritten or explicitly cleared by the adapter — a
+    # one-shot reset would surprise users whose nodes make multiple
+    # LLM calls.
+    node_name: Optional[str] = None
+    # Phase 1 — the LangGraph adapter snapshots a stable fingerprint
+    # of the compiled graph's tools array (one short hash) so the
+    # ledger + cache-detection heuristics can recognise "same tools as
+    # last call". Free-form string; ``None`` outside a Pattern-C run.
+    tools_fingerprint: Optional[str] = None

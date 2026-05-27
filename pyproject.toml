@@ -32,6 +32,26 @@ dependencies = [
 dev = [
     "pytest>=7",
     "pytest-benchmark>=4",
+    "pyyaml>=6",
+]
+
+# Phase 1 / E1 framework adapter extras. Each one pulls in the peer
+# framework as an optional install so ``pip install inkfoot[langgraph]``
+# gets the user a working integration without bloating the default
+# install. Versions are pinned conservatively against mid-2026
+# stable releases; bump with the per-framework guide page on
+# inkfoot.dev when upstream lands a breaking change.
+langgraph = [
+    "langgraph>=0.2,<0.4",
+]
+openai-agents = [
+    # OpenAI Agents SDK; package name on PyPI is ``openai-agents``.
+    "openai-agents>=0.1,<0.3",
+]
+anthropic-agent = [
+    # Anthropic Agent SDK; package name on PyPI tentatively
+    # ``anthropic-agent`` (subject to confirmation when the SDK GAs).
+    "anthropic-agent>=0.1,<0.3",
 ]
 
 [project.scripts]

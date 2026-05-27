@@ -150,6 +150,63 @@ def _check_supports(
     )
 
 
+def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
+    """Pattern-C path: when a framework adapter is active, the
+    adapter's ``supported_policies()`` is the source of truth — the
+    static :attr:`SUPPORTED_PATTERNS` on the policy class doesn't
+    enumerate which adapters know how to wire it.
+
+    Phase 0 ships only observation policies that work everywhere; the
+    early-exit on ``IntegrationPattern.C ∈ policy.SUPPORTED_PATTERNS``
+    handles them without consulting the adapter. Phase 2's
+    modification policies (``LazyToolExposure``, ``CheapSummariser``)
+    will land with ``SUPPORTED_PATTERNS = {C}`` — for those, the
+    adapter has to *also* declare the class in its
+    ``supported_policies()`` set, otherwise it doesn't know how to
+    wire the policy into the framework.
+    """
+    supported_classes = adapter.supported_policies()
+    if type(policy) in supported_classes:
+        return
+
+    # The fallback path: a policy that declares it works across
+    # *every* integration pattern (``{A, B, C}``) — i.e. the Phase-0
+    # observation-policy shape — doesn't need adapter-specific
+    # wiring. The shim handles it identically under any adapter, so
+    # an adapter that hasn't enumerated ``BudgetCap`` / ``RetryThrottle``
+    # / ``CacheControlPlacer`` still accepts the registration.
+    #
+    # Anything narrower than the full set (``{C}``, ``{B, C}``,
+    # ``{A, C}``, ...) is a policy that needs the adapter to know
+    # how to wire it — a hypothetical Phase-2 modification policy
+    # declared ``{B, C}`` ("works in raw decorator + framework
+    # adapter, but not under the bare SDK shim") should NOT silently
+    # pass a registration against an adapter that hasn't enumerated
+    # it. CL-E1 review Finding #1 tightened this from
+    # ``has-C and has-A-or-B`` to ``equals {A, B, C}`` to make the
+    # contract match phase-1-explain.md §4.1.
+    if policy.SUPPORTED_PATTERNS == {
+        IntegrationPattern.A,
+        IntegrationPattern.B,
+        IntegrationPattern.C,
+    }:
+        return
+
+    policy_name = policy.NAME or type(policy).__name__
+    docs_url = getattr(policy, "DOCS_URL", "https://inkfoot.dev/docs/policies")
+    adapter_name = getattr(adapter, "name", type(adapter).__name__)
+    supported_names = ", ".join(
+        sorted(cls.__name__ for cls in supported_classes)
+    ) or "(none)"
+    raise PolicyNotSupported(
+        f"{policy_name} is not supported by the {adapter_name!r} adapter.\n"
+        f"  Adapter supports: {{{supported_names}}}.\n"
+        f"  Fix: either upgrade the adapter (Phase 2 ships richer "
+        f"capability surfaces) or drop the policy from this run.\n"
+        f"  See: {docs_url}/{policy_name.lower() or 'index'}"
+    )
+
+
 # Re-imports at the bottom to avoid circulars with the registry +
 # concrete policy classes. Both modules ``from inkfoot.policy import
 # Policy`` — they're not imported here until needed.
@@ -162,15 +219,43 @@ def register_policies(
     policies: Iterable[Policy],
     *,
     active_pattern: IntegrationPattern = IntegrationPattern.A,
+    adapter: Optional[Any] = None,
 ) -> None:
-    """Validate every policy against ``active_pattern`` and add it
-    to the global registry. Idempotent over distinct objects but
-    *not* deduplicating — passing the same policy instance twice
-    registers it once (the registry collapses by identity); passing
-    two ``BudgetCap`` instances registers both.
+    """Validate every policy against the active integration's
+    capability surface and add it to the global registry.
+
+    When ``adapter`` is set (Pattern-C path), the adapter's
+    ``supported_policies()`` is the authoritative gate. Otherwise the
+    legacy ``IntegrationPattern`` check on the policy class applies
+    (Pattern A SDK shim, Pattern B raw decorator).
+
+    Idempotent over distinct objects but *not* deduplicating —
+    passing the same policy instance twice registers it once (the
+    registry collapses by identity); passing two ``BudgetCap``
+    instances registers both.
     """
     from inkfoot.policy.registry import PolicyRegistry
 
+    # The adapter param wins over active_pattern when both are given;
+    # the adapter knows more about the runtime than the pattern enum.
+    use_adapter = adapter is not None
+    if not use_adapter:
+        # Auto-detect: when an adapter has been activated via
+        # ``inkfoot.adapters.AdapterRegistry.set_active`` the policy
+        # registration should consult it without callers threading
+        # the parameter through every layer.
+        from inkfoot.adapters._registry import (  # noqa: PLC0415
+            get_active_adapter,
+        )
+
+        active_adapter = get_active_adapter()
+        if active_adapter is not None:
+            adapter = active_adapter
+            use_adapter = True
+
     for policy in policies:
-        _check_supports(policy, active_pattern)
+        if use_adapter:
+            _check_adapter_supports(policy, adapter)
+        else:
+            _check_supports(policy, active_pattern)
         PolicyRegistry.add(policy)

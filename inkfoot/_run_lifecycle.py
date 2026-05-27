@@ -208,6 +208,85 @@ def tag(key: str, value: Any) -> None:
     )
 
 
+def tag_node(name: Optional[str]) -> None:
+    """Mark the current run's "active node" name (Pattern B's manual
+    analogue of LangGraph per-node attribution — ADR-1-1).
+
+    The next LLM call's translator reads
+    ``InMemoryRunState.node_name`` and attaches it to
+    ``NeutralCall.metadata["node_name"]``. The value stays set until
+    overwritten by another :func:`tag_node` call (or cleared by
+    passing ``None``), so multi-call nodes don't need to re-tag for
+    every call.
+
+    Pattern B example::
+
+        with inkfoot.agent_run(task="customer-support-triage"):
+            inkfoot.tag_node("retrieval")
+            chunks = retrieve(...)
+            inkfoot.tag_node("synthesis")
+            answer = synthesise(chunks)
+
+    Empty strings are treated as a clear (``None``-equivalent) so
+    callers don't accidentally set node_name="" — that would surface
+    in reports as a literal blank label.
+
+    Raises :class:`NoActiveRun` outside an active run.
+    """
+    if name is not None and not isinstance(name, str):
+        raise TypeError(
+            f"tag_node: name must be str or None, got {type(name).__name__}"
+        )
+
+    run_id = current_run_id()
+    if run_id is None:
+        raise NoActiveRun(
+            "inkfoot.tag_node() called outside an active run. Wrap the "
+            "work in `with inkfoot.agent_run(task='...'):` first."
+        )
+
+    state = get_or_create_run_state(run_id)
+    cleaned: Optional[str] = name if name else None
+    state.node_name = cleaned
+
+
+def checkpoint(label: str) -> None:
+    """Emit a ``checkpoint`` event so reports can show time spent
+    between checkpoints.
+
+    Useful for raw-SDK / Pattern B agents that want to mark phase
+    boundaries without committing to LangGraph node names. Two
+    successive checkpoints in the event stream let a report
+    subtract the second's ``occurred_at`` from the first's to show
+    "X ms between 'after-vector-search' and 'after-synthesis'".
+
+    Empty / whitespace-only labels are rejected — they'd render as a
+    blank row in reports.
+
+    Raises :class:`NoActiveRun` outside an active run.
+    """
+    if not isinstance(label, str):
+        raise TypeError(
+            f"checkpoint: label must be str, got {type(label).__name__}"
+        )
+    cleaned = label.strip()
+    if not cleaned:
+        raise ValueError("checkpoint: label must be a non-empty string")
+
+    run_id = current_run_id()
+    if run_id is None:
+        raise NoActiveRun(
+            "inkfoot.checkpoint() called outside an active run. Wrap "
+            "the work in `with inkfoot.agent_run(task='...'):` first."
+        )
+
+    _emit_event(
+        run_id=run_id,
+        kind="checkpoint",
+        payload={"label": cleaned},
+    )
+
+
 def tag_retrieval(text: str) -> None:
     """Mark ``text`` as retrieved context for the *next* LLM call.
 
