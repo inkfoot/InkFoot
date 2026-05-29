@@ -25,7 +25,14 @@ Phase 1 progress:
   ergonomic helpers ``inkfoot.tag_node`` / ``inkfoot.checkpoint``.
   ``inkfoot report --run <id> --group-by node`` shows per-node
   ledger totals when a Pattern-C adapter is wired in.
-* E2 / E3 / E4 / E5 / E6 — not yet shipped.
+* E2 — Benchmark + Diff + GitHub Action. Ships:
+  ``inkfoot benchmark`` (scenario runner with stable JSON artefact),
+  ``inkfoot diff`` (Markdown / JSON regression report with
+  ``ok|warn|fail`` verdict + exit codes), and the composite
+  ``inkfoot/diff-action`` GitHub Action (sticky PR comment via the
+  hidden ``<!-- inkfoot-diff-action -->`` marker). Modules:
+  ``inkfoot.benchmark`` and ``inkfoot.diff``.
+* E3 / E4 / E5 / E6 — not yet shipped.
 
 E2 + E3 internals (``CausalTokenLedger``, ``NeutralCall``,
 ``AnthropicTranslator``, ``OpenAITranslator``,

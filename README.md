@@ -10,21 +10,27 @@ automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
-**Status:** Phase 0 is **code-complete** and Phase 1 E1 (Framework
-Adapter Foundation) is now landed. Phase 0 epics E1–E6 shipped the
-Pattern-A SDK shims, the 14-field Causal Token Ledger, the smell
-engine, the report CLI, the validation harness, and the perf gates.
-Phase 1 E1 ships Pattern-C framework adapters (LangGraph, OpenAI
-Agents SDK, Anthropic Agent SDK) + the Pattern-B ergonomic helpers
+**Status:** Phase 0 is **code-complete** and Phase 1 E1 + E2 are
+now landed. Phase 0 epics E1–E6 shipped the Pattern-A SDK shims,
+the 14-field Causal Token Ledger, the smell engine, the report
+CLI, the validation harness, and the perf gates. Phase 1 E1 ships
+Pattern-C framework adapters (LangGraph, OpenAI Agents SDK,
+Anthropic Agent SDK) + the Pattern-B ergonomic helpers
 (`tag_node`, `checkpoint`) — `inkfoot.langgraph.instrument(graph)`
 gives per-node attribution via `inkfoot report --run <id>
---group-by node`. The remaining Phase 0 work is the
-*operator-process* half of E6 (six weeks of production exposure,
-50 labelled runs, weekly smell review, go/no-go decision). Phase 1
-E2–E6 (benchmark CLI + diff + GitHub Action, OTel ingest/export,
-docs site, OSS launch) are still ahead. The architecture spec +
-roadmap + per-phase epic docs live in a separate documentation
-repository (see project owner).
+--group-by node`. Phase 1 E2 ships the CI cost-review workflow:
+`inkfoot benchmark` runs scenario suites and emits a stable JSON
+artefact; `inkfoot diff` compares two artefacts and produces a
+Markdown PR comment + JSON report with an `ok|warn|fail` verdict
+and exit codes; the composite `inkfoot/diff-action` GitHub Action
+wraps both behind a one-line workflow step with a sticky PR
+comment. The remaining Phase 0 work is the *operator-process*
+half of E6 (six weeks of production exposure, 50 labelled runs,
+weekly smell review, go/no-go decision). Phase 1 E3–E6 (OTel
+ingest/export, smell rendering + tail, docs site, OSS launch) are
+still ahead. The architecture spec + roadmap + per-phase epic
+docs live in a separate documentation repository (see project
+owner).
 
 The user-facing surface today: `inkfoot.instrument()` to monkey-
 patch the SDKs, `@inkfoot.agent_run(task=...)` decorator + context
@@ -39,7 +45,10 @@ the `inkfoot` CLI with `report` (single-run attribution bar chart +
 smells, or aggregate `--last 7d --group-by task` with runs / avg_$
 / p95_$ / success% / cost-per-success, or single-run
 `--group-by node` for per-LangGraph-node ledger totals), `tag`
-(late tagging), and `rebuild-aggregates`.
+(late tagging), `rebuild-aggregates`, `benchmark` (scenario
+runner emitting the Phase 1 JSON artefact), and `diff`
+(structured comparison between two artefacts with `ok/warn/fail`
+verdicts and `0/1/2` exit codes for CI).
 Under it: nanodollar money type, SQLite storage with WAL + two-tier
 writes, claim-and-project aggregator, the 14-field Causal Token
 Ledger, per-provider Anthropic + OpenAI translators with

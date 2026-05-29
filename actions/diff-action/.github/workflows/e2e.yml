@@ -1,0 +1,167 @@
+name: diff-action e2e
+
+# E2-S3 / T4: exercise the composite action end-to-end against a real
+# PR and assert the sticky-comment invariant ("exactly one comment
+# per push; subsequent pushes update, not append").
+#
+# The job is gated on the upstream repository so forked PRs don't
+# trip the secret requirement. Maintainers run this on PRs touching
+# the action directory; the workflow_dispatch entry point lets us
+# also fire it manually with a chosen PR number.
+#
+# IMPORTANT — this workflow validates the **in-repo inkfoot**, not
+# the released PyPI version. The "Install inkfoot from local
+# checkout" step below does `pip install -e .` and the action's own
+# pip install is bypassed via `install-inkfoot: false`. A regression
+# in `inkfoot diff` / `inkfoot benchmark` source is therefore caught
+# here before release (round-2 review Medium #1).
+#
+# Sticky-comment assertion semantics: the COUNT == 1 check below is
+# per-run. It catches "append on the same push" trivially; the
+# "update-not-append across pushes" guarantee is only enforced
+# when this workflow runs on *every* push to the PR (push #2's
+# run sees the comment count grow past 1 if push #1 had appended).
+# If a future maintainer disables this workflow on single-commit
+# branches, the cross-push signal is lost — keep it running on
+# every push (round-2 review Low #3).
+
+on:
+  pull_request:
+    paths:
+      - "actions/diff-action/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to drive the e2e assertion against."
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  e2e:
+    if: ${{ github.repository == 'inkfoot/inkfoot' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python (matches the action's default)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install inkfoot from local checkout
+        run: |
+          set -euo pipefail
+          # Editable install so the action exercises the in-tree
+          # `inkfoot benchmark` / `inkfoot diff` rather than whatever
+          # is currently on PyPI. Paired with `install-inkfoot: false`
+          # on the action invocation below.
+          pip install --quiet -e .
+
+      - name: Build a minimal scenarios directory with a stubbed agent
+        run: |
+          mkdir -p actions/diff-action/.github/_e2e/scenarios
+          cat > actions/diff-action/.github/_e2e/scenarios/smoke.py <<'PY'
+          # The e2e scenario uses the in-process stub provider from
+          # inkfoot.shims._emit so no real LLM tokens are spent. ADR-1-4
+          # mandates live calls in production CI; e2e of the action
+          # itself can fake the provider to keep the smoke test free.
+          INKFOOT_SCENARIO = {
+              "task": "diff-action-smoke",
+              "fixtures": [],
+              "runs_per_fixture": 1,
+              "expected_outcome": "success",
+          }
+
+          def run(fixture):
+              import json as _json
+              from ulid import ULID
+
+              from inkfoot import _instrument as _inst
+              from inkfoot._run_context import current_run_id
+              from inkfoot.shims._emit import _next_sequence
+
+              run_id = current_run_id()
+              payload = {
+                  "provider": "anthropic",
+                  "model": "claude-haiku-4-5",
+                  "system_static_tokens": 10,
+                  "user_input_tokens": 5,
+                  "output_tokens": 5,
+                  "cache_read_tokens": 0,
+                  "cache_creation_tokens": 0,
+                  "estimated_nanodollars": 1_000_000,
+                  "metadata": {},
+              }
+              _inst._STORAGE.insert_event(
+                  event_id=str(ULID()),
+                  run_id=run_id,
+                  kind="llm_call",
+                  occurred_at=0,
+                  sequence=_next_sequence(run_id),
+                  payload_json=_json.dumps(payload),
+                  capture_mode="metadata",
+              )
+              return {"ok": True}
+          PY
+
+      - name: Provide a synthetic baseline that won't regress
+        run: |
+          cat > actions/diff-action/.github/_e2e/baseline.json <<'JSON'
+          {
+            "inkfoot_version": "0.0.0-e2e",
+            "schema_version": "1",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "scenarios": [
+              {
+                "task": "diff-action-smoke",
+                "runs": 1,
+                "successes": 1,
+                "p50_nanodollars": 1000000,
+                "p95_nanodollars": 1000000,
+                "mean_llm_calls": 1.0,
+                "mean_cache_hit_rate": 0.0,
+                "smells_seen": []
+              }
+            ]
+          }
+          JSON
+
+      - name: Run inkfoot/diff-action (local checkout)
+        id: act
+        uses: ./actions/diff-action
+        with:
+          scenarios: actions/diff-action/.github/_e2e/scenarios
+          baseline-source: path:actions/diff-action/.github/_e2e/baseline.json
+          fail-threshold: loose
+          # Skip the action's PyPI install — the prior step did
+          # `pip install -e .` so this run validates the in-repo
+          # inkfoot, not the released version (round-2 Medium #1).
+          install-inkfoot: "false"
+
+      - name: Assert verdict is ok or warn (smoke baseline shouldn't fail)
+        run: |
+          case "${{ steps.act.outputs.verdict }}" in
+            ok|warn) echo "verdict=${{ steps.act.outputs.verdict }}" ;;
+            *) echo "::error::unexpected verdict ${{ steps.act.outputs.verdict }}"; exit 1 ;;
+          esac
+
+      - name: Assert exactly one sticky comment exists on the PR
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          COUNT=$(gh pr view "${PR_NUMBER}" \
+            --repo "${REPO}" \
+            --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- inkfoot-diff-action -->"))] | length')
+          echo "found ${COUNT} sticky inkfoot-diff-action comments"
+          if [[ "${COUNT}" != "1" ]]; then
+            echo "::error::expected exactly 1 sticky comment, got ${COUNT}"
+            exit 1
+          fi

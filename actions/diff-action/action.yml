@@ -1,0 +1,315 @@
+name: "Inkfoot diff"
+description: >-
+  Runs `inkfoot benchmark` + `inkfoot diff` against a baseline artefact
+  and posts a sticky PR comment with the result (Phase 1 / E2-S3). See
+  the action's README for inputs, the baseline-source DSL, and the
+  sticky-comment marker.
+author: "Inkfoot maintainers"
+branding:
+  icon: "trending-up"
+  color: "purple"
+
+# All ${{ inputs.* }} values are surfaced into `run:` steps through an
+# `env:` block and then dereferenced as $VAR. Inlining inputs directly
+# into bash is the well-known GitHub Actions shell-injection footgun;
+# the env-indirection pattern is GitHub's own recommendation
+# (securitylab.github.com hardening guide).
+
+inputs:
+  scenarios:
+    description: "Path to the scenarios directory (passed to `inkfoot benchmark`)."
+    required: true
+    default: "tests/agent_scenarios"
+  baseline-source:
+    description: >-
+      How to obtain the baseline benchmark JSON. One of:
+      `path:<file>` (already on the runner — useful for tests),
+      `artifact:<workflow-file>:<artifact-name>` (downloads from the most
+      recent successful main-branch run of `<workflow-file>` via
+      `gh run download`),
+      or `release:<tag>:<asset>` (downloads `<asset>` from the named
+      release via `gh release download`). Use `release:latest:<asset>` to
+      follow the latest release. Both schemes rely on the `gh` CLI
+      pre-installed on GitHub-hosted runners.
+    required: false
+    default: "path:baseline.json"
+  current-output:
+    description: "Where to write the new benchmark JSON. Uploaded as a build artefact."
+    required: false
+    default: "current.json"
+  fail-threshold:
+    description: "Threshold preset for `inkfoot diff` (`tight` | `default` | `loose`) or a path to a JSON file."
+    required: false
+    default: "default"
+  python-version:
+    description: "Python version to set up before installing inkfoot."
+    required: false
+    default: "3.12"
+  inkfoot-version:
+    description: "Pinned inkfoot version (`pip install inkfoot[all]==<X>`). Empty = latest."
+    required: false
+    default: ""
+  inkfoot-extras:
+    description: >-
+      Comma-separated extras to install. Defaults to `all` so scenarios
+      importing `langgraph` / `openai-agents` / `anthropic-agent` work
+      out of the box (phase-1-explain §4.5 step 1). Set to an empty
+      string to install bare `inkfoot` without extras.
+    required: false
+    default: "all"
+  install-inkfoot:
+    description: >-
+      Whether the action should `pip install` inkfoot itself. Set to
+      `false` when the consumer has already installed inkfoot in a
+      prior step (typical for self-tests that want to validate an
+      in-tree checkout rather than the PyPI release). Default `true`.
+    required: false
+    default: "true"
+  github-token:
+    description: "Token with `pull-requests: write` for the sticky comment. Falls back to GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
+  scenarios-only:
+    description: "Comma-separated list of scenario task names to filter to (optional)."
+    required: false
+    default: ""
+
+outputs:
+  verdict:
+    description: "Verdict of the diff: `ok`, `warn`, or `fail`."
+    value: ${{ steps.diff.outputs.verdict }}
+  diff-markdown-path:
+    description: "Path to the rendered Markdown diff."
+    value: ${{ steps.diff.outputs.markdown_path }}
+  baseline-path:
+    description: "Local path to the baseline JSON the action resolved."
+    value: ${{ steps.baseline.outputs.baseline_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install inkfoot
+      if: ${{ inputs.install-inkfoot != 'false' }}
+      shell: bash
+      env:
+        INKFOOT_VERSION: ${{ inputs.inkfoot-version }}
+        INKFOOT_EXTRAS: ${{ inputs.inkfoot-extras }}
+      run: |
+        set -euo pipefail
+        # `inkfoot[all]` per phase-1-explain §4.5 step 1 so the
+        # consumer's scenarios can import langgraph / openai-agents /
+        # anthropic-agent without a follow-up install step.
+        SPEC="inkfoot"
+        if [[ -n "${INKFOOT_EXTRAS}" ]]; then
+          SPEC="inkfoot[${INKFOOT_EXTRAS}]"
+        fi
+        if [[ -n "${INKFOOT_VERSION}" ]]; then
+          SPEC="${SPEC}==${INKFOOT_VERSION}"
+        fi
+        echo "::group::pip install ${SPEC}"
+        pip install --quiet "${SPEC}"
+        echo "::endgroup::"
+
+    - name: Verify inkfoot is importable
+      shell: bash
+      run: |
+        set -euo pipefail
+        # When install-inkfoot=false the consumer is on the hook for
+        # an earlier install step. Fail loudly if they forgot, rather
+        # than letting the benchmark step crash with a less-clear
+        # message.
+        if ! python -c "import inkfoot" 2>/dev/null; then
+          echo "::error::inkfoot is not importable. Either set install-inkfoot: true (default) or add a 'pip install -e .' / 'pip install inkfoot' step before this action."
+          exit 2
+        fi
+
+    - name: Resolve baseline
+      id: baseline
+      shell: bash
+      env:
+        BASELINE_SOURCE: ${{ inputs.baseline-source }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        # Surfacing CURRENT_OUTPUT here lets the artifact branch pick
+        # the right .json out of a multi-file artefact directory
+        # (round-2 review Low #2). Without it BASENAME silently
+        # defaulted to current.json regardless of input.
+        CURRENT_OUTPUT: ${{ inputs.current-output }}
+      run: |
+        set -euo pipefail
+        # baseline-source is a tiny DSL:
+        #   path:<file>          -> use a file already on the runner
+        #   artifact:<wf>:<name> -> download from a prior main-branch
+        #                          run of workflow <wf> using gh.
+        #   release:<tag>:<asset>-> download <asset> from release <tag>
+        #                          (`release:latest:<asset>` follows
+        #                           the latest release).
+        SOURCE="${BASELINE_SOURCE}"
+        SCHEME="${SOURCE%%:*}"
+        REST="${SOURCE#*:}"
+        OUT="${RUNNER_TEMP}/inkfoot-baseline.json"
+        case "${SCHEME}" in
+          path)
+            cp "${REST}" "${OUT}"
+            ;;
+          artifact)
+            WORKFLOW="${REST%%:*}"
+            ARTIFACT="${REST#*:}"
+            echo "Downloading artifact ${ARTIFACT} from latest successful main run of ${WORKFLOW}"
+            DEST="${RUNNER_TEMP}/inkfoot-baseline"
+            mkdir -p "${DEST}"
+            # gh CLI is preinstalled on GitHub-hosted runners. We
+            # filter to a successful main-branch run of the named
+            # workflow and pull the artifact ID via `gh api`.
+            RUN_ID=$(gh run list \
+              --repo "${REPO}" \
+              --workflow "${WORKFLOW}" \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+            if [[ -z "${RUN_ID}" || "${RUN_ID}" == "null" ]]; then
+              echo "::error::no successful main-branch run found for workflow ${WORKFLOW}"
+              exit 2
+            fi
+            gh run download "${RUN_ID}" \
+              --repo "${REPO}" \
+              --name "${ARTIFACT}" \
+              --dir "${DEST}"
+            # The artifact is a directory; the baseline JSON inside
+            # it is the one that matches `current-output`'s basename,
+            # falling back to any single .json file present.
+            BASENAME=$(basename "${CURRENT_OUTPUT:-current.json}")
+            if [[ -f "${DEST}/${BASENAME}" ]]; then
+              cp "${DEST}/${BASENAME}" "${OUT}"
+            else
+              CANDIDATE=$(ls "${DEST}"/*.json 2>/dev/null | head -n1 || true)
+              if [[ -z "${CANDIDATE}" ]]; then
+                echo "::error::no JSON file found in artifact ${ARTIFACT}"
+                exit 2
+              fi
+              cp "${CANDIDATE}" "${OUT}"
+            fi
+            ;;
+          release)
+            TAG="${REST%%:*}"
+            ASSET="${REST#*:}"
+            DEST="${RUNNER_TEMP}/inkfoot-release"
+            mkdir -p "${DEST}"
+            if [[ "${TAG}" == "latest" ]]; then
+              gh release download \
+                --repo "${REPO}" \
+                --pattern "${ASSET}" \
+                --dir "${DEST}"
+            else
+              gh release download "${TAG}" \
+                --repo "${REPO}" \
+                --pattern "${ASSET}" \
+                --dir "${DEST}"
+            fi
+            cp "${DEST}/${ASSET}" "${OUT}"
+            ;;
+          *)
+            echo "::error::unknown baseline-source scheme '${SCHEME}'. Expected path:<file>, artifact:<wf>:<name>, or release:<tag>:<asset>."
+            exit 2
+            ;;
+        esac
+        if [[ ! -s "${OUT}" ]]; then
+          echo "::error::resolved baseline at ${OUT} is empty"
+          exit 2
+        fi
+        echo "baseline_path=${OUT}" >> "${GITHUB_OUTPUT}"
+
+    - name: Run benchmark
+      shell: bash
+      env:
+        SCENARIOS: ${{ inputs.scenarios }}
+        CURRENT_OUTPUT: ${{ inputs.current-output }}
+        SCENARIOS_ONLY: ${{ inputs.scenarios-only }}
+      run: |
+        set -euo pipefail
+        # Bash array keeps each --scenarios-only NAME pair quoted
+        # independently so a name containing whitespace or shell
+        # metacharacters can't break out of its argv slot.
+        ONLY_ARGS=()
+        if [[ -n "${SCENARIOS_ONLY}" ]]; then
+          IFS=',' read -ra NAMES <<< "${SCENARIOS_ONLY}"
+          for n in "${NAMES[@]}"; do
+            n_trimmed="${n#"${n%%[![:space:]]*}"}"
+            n_trimmed="${n_trimmed%"${n_trimmed##*[![:space:]]}"}"
+            if [[ -n "${n_trimmed}" ]]; then
+              ONLY_ARGS+=("--scenarios-only" "${n_trimmed}")
+            fi
+          done
+        fi
+        inkfoot benchmark "${SCENARIOS}" \
+          --output "${CURRENT_OUTPUT}" \
+          --quiet \
+          "${ONLY_ARGS[@]}"
+
+    - name: Diff against baseline
+      id: diff
+      shell: bash
+      env:
+        BASELINE_PATH: ${{ steps.baseline.outputs.baseline_path }}
+        CURRENT_OUTPUT: ${{ inputs.current-output }}
+        FAIL_THRESHOLD: ${{ inputs.fail-threshold }}
+      run: |
+        set -euo pipefail
+        OUTPUT="${RUNNER_TEMP}/inkfoot-diff.md"
+        set +e
+        inkfoot diff \
+          "${BASELINE_PATH}" \
+          "${CURRENT_OUTPUT}" \
+          --thresholds "${FAIL_THRESHOLD}" \
+          --format markdown \
+          --output "${OUTPUT}"
+        DIFF_EXIT=$?
+        set -e
+        case "${DIFF_EXIT}" in
+          0) VERDICT="ok" ;;
+          1) VERDICT="warn" ;;
+          2) VERDICT="fail" ;;
+          *) VERDICT="error" ;;
+        esac
+        {
+          echo "verdict=${VERDICT}"
+          echo "markdown_path=${OUTPUT}"
+          echo "exit_code=${DIFF_EXIT}"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Post sticky PR comment
+      if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        DIFF_MARKDOWN_PATH: ${{ steps.diff.outputs.markdown_path }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        TARGET_REPO: ${{ github.repository }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        python "${ACTION_PATH}/post_comment.py" \
+          --pr-number "${PR_NUMBER}" \
+          --repo "${TARGET_REPO}" \
+          --body-file "${DIFF_MARKDOWN_PATH}"
+
+    - name: Upload current.json artefact
+      uses: actions/upload-artifact@v4
+      with:
+        name: inkfoot-benchmark-current
+        path: ${{ inputs.current-output }}
+        if-no-files-found: warn
+
+    - name: Fail the build on regression
+      if: ${{ steps.diff.outputs.exit_code == '2' }}
+      shell: bash
+      run: |
+        echo "::error::inkfoot diff verdict=fail (exit 2). See sticky PR comment for details."
+        exit 2
