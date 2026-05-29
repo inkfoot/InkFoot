@@ -1,0 +1,141 @@
+name: diff-action release smoke
+
+# Post-launch counterpart to e2e.yml.
+#
+# `e2e.yml` validates the **in-repo** inkfoot — it does `pip install
+# -e .` and passes `install-inkfoot: false` so a regression in the
+# Python source is caught at PR time.
+#
+# This workflow validates the **published** inkfoot (PyPI) against
+# the same action source. The point is to give future Marketplace
+# consumers a signal that the released combination (the version they
+# would actually run via `inkfoot/diff-action@v1`) still passes a
+# realistic benchmark + diff cycle.
+#
+# Triggers:
+#
+# * `workflow_dispatch` — maintainers fire it on demand, optionally
+#   pinning an `inkfoot-version` they want to validate.
+# * `release: { types: [published] }` — fires automatically after
+#   each tagged inkfoot release so a bad release is caught within
+#   minutes of going live.
+# * Weekly cron — covers slow-rotting regressions (e.g. PyPI
+#   metadata drift, transitive-dep breakage) that wouldn't surface
+#   from a quiet release window.
+#
+# The job is gated on `inkfoot/inkfoot` so forks don't trip the
+# upload-artifact step or burn unnecessary minutes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      inkfoot-version:
+        description: "Pinned PyPI version to validate. Empty = latest."
+        required: false
+        default: ""
+  release:
+    types: [published]
+  schedule:
+    # Mondays 04:00 UTC — quiet enough to avoid PyPI rate-limit
+    # peaks, far enough from the European working day that a flaky
+    # cron doesn't wake anyone up.
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  release-smoke:
+    if: ${{ github.repository == 'inkfoot/inkfoot' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build a minimal scenarios directory with a stubbed agent
+        run: |
+          mkdir -p actions/diff-action/.github/_smoke/scenarios
+          cat > actions/diff-action/.github/_smoke/scenarios/smoke.py <<'PY'
+          # Mirror of the e2e fixture — stubbed provider so no real
+          # LLM tokens are spent on the daily smoke. ADR-1-4 lives
+          # in production CI, not in our self-tests.
+          INKFOOT_SCENARIO = {
+              "task": "release-smoke",
+              "fixtures": [],
+              "runs_per_fixture": 1,
+              "expected_outcome": "success",
+          }
+
+          def run(fixture):
+              import json as _json
+              from ulid import ULID
+
+              from inkfoot import _instrument as _inst
+              from inkfoot._run_context import current_run_id
+              from inkfoot.shims._emit import _next_sequence
+
+              run_id = current_run_id()
+              payload = {
+                  "provider": "anthropic",
+                  "model": "claude-haiku-4-5",
+                  "system_static_tokens": 10,
+                  "user_input_tokens": 5,
+                  "output_tokens": 5,
+                  "cache_read_tokens": 0,
+                  "cache_creation_tokens": 0,
+                  "estimated_nanodollars": 1_000_000,
+                  "metadata": {},
+              }
+              _inst._STORAGE.insert_event(
+                  event_id=str(ULID()),
+                  run_id=run_id,
+                  kind="llm_call",
+                  occurred_at=0,
+                  sequence=_next_sequence(run_id),
+                  payload_json=_json.dumps(payload),
+                  capture_mode="metadata",
+              )
+              return {"ok": True}
+          PY
+
+      - name: Provide a synthetic baseline
+        run: |
+          cat > actions/diff-action/.github/_smoke/baseline.json <<'JSON'
+          {
+            "inkfoot_version": "0.0.0-smoke",
+            "schema_version": "1",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "scenarios": [
+              {
+                "task": "release-smoke",
+                "runs": 1,
+                "successes": 1,
+                "p50_nanodollars": 1000000,
+                "p95_nanodollars": 1000000,
+                "mean_llm_calls": 1.0,
+                "mean_cache_hit_rate": 0.0,
+                "smells_seen": []
+              }
+            ]
+          }
+          JSON
+
+      - name: Run inkfoot/diff-action against the PyPI release
+        id: act
+        uses: ./actions/diff-action
+        with:
+          scenarios: actions/diff-action/.github/_smoke/scenarios
+          baseline-source: path:actions/diff-action/.github/_smoke/baseline.json
+          fail-threshold: loose
+          # No prior pip install — let the action install from PyPI.
+          # That's the whole point of release-smoke: validate the
+          # released combination.
+          inkfoot-version: ${{ github.event.inputs.inkfoot-version }}
+          inkfoot-extras: ""
+
+      - name: Assert the released action still produces a non-error verdict
+        run: |
+          case "${{ steps.act.outputs.verdict }}" in
+            ok|warn) echo "verdict=${{ steps.act.outputs.verdict }}" ;;
+            *) echo "::error::release-smoke saw verdict ${{ steps.act.outputs.verdict }}"; exit 1 ;;
+          esac

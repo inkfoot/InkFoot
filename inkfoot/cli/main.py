@@ -20,7 +20,8 @@ import sys
 from typing import Sequence
 
 from inkfoot._version import __version__
-from inkfoot.cli import rebuild_aggregates, report, tag
+from inkfoot.cli import benchmark, diff, rebuild_aggregates, report, tag
+from inkfoot.diff.thresholds import THRESHOLD_PRESETS, DEFAULT_THRESHOLD_NAME
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -100,6 +101,70 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Tag value. Parsed as JSON when possible (so 5 is int, true is bool).",
     )
     tg.set_defaults(func=tag.run)
+
+    bench = subparsers.add_parser(
+        "benchmark",
+        help=(
+            "Run scenario suites under instrumentation and emit a "
+            "benchmark JSON artefact (Phase 1 / E2-S1)."
+        ),
+    )
+    bench.add_argument(
+        "scenarios_dir",
+        help="Directory of `.py` scenario files to discover and run.",
+    )
+    bench.add_argument(
+        "--output",
+        default=None,
+        help="Write the artefact JSON to this path (in addition to stdout).",
+    )
+    bench.add_argument(
+        "--scenarios-only",
+        action="append",
+        default=None,
+        help=(
+            "Run only scenarios matching this name. Matched against "
+            "either the scenario's `INKFOOT_SCENARIO['task']` value "
+            "or the bare filename stem (e.g. `triage` matches "
+            "`triage.py`). Pass multiple times to whitelist several."
+        ),
+    )
+    bench.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the artefact JSON on stdout; rely on --output.",
+    )
+    bench.set_defaults(func=benchmark.run)
+
+    df = subparsers.add_parser(
+        "diff",
+        help=(
+            "Compare two benchmark artefacts and emit a Markdown or JSON "
+            "report (Phase 1 / E2-S2)."
+        ),
+    )
+    df.add_argument("baseline", help="Baseline benchmark JSON artefact.")
+    df.add_argument("current", help="Current benchmark JSON artefact.")
+    df.add_argument(
+        "--format",
+        default="markdown",
+        choices=["markdown", "json"],
+        help="Output format. 'markdown' is the PR-comment shape (default).",
+    )
+    df.add_argument(
+        "--thresholds",
+        default=DEFAULT_THRESHOLD_NAME,
+        help=(
+            "Threshold preset or path to a JSON file. Presets: "
+            f"{sorted(THRESHOLD_PRESETS)}."
+        ),
+    )
+    df.add_argument(
+        "--output",
+        default=None,
+        help="Also write the rendered report to this path.",
+    )
+    df.set_defaults(func=diff.run)
 
     return parser
 
