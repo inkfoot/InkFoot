@@ -75,6 +75,12 @@ _SOCKET_TIMEOUT_S = 30.0
 # inspection.
 DEFAULT_INGEST_TASK = "otel-ingest"
 
+# Base URL appended to error responses so an operator hitting a
+# 415 can jump straight to the relevant recipe. The site goes
+# live with E5 / E6; until then the URL is harmless boilerplate
+# that resolves once inkfoot.dev ships.
+_DOCS_BASE_URL = "https://inkfoot.dev"
+
 
 class IngestError(RuntimeError):
     """Raised when ingest can't translate or persist an incoming span."""
@@ -391,13 +397,16 @@ class OTLPHTTPReceiver:
                     self._send_text(
                         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                         "inkfoot Phase 1 ingest accepts application/json only "
-                        "(configure your collector to use the OTLP JSON encoder)",
+                        "(configure your collector to use the OTLP JSON "
+                        "encoder) — see "
+                        f"{_DOCS_BASE_URL}/recipes/otel-honeycomb/#1-configure-the-collector",
                     )
                     return
                 if ctype != "application/json":
                     self._send_text(
                         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                        "expected Content-Type: application/json",
+                        "expected Content-Type: application/json — see "
+                        f"{_DOCS_BASE_URL}/concepts/otel/#ingest-point-your-collector-at-inkfoot",
                     )
                     return
                 try:

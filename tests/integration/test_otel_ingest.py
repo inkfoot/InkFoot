@@ -159,6 +159,10 @@ def test_post_traces_rejects_protobuf_with_415(storage, receiver):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 415
+    # Round-3 review #2: the 415 body links to the recipe so an
+    # operator hitting it can jump straight to the fix.
+    body = exc.value.read().decode("utf-8", errors="replace")
+    assert "inkfoot.dev/recipes/otel-honeycomb" in body
 
 
 def test_post_traces_unknown_path_returns_404(storage, receiver):
