@@ -1,4 +1,4 @@
-"""inkfoot tag CLI tests (E5-S4 acceptance)."""
+"""inkfoot tag CLI tests."""
 
 from __future__ import annotations
 

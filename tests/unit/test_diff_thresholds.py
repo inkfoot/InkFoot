@@ -16,7 +16,7 @@ from inkfoot.diff.thresholds import (
 )
 
 
-def test_default_preset_matches_phase1_spec():
+def test_default_preset_matches_documented_contract():
     t = THRESHOLD_PRESETS["default"]
     assert t.cost_warn == pytest.approx(0.20)
     assert t.cost_fail == pytest.approx(0.50)

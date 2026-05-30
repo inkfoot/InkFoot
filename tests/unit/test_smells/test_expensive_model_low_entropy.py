@@ -107,7 +107,7 @@ def test_silent_for_cheaper_model_even_with_low_output() -> None:
 
 
 def test_silent_for_gpt_4o_mini_even_though_prefix_matches() -> None:
-    """Finding #1 in the CL4 review.
+    """Finding #1 in the review review.
 
     ``"gpt-4o-mini".startswith("gpt-4o")`` is True, so the cheap
     model's name shares an "expensive" prefix. The premium-clamp

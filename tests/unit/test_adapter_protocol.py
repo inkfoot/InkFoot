@@ -1,11 +1,11 @@
-"""E1-S1 — FrameworkAdapter Protocol + adapter registry.
+"""FrameworkAdapter Protocol + adapter registry.
 
 Tests cover:
   * Protocol conformance via ``runtime_checkable``.
   * Registry duplicate-name rejection + re-registration of the same
     instance.
   * Auto-detection of an active adapter inside
-    :func:`register_policies` so Phase-2 modification policies that
+    :func:`register_policies` so future modification policies that
     only Pattern C supports can register cleanly.
   * Activate/deactivate plumbing.
 """
@@ -68,7 +68,7 @@ class _StubAdapter:
 
 
 class _FakeLazyToolExposure(Policy):
-    """Stand-in for the Phase-2 modification policy that only Pattern
+    """Stand-in for the future modification policy that only Pattern
     C supports. Mirrors the production class's SUPPORTED_PATTERNS so
     the auto-detect path's tests are realistic."""
 
@@ -83,9 +83,9 @@ class _FakeLazyToolExposure(Policy):
 
 
 class _FakeMixedPatternPolicy(Policy):
-    """Hypothetical Phase-2 policy that supports raw-SDK Pattern B
+    """Hypothetical future policy that supports raw-SDK Pattern B
     + framework adapters (Pattern C) but not the bare SDK shim
-    (Pattern A). The CL-E1 review (Finding #1) flagged that the old
+    (Pattern A). The review (Finding #1) flagged that the old
     fallback would let this through any adapter regardless of the
     adapter's ``supported_policies()`` — the tightened predicate
     requires explicit enumeration."""
@@ -223,7 +223,7 @@ def test_register_policies_falls_back_to_pattern_check_for_observation_policy() 
 
 
 def test_register_policies_rejects_pattern_c_only_policy_when_adapter_omits_it() -> None:
-    """A Phase-2 modification policy that only supports Pattern C
+    """A future modification policy that only supports Pattern C
     must be enumerated by the adapter — otherwise the adapter has no
     way to wire it into the framework and registration fails loud."""
     adapter = _StubAdapter(supports=set())  # adapter doesn't know it
@@ -260,9 +260,9 @@ def test_no_active_adapter_accepts_observation_policy_on_pattern_a() -> None:
 
 
 def test_mixed_pattern_policy_requires_explicit_adapter_enumeration() -> None:
-    """CL-E1 review Finding #1: the fallback path is now restricted
+    """review finding #1: the fallback path is now restricted
     to the observation-policy shape (``SUPPORTED_PATTERNS == {A, B,
-    C}``). A hypothetical Phase-2 policy with a narrower set like
+    C}``). A hypothetical future policy with a narrower set like
     ``{B, C}`` MUST be enumerated by the active adapter; the legacy
     fallback no longer waves it through."""
     adapter = _StubAdapter(supports=set())  # adapter doesn't know it
@@ -284,7 +284,7 @@ def test_mixed_pattern_policy_registers_when_adapter_enumerates_it() -> None:
 
 
 # ----------------------------------------------------------------------
-# CL-E1 review Finding #2 — cross-adapter conflict
+# review finding #2 — cross-adapter conflict
 # ----------------------------------------------------------------------
 
 

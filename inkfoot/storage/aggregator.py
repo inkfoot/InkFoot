@@ -86,11 +86,11 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
     """Pure projection: collapse a run's event log into the totals
     that live on ``runs``.
 
-    Phase 0's ``runs`` schema holds five totals
+    The current implementation ``runs`` schema holds five totals
     (``total_input_tokens``, ``total_output_tokens``,
     ``total_cache_read_tokens``, ``total_cache_creation_tokens``,
     ``total_nanodollars``) plus ``outcome``. Per-category ledger
-    breakdown stays in event payloads — see E2.
+    breakdown stays in event payloads — see the ledger.
 
     Robustness notes:
     - Missing payload fields default to 0.

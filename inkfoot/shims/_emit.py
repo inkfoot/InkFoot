@@ -38,7 +38,7 @@ _LOG = logging.getLogger("inkfoot.shims")
 # increment is a single atomic step under ``_sequence_lock`` —
 # itertools.count is thread-safe at the C level but the dict
 # check-then-set wrapper around it isn't, which let two concurrent
-# same-run calls land identical sequences (Finding #1 in the CL3
+# same-run calls land identical sequences (Finding #1 in the review
 # review). The current shape is "lock, read-or-init, increment,
 # return" — one critical section, no race.
 #
@@ -177,7 +177,7 @@ def emit_llm_call(
 
 # Cap on serialised error messages so a giant provider trace doesn't
 # blow out a JSON column. 1 KB matches the §9.3 privacy guidance
-# for user-facing error text (only one place in Phase 0 stores it).
+# for user-facing error text (only one place in the current implementation stores it).
 _MAX_ERROR_MESSAGE_CHARS = 1024
 
 
@@ -199,7 +199,7 @@ def emit_llm_call_error(
     instead of a missing event. The ledger is left at the
     all-zeros default — there's no usage data on a failure.
 
-    Without this, E4's runaway-retry-loop smell would under-count
+    Without this, the runaway-retry-loop smell would under-count
     by exactly the failure rate.
     """
     from dataclasses import asdict

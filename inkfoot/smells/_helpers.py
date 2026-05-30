@@ -1,6 +1,6 @@
-"""Shared helpers for Phase 0 smell detectors.
+"""Shared helpers for the current implementation smell detectors.
 
-Smells consume LLM-call events emitted by E3's shim. Each event's
+Smells consume LLM-call events emitted by the shim. Each event's
 ``payload_json`` is a JSON-serialised :class:`NeutralCall` (i.e. the
 output of ``dataclasses.asdict(neutral_call)``); the ledger lives
 under ``payload["ledger"]``. These helpers turn that JSON soup into
@@ -79,7 +79,7 @@ def haiku_output_price_nd() -> int:
     import time so a future price update flows through automatically.
     """
     row = PRICING_ND_PER_TOKEN.get(("anthropic", "claude-haiku-4-5"))
-    if row is None:  # pragma: no cover — Phase 0 always has Haiku
+    if row is None:  # pragma: no cover — the current implementation always has Haiku
         return 0
     return row.output
 

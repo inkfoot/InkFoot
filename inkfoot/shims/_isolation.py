@@ -13,7 +13,7 @@ response.
 
 There's deliberately no "strict mode" yet — ADR-0-3 calls out a
 future ``inkfoot --strict`` env flag for dev that would re-raise.
-Phase 0 is trust-establishment, so the default catches everything.
+The current implementation is trust-establishment, so the default catches everything.
 """
 
 from __future__ import annotations

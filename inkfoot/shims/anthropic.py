@@ -163,7 +163,7 @@ class AnthropicShim:
         # Provider exceptions must propagate to the user — but we
         # record a NeutralError event first so the run shows
         # "N attempted, 1 failed" instead of a silent gap (Finding
-        # #4 in the CL3 review). Re-raise after the emit so user
+        # #4 in the review). Re-raise after the emit so user
         # call sites see the exact same exception they would have
         # without instrumentation.
         try:

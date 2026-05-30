@@ -1,4 +1,4 @@
-"""E1-S4 T2 — Anthropic Agent SDK end-to-end test.
+"""Anthropic Agent SDK end-to-end test.
 
 Mirrors the OpenAI Agents e2e test shape. Skips when the SDK isn't
 installed (``inkfoot[anthropic-agent]`` extra is optional).

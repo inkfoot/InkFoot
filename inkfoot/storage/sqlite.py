@@ -2,7 +2,7 @@
 
 Honours ADR-0-5 (WAL + per-connection pragmas), ADR-0-1 (two-tier
 write semantics with the claim-and-project guarantee against lost
-updates), and ADR-0-9 (capture-mode column + sibling ``event_contents``
+updates), and replay-mode storage contract (capture-mode column + sibling ``event_contents``
 table).
 
 Connections are per-thread via :class:`threading.local` — SQLite
@@ -63,7 +63,7 @@ def _default_db_path() -> Path:
 
 
 class SQLiteStorage:
-    """Default Phase 0 storage backend.
+    """Default SQLite storage backend.
 
     Pass a ``path`` of ``":memory:"`` for in-process tests; the
     shared in-memory connection lets multiple threads see the *same*
@@ -284,7 +284,7 @@ class SQLiteStorage:
         ``aggregates_dirty`` flag in a single transaction. Must
         complete under 1 ms p95 in WAL mode (§9.1 perf budget).
 
-        Replay-mode content write (ADR-0-9 + E3-S2 T7): when
+        Replay-mode content write: when
         ``capture_mode='replay'``, an ``event_contents`` row is
         written *in the same transaction* with the serialised
         request/response/tool-result bodies. When
@@ -322,7 +322,7 @@ class SQLiteStorage:
                     "UPDATE runs SET aggregates_dirty = 1 WHERE id = ?",
                     (run_id,),
                 )
-                # Replay-mode content row (Finding #3 in CL3 review):
+                # Replay-mode content row (Finding #3 in review):
                 # we only write when there's actual content to record.
                 # The shim's policy-event branch doesn't carry content
                 # — writing a row of all-NULLs would pollute the
@@ -473,7 +473,7 @@ class SQLiteStorage:
     ) -> bool:
         """Composite claim-and-project: equivalent to
         :meth:`claim_clean` followed by :meth:`write_totals` in one
-        call. Kept on the Protocol surface because Phase 0's E1-S3
+        call. Kept on the Protocol surface because the storage contract
         spec names it. Returns ``True`` if the row was dirty (and the
         totals were written), ``False`` otherwise.
 

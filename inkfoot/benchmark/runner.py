@@ -1,5 +1,5 @@
 """Scenario execution + aggregation for ``inkfoot benchmark``
-(Phase 1 / E2-S1 / phase-1-explain §4.3).
+.
 
 Responsibilities:
 
@@ -11,7 +11,7 @@ Responsibilities:
 3. Aggregate per-scenario stats from the storage event log into a
    :class:`inkfoot.benchmark.schema.BenchmarkArtifact`.
 
-ADR-1-4 is decisive: benchmark scenarios make *live* LLM calls.
+benchmark scenarios make *live* LLM calls.
 That makes determinism a non-goal at the cost level — the runner's
 job is to faithfully capture what each run cost and aggregate it.
 Storage is opened against a tempfile by default so a CI run is

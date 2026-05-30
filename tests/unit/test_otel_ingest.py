@@ -1,5 +1,4 @@
-"""Unit tests for the OTel ingest translator + dedup core
-(Phase 1 / E3-S2). HTTP integration tests live in
+"""Unit tests for the OTel ingest translator + dedup core. HTTP integration tests live in
 ``tests/integration/test_otel_ingest.py``.
 """
 
@@ -109,7 +108,7 @@ def test_otel_nanos_to_ms_handles_missing_input():
 
 
 # ----------------------------------------------------------------------
-# Dedup cache (ADR-1-2)
+# Dedup cache (dedup contract)
 # ----------------------------------------------------------------------
 
 

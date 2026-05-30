@@ -1,6 +1,6 @@
-"""Tests for ``scripts/validate_attribution.py`` (E6-S2 harness).
+"""Tests for ``scripts/validate_attribution.py``.
 
-The harness is the Phase-0 quantitative go/no-go gate; if it can't
+The harness is the current quantitative go/no-go gate; if it can't
 catch a regression it can't gate CI. These tests build minimal
 corpora in-process and exercise the pass + fail paths.
 """

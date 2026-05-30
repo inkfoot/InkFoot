@@ -1,9 +1,9 @@
-"""``FrameworkAdapter`` Protocol — the Phase 1 Pattern-C contract.
+"""``FrameworkAdapter`` Protocol — the framework-adapter contract.
 
-Per phase-1-explain §4.1: a framework adapter wraps a third-party
+a framework adapter wraps a third-party
 agent framework (LangGraph, OpenAI Agents SDK, Anthropic Agent SDK)
 so Inkfoot's ledger can see per-node attribution, tool-dispatch
-metadata, and the capability surface that Phase 2's modification
+metadata, and the capability surface that future modification
 policies depend on.
 
 The Protocol is :func:`~typing.runtime_checkable` so the adapter
@@ -50,10 +50,10 @@ class FrameworkAdapter(Protocol):
         is reserved for adapter-specific options (e.g. opting out of
         tool-dispatch wrapping).
       * :meth:`supported_policies` — the set of :class:`Policy`
-        *subclasses* this adapter supports at runtime. Phase 0 ships
+        *subclasses* this adapter supports at runtime. The current implementation ships
         only observation policies (``BudgetCap``, ``RetryThrottle``,
         ``CacheControlPlacer``) which support all three patterns;
-        Phase 2 modification policies (``LazyToolExposure``,
+        future modification policies (``LazyToolExposure``,
         ``CheapSummariser``) restrict to Pattern C, so the registered
         adapter's surface decides whether the policy registers.
       * :meth:`shutdown` — adapter-level teardown (e.g. clear the

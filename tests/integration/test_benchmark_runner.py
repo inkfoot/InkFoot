@@ -1,7 +1,7 @@
 """Integration test for ``inkfoot benchmark``'s runner.
 
 The runner stubs the LLM provider so we don't pay for or wait on
-real API calls — ADR-1-4 mandates live calls in *production* CI,
+real API calls — production CI should use live calls,
 but unit/integration tests are allowed to fake the provider via the
 ``instrument`` injection point. The stub asserts the runner actually
 calls the provider once per fixture × runs_per_fixture so the

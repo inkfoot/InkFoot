@@ -1,4 +1,4 @@
-"""Tests for ``scripts/extract_run_fixtures.py`` (E6-S1 T4)."""
+"""Tests for ``scripts/extract_run_fixtures.py``."""
 
 from __future__ import annotations
 

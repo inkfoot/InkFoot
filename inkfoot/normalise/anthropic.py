@@ -21,15 +21,15 @@ Re-tokenised against the request:
   blocks on ``user`` role messages).
 * ``memory_tokens`` — every prior assistant/user turn that isn't
   the current-turn user message and isn't a tool result.
-* ``retrieved_context_tokens`` — Phase 0 leaves at 0; ``tag_retrieval``
-  lands in E5 and will populate this from explicit user markers.
+* ``retrieved_context_tokens`` — the current implementation leaves at 0; ``tag_retrieval``
+  can populate this from explicit user markers.
 
-Bookkeeping (left zero in Phase 0):
+Bookkeeping (left zero in the current implementation):
 
-* ``summariser_tokens`` — Phase 2's modification policies will lift
+* ``summariser_tokens`` — future modification policies will lift
   this.
 * ``guardrail_tokens`` — wired when guardrails are connected.
-* ``retry_overhead_tokens`` — populated by E4 when retry events fire.
+* ``retry_overhead_tokens`` — populated by the retry classifier.
 
 The translator is *pure*: given a fixed request, response, and
 :class:`InMemoryRunState` snapshot, the output is deterministic. The
@@ -61,11 +61,11 @@ def _extract_system_block(request: dict[str, Any]) -> str:
     Both shapes collapse to a single string for tokenisation /
     stable-prefix detection.
 
-    TODO(phase-2/smells): when the cache_control smell lands, this
+    TODO(future/smells): when the cache_control smell lands, this
     helper (or a sibling) will need to expose the ``cache_control``
     markers on individual system blocks — they identify the cached
     span and let the smell flag misplaced or absent boundaries. For
-    Phase 0 we only need the text content; markers are intentionally
+    The current implementation only needs the text content; markers are intentionally
     dropped here.
     """
     raw = request.get("system")
@@ -324,7 +324,7 @@ class AnthropicTranslator:
         cache_create = int(usage.get("cache_creation_input_tokens") or 0)
         reasoning = _reasoning_token_count(response)
 
-        # E5: consume any pending tag_retrieval marker. The user
+        # Run lifecycle: consume any pending tag_retrieval marker. The user
         # called ``inkfoot.tag_retrieval(text)`` before this LLM
         # call; the resulting token count rides on *this* call's
         # ledger as retrieved_context_tokens and the pending
@@ -340,8 +340,8 @@ class AnthropicTranslator:
             tool_result_tokens=tool_result.value,
             memory_tokens=memory.value,
             retrieved_context_tokens=retrieved,
-            retry_overhead_tokens=0,  # E4 — populated when retry classifier ships
-            summariser_tokens=0,  # Phase 2
+            retry_overhead_tokens=0,  # populated when retry classifier ships
+            summariser_tokens=0,  # reserved for future summariser policies
             reasoning_tokens=reasoning,
             guardrail_tokens=0,
             cache_creation_tokens=cache_create,
@@ -372,7 +372,7 @@ class AnthropicTranslator:
             if isinstance(t, dict) and t.get("name")
         )
 
-        # Pattern-C metadata pass-through (ADR-1-1). When a
+        # Pattern-C metadata pass-through (framework metadata contract). When a
         # framework adapter or :func:`inkfoot.tag_node` has set
         # ``run_state.node_name``, attach it to the neutral payload
         # so ``inkfoot report --group-by node`` can slice the ledger.

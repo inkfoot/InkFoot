@@ -1,4 +1,4 @@
-"""Tests for ``inkfoot.instrument()`` (E3-S1 acceptance).
+"""Tests for ``inkfoot.instrument()``.
 
 Covers:
 - Double-call is a no-op on the second call (idempotent guard).

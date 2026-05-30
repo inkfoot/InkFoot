@@ -1,4 +1,4 @@
-"""Scenario discovery + loading for ``inkfoot benchmark`` (E2-S1 T1).
+"""Scenario discovery + loading for ``inkfoot benchmark``.
 
 A scenario is a single ``.py`` file that exports two names:
 

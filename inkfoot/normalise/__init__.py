@@ -75,9 +75,9 @@ class NeutralCall:
     parent_run_id: Optional[str] = None
     sequence: int = 0
     estimation_flags: tuple[str, ...] = ()
-    # Free-form, framework-supplied metadata (ADR-1-1). Phase 1 uses
+    # Free-form, framework-supplied metadata (framework metadata contract). The current release uses
     # this for ``node_name`` (LangGraph + Pattern B ``tag_node``);
-    # Phase 2 will layer in modification-policy provenance. Kept as a
+    # future versions can layer in modification-policy provenance. Kept as a
     # ``dict`` rather than a fixed-shape dataclass so adapters can
     # extend without a schema bump. JSON-serialisable only — the
     # storage path round-trips via ``json.dumps``.
@@ -176,13 +176,13 @@ def _collect_runtime_metadata(run_state: Any) -> dict[str, Any]:
     """Pull adapter-set metadata off the :class:`InMemoryRunState`
     snapshot the translator received.
 
-    Phase 1 carries ``node_name`` (LangGraph + Pattern B
+    The current release carries ``node_name`` (LangGraph + Pattern B
     ``tag_node``) and ``tools_fingerprint`` (LangGraph compile-time
     snapshot). Both are optional — when the adapter hasn't set them
     the metadata dict is empty and the round-trip stays lossless.
 
     Defensive: tolerates a ``run_state`` that doesn't have the
-    Phase-1 attributes (older :class:`InMemoryRunState` shape from a
+    current metadata attributes (older :class:`InMemoryRunState` shape from a
     monkey-patched test, or a stub run-state). Missing attrs land at
     ``None`` and are filtered out.
     """

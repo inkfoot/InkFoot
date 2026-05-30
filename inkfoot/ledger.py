@@ -7,7 +7,7 @@ the bar chart along these fields; smells look at ratios between
 them; contracts assert on them; the Cloud dashboard rolls them up
 across runs.
 
-See ``phase-0-classify.md`` §5.3 + the §5.4 class diagram for the
+See ``the architecture notes`` §5.3 + the §5.4 class diagram for the
 authoritative shape.
 
 **Field roles.** The ledger has 14 fields:
@@ -139,7 +139,7 @@ class CausalTokenLedger:
         (which already aggregates cached + fresh).
 
         Cache fields are explicitly **not** in this sum: they are
-        billing overlays — see the module docstring + ADR-0-9
+        billing overlays — see the module docstring + replay-mode storage contract
         comments in :mod:`inkfoot.pricing`."""
         return sum(getattr(self, name) for name in INPUT_CATEGORIES)
 
@@ -187,7 +187,7 @@ def validate_against_usage(
     ``tolerance=0.02 + epsilon`` if you want inclusive.
 
     Raises :class:`AssertionError` with a diagnostic message on
-    mismatch. Phase 0 CI runs this against a fixture corpus.
+    mismatch. CI runs this against a fixture corpus.
     """
     if raw_input < 0:
         raise ValueError(f"raw_input must be non-negative, got {raw_input}")

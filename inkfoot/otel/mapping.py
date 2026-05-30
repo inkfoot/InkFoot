@@ -1,6 +1,6 @@
 """Bidirectional mapping between :class:`NeutralCall` and OTel attributes.
 
-Defined by phase-1-explain §4.2.1. Round-trip-safe: a
+Round-trip-safe: a
 ``NeutralCall`` → attrs → ``NeutralCall`` cycle preserves every
 field this mapping covers. Fields not present in the OTel GenAI
 spec (``tools_offered``, ``tools_called``, ``parent_run_id``,
@@ -55,7 +55,7 @@ def neutral_call_to_attrs(
     """Render ``call`` as the OTel attribute dict §4.2.1 describes.
 
     ``operation_name`` defaults to ``"chat"`` — the only flavour
-    Phase 0 / 1 emit. ``response_id`` ought to be the provider's
+    Inkfoot emits. ``response_id`` ought to be the provider's
     response id when available; defaulting to ``None`` (omitted)
     rather than to the event id keeps the wire format honest about
     what the upstream system actually saw.

@@ -2,8 +2,8 @@
 
 Loads two benchmark artefacts, runs the comparison engine, and
 renders to stdout in the requested format. Exit code mirrors the
-verdict (``0`` ok / ``1`` warn / ``2`` fail) per phase-1-explain
-§4.4. ``--format markdown`` is the default — that's what the GitHub
+verdict (``0`` ok / ``1`` warn / ``2`` fail). ``--format markdown``
+is the default — that's what the GitHub
 Action posts to PRs; ``--format json`` is the machine-friendly
 counterpart.
 """

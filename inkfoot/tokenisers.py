@@ -156,8 +156,7 @@ def tokenise(text: str, model: str) -> TokenCount:
 
 
 def tokenise_with_flags(text: str, model: str) -> TokenCount:
-    """Alias for :func:`tokenise` kept for spec-doc alignment
-    (E2-S3 T2). Returns the full :class:`TokenCount` so callers can
+    """Alias for :func:`tokenise` kept for spec-doc alignment. Returns the full :class:`TokenCount` so callers can
     propagate the estimation flag without re-checking."""
     return tokenise(text, model)
 
@@ -172,7 +171,7 @@ def tokenise_tools(
     over the wire (Anthropic's ``tools`` vs OpenAI's
     ``functions``/``tools`` with nested ``function``), and the
     provider's own tokeniser sees the post-serialisation form. For
-    Phase 0 we approximate by JSON-encoding the array (sorted keys
+    The current implementation approximates by JSON-encoding the array (sorted keys
     for determinism) and tokenising the resulting string.
 
     The result is a :class:`TokenCount` whose ``estimated`` flag

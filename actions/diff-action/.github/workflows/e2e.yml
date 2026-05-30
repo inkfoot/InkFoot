@@ -1,6 +1,6 @@
 name: diff-action e2e
 
-# E2-S3 / T4: exercise the composite action end-to-end against a real
+# documented contract: exercise the composite action end-to-end against a real
 # PR and assert the sticky-comment invariant ("exactly one comment
 # per push; subsequent pushes update, not append").
 #

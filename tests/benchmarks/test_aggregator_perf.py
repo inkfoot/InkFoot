@@ -1,4 +1,4 @@
-"""Aggregator drain benchmark (E1-S4 acceptance).
+"""Aggregator drain benchmark.
 
 Asserts the §9.1 perf budget for the aggregator worker:
 
@@ -30,7 +30,7 @@ from inkfoot.storage.sqlite import SQLiteStorage
 
 _DIRTY_RUNS = 50
 _EVENTS_PER_RUN = 4
-_DRAIN_BUDGET_S = 0.050  # 50 ms — per phase-0-classify §9.1
+_DRAIN_BUDGET_S = 0.050  # 50 ms — per the architecture notes §9.1
 
 
 def _seed_dirty_runs(s: SQLiteStorage) -> None:

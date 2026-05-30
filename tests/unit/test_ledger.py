@@ -1,4 +1,4 @@
-"""Tests for the Causal Token Ledger (E2-S1 acceptance).
+"""Tests for the Causal Token Ledger.
 
 Covers:
 - 14-field defaults are all zero.

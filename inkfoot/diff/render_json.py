@@ -2,7 +2,7 @@
 
 This is the machine-readable counterpart to
 :mod:`inkfoot.diff.render_markdown`. The shape mirrors the benchmark
-artefact (per phase-1-explain §4.4: "JSON shape mirrors the benchmark
+artefact (per the documented diff contract: "JSON shape mirrors the benchmark
 JSON, with a `delta` section added per scenario") and is consumed by:
 
 * downstream ``jq`` queries (badge generation, dashboards),

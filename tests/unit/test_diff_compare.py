@@ -1,4 +1,4 @@
-"""Unit tests for ``inkfoot.diff.compare`` (Phase 1 / E2-S2)."""
+"""Unit tests for ``inkfoot.diff.compare``."""
 
 from __future__ import annotations
 

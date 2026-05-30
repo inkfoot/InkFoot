@@ -1,4 +1,4 @@
-"""Unit tests for the OTLP exporter (Phase 1 / E3-S3)."""
+"""Unit tests for the OTLP exporter."""
 
 from __future__ import annotations
 

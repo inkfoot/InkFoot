@@ -1,4 +1,4 @@
-"""Unit tests for ``inkfoot.benchmark.scenario`` (Phase 1 / E2-S1 T1)."""
+"""Unit tests for ``inkfoot.benchmark.scenario``."""
 
 from __future__ import annotations
 

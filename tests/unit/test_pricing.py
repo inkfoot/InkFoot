@@ -1,4 +1,4 @@
-"""Pricing module tests (E2-S5 acceptance)."""
+"""Pricing module tests."""
 
 from __future__ import annotations
 

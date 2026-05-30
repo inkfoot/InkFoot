@@ -1,7 +1,7 @@
 """Anthropic Agent SDK adapter — Pattern-C wrap for the Anthropic
 Agent SDK's ``Agent.run`` + tool-dispatch layer.
 
-Per phase-1-explain §4.1.3 + E1-S4 task list, this mirrors the
+Anthropic Agent adapter; mirrors the
 OpenAI Agents SDK adapter shape:
 
 * Wrap ``Agent.run`` / ``Agent.run_async`` so the loop is scoped
@@ -13,7 +13,7 @@ mid-2026); the adapter pins against the latest stable's known
 surface and degrades gracefully if internal method names drift.
 
 Wrapping primitives come from :mod:`inkfoot.adapters._shared`
-(CL-E1 review Finding #3 — neither sibling adapter "owns" the
+(review finding #3 — neither sibling adapter "owns" the
 helpers).
 """
 
@@ -44,7 +44,7 @@ class _AnthropicAgentInstrumentation:
     Symmetric with :class:`~inkfoot.adapters.openai_agents._OpenAIAgentsInstrumentation`
     — ``shutdown()`` unwraps the patches *and* releases the adapter's
     install count so the active-pointer auto-clears when the last
-    live instrumentation goes away (CL-E1 review Finding #4).
+    live instrumentation goes away (review finding #4).
     """
 
     def __init__(
@@ -134,7 +134,7 @@ class AnthropicAgentAdapter:
 
     def _release_install(self) -> None:
         """Decrement the install count and auto-clear the active
-        pointer when zero (CL-E1 review Finding #4)."""
+        pointer when zero (review finding #4)."""
         if self._install_count > 0:
             self._install_count -= 1
         if self._install_count == 0:
@@ -143,9 +143,9 @@ class AnthropicAgentAdapter:
                 AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
-        """Same Phase 1 posture as the OpenAI Agents adapter — empty
-        set lets the Phase-0 observation policies through the
-        pattern-fallback path; Phase 2 will enumerate modification
+        """Same observation-only posture as the OpenAI Agents adapter — empty
+        set lets the current observation policies through the
+        pattern-fallback path; future versions can enumerate modification
         policies here."""
         return set()
 

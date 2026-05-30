@@ -110,7 +110,7 @@ class InMemoryRunState:
 
     * ``stable_system_prefix`` — the running longest-common prefix
       of every system block seen so far. Updates monotonically
-      (shortens only). Phase 0's smell engine reads this to flag
+      (shortens only). The smell engine reads this to flag
       ``UnstablePromptPrefix`` violations.
     * ``recent_calls`` — append-only list of :class:`NeutralCall`
       payloads for the live run, cached so smells like
@@ -134,7 +134,7 @@ class InMemoryRunState:
     recent_calls: list = field(default_factory=list)
     retry_counts: dict[str, int] = field(default_factory=dict)
     pending_retrieved_context_tokens: int = 0
-    # Phase 1 (ADR-1-1) — the framework adapter (LangGraph) or Pattern
+    # the framework adapter (LangGraph) or Pattern
     # B's :func:`inkfoot.tag_node` sets this before an LLM call so the
     # translator can attach it to ``NeutralCall.metadata["node_name"]``.
     # Free-form string; ``None`` when no node context applies. Stays
@@ -142,7 +142,7 @@ class InMemoryRunState:
     # one-shot reset would surprise users whose nodes make multiple
     # LLM calls.
     node_name: Optional[str] = None
-    # Phase 1 — the LangGraph adapter snapshots a stable fingerprint
+    # the LangGraph adapter snapshots a stable fingerprint
     # of the compiled graph's tools array (one short hash) so the
     # ledger + cache-detection heuristics can recognise "same tools as
     # last call". Free-form string; ``None`` outside a Pattern-C run.

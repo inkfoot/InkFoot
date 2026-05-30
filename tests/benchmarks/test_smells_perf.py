@@ -1,11 +1,11 @@
-"""Smell-engine hot-path benchmark (E6-S4 acceptance).
+"""Smell-engine hot-path benchmark.
 
-§9.1 budget: all five Phase 0 smells evaluate against a 50-event
+§9.1 budget: all five built-in smells evaluate against a 50-event
 run in under 10 ms. The smell engine is lazy + off the shim hot
 path; this benchmark gates the slice CI sees, not the SDK wrapper
 path.
 
-Asserts on median + p95 (per the CL3 review pattern) so a noisy
+Asserts on median + p95 (per the review pattern) so a noisy
 shared CI runner doesn't trigger false failures.
 """
 

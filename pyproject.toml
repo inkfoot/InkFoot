@@ -35,7 +35,7 @@ dev = [
     "pyyaml>=6",
 ]
 
-# Phase 1 / E1 framework adapter extras. Each one pulls in the peer
+# Framework adapter extras. Each one pulls in the peer
 # framework as an optional install so ``pip install inkfoot[langgraph]``
 # gets the user a working integration without bloating the default
 # install. Versions are pinned conservatively against mid-2026

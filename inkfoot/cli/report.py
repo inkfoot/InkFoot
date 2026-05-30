@@ -178,23 +178,23 @@ def render(
             marker_str += f"  ⚠ {_short_smell_tag(hit)}"
         lines.append(f"  {label} {pct}  {bar}  {dollars}{marker_str}")
 
-    # Footnote when always-zero Phase-0 categories were hidden.
+    # Footnote when always-zero current categories were hidden.
     # We scope this specifically to the three fields that *can't*
-    # carry tokens in Phase 0 (summariser/guardrail/retry_overhead);
+    # carry tokens in the current implementation (summariser/guardrail/retry_overhead);
     # other zero categories (retrieved_context, cache_*, etc.) hide
     # without the footnote because their absence isn't surprising
     # to the reader.
     if not show_zero:
         always_zero_short_labels = sorted(
             _short_label(name)
-            for name in _ALWAYS_ZERO_IN_PHASE_0
+            for name in _ALWAYS_ZERO_CATEGORIES
             if int(ledger_totals.get(name, 0)) == 0
         )
         if always_zero_short_labels:
             lines.append("")
             lines.append(
                 f"({_format_list(always_zero_short_labels)} "
-                f"are always-zero in Phase 0 — hidden by default)"
+                f"are always-zero in the current implementation — hidden by default)"
             )
 
     # Smells block.
@@ -217,13 +217,13 @@ def render(
     return "\n".join(lines)
 
 
-# Fields that are guaranteed to be zero in Phase 0 (no translator
+# Fields that are guaranteed to be zero in the current implementation (no translator
 # populates them; smell engine doesn't synthesise). The footnote
 # under the bar chart names just these — listing all hidden
 # categories would surprise the reader for retrieved_context (which
-# E5's tag_retrieval *does* populate when the user marks it) or
+# tag_retrieval *does* populate when the user marks it) or
 # cache_* (which depend on the provider's behaviour).
-_ALWAYS_ZERO_IN_PHASE_0 = (
+_ALWAYS_ZERO_CATEGORIES = (
     "summariser_tokens",
     "guardrail_tokens",
     "retry_overhead_tokens",
@@ -245,7 +245,7 @@ def _format_list(items: list[str]) -> str:
 
 # ----------------------------------------------------------------------
 # CLI scaffold — argparse-based (matches existing CLI for now).
-# typer would be cleaner but isn't a hard dep in Phase 0.
+# typer would be cleaner but isn't a hard dep in the current implementation.
 # ----------------------------------------------------------------------
 
 
@@ -303,7 +303,7 @@ def _render_per_node(
     run: dict[str, Any], events: list[dict[str, Any]]
 ) -> str:
     """Per-node ledger summary for ``inkfoot report --run <id>
-    --group-by node`` (ADR-1-1).
+    --group-by node`` (framework metadata contract).
 
     Groups every ``llm_call`` event by its
     ``payload.metadata.node_name`` and emits one row per node with
@@ -351,8 +351,8 @@ def _render_per_node(
         return (
             f"Run {run.get('id') or '?'} · {run.get('task') or '(no task)'}\n"
             "No node-tagged LLM calls in this run.\n"
-            "Hint: install a Pattern-C adapter (inkfoot.langgraph.instrument) "
-            "or call inkfoot.tag_node('phase') before LLM calls."
+            "Hint: install a framework adapter (inkfoot.langgraph.instrument) "
+            "or call inkfoot.tag_node('node-name') before LLM calls."
         )
 
     lines = [
@@ -425,9 +425,9 @@ def _p95(values: list[int]) -> int:
 def _render_aggregate(storage: "Storage", args: Any) -> str:
     """Cross-run aggregate view (``--last 7d`` / ``--task name``).
 
-    Phase 0 implementation: SELECT recent runs, summarise by
+    Current implementation: SELECT recent runs, summarise by
     bucket (``--group-by task`` | ``agent_kind``), emit a table
-    with five columns per E5-S3 AC:
+    with the documented five columns:
 
     * ``runs`` — count of runs in the bucket
     * ``avg_$`` — average ``total_nanodollars``
@@ -449,10 +449,10 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
 
     cutoff_ms = int(_time.time() * 1000) - seconds * 1000
 
-    # TODO(phase-2/postgres): the Storage Protocol has no
+    # TODO(future/postgres): the Storage Protocol has no
     # ``aggregate_runs_since`` method yet so we reach into the
-    # SQLite connection directly. Phase 2's Postgres backend will
-    # need a proper Protocol method; see CL5 review Finding #3.
+    # SQLite connection directly. A future Postgres backend will
+    # need a proper Protocol method; see review finding #3.
     conn = storage._conn()  # type: ignore[attr-defined]
     task_filter = getattr(args, "task", None)
     where = "started_at >= ?"
@@ -466,7 +466,7 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
         return (
             "inkfoot report: --group-by node only applies to a single "
             "run (pair with --run, not --last). Per-node aggregates "
-            "across runs are deferred to Phase 4."
+            "across runs are deferred to future aggregate analysis."
         )
     if group_by not in {"task", "agent_kind"}:
         return (
@@ -480,7 +480,7 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
     # ``NULLS LAST`` requires SQLite 3.30+ (October 2019). Modern
     # Python ships a newer SQLite; older builder images may need
     # to upgrade. Falling back to ``ORDER BY total_nd IS NULL,
-    # total_nd DESC`` would work on older SQLite, but Phase 0's
+    # total_nd DESC`` would work on older SQLite, but the current implementation
     # 3.10+ Python floor implies a recent SQLite anyway.
     cur = conn.execute(
         f"""

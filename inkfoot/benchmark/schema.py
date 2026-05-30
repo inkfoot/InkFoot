@@ -1,4 +1,4 @@
-"""The benchmark JSON artefact schema (Phase 1 / E2-S1 / phase-1-explain §4.3).
+"""The benchmark JSON artefact schema .
 
 A benchmark run produces one of these. ``inkfoot diff`` consumes
 exactly the shape defined here, so the schema is the contract

@@ -1,4 +1,4 @@
-"""SQLite storage tests (E1-S3 acceptance).
+"""SQLite storage tests.
 
 Covers:
 - Schema migration applies cleanly + is idempotent.
@@ -406,7 +406,7 @@ def test_file_storage_gives_each_thread_its_own_connection(tmp_path: Path) -> No
             # of these but Linux can reuse POSIX TIDs once a thread
             # exits — the short-lived workers below were hitting that
             # reuse on busy CI runners and producing UNIQUE-constraint
-            # collisions on events.id (CL-E1 review follow-up).
+            # collisions on events.id (review follow-up).
             s.insert_event(
                 event_id=f"e-{idx}",
                 run_id="run-1",
@@ -490,7 +490,7 @@ def test_close_is_idempotent_after_cross_thread_close(tmp_path: Path) -> None:
 def test_storage_protocol_insert_event_signature_includes_replay_kwargs() -> None:
     """The shim's emit pipeline passes ``request_json`` /
     ``response_json`` / ``tool_result_json`` / ``content_redacted``.
-    The Protocol must declare them so a Phase-2 Postgres backend
+    The Protocol must declare them so a future Postgres backend
     that implements only the Protocol surface accepts the call
     without raising ``TypeError: unexpected keyword argument``.
     """

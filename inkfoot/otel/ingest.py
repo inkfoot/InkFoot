@@ -1,4 +1,4 @@
-"""Local OTLP/JSON ingest listener (Phase 1 / E3-S2).
+"""Local OTLP/JSON ingest listener.
 
 Spins up an :class:`http.server.ThreadingHTTPServer` on a
 configurable port (default 4318, the OTLP HTTP default) and
@@ -7,7 +7,7 @@ Each accepted span is translated into a :class:`NeutralCall` via
 :mod:`inkfoot.otel.mapping` and persisted to the active storage
 backend as an ``llm_call`` event.
 
-Per ADR-1-2 a user running both auto-OTel and the native shim
+Per dedup contract a user running both auto-OTel and the native shim
 will produce two events per call. We de-duplicate by
 ``(span_id, response_id)``: the shim's event lands first
 (synchronous code path), the OTel hop arrives later through the
@@ -15,10 +15,10 @@ collector and is silently dropped. The dedup table is per
 process, LRU-bounded so a long-lived collector relationship
 can't pin unbounded memory.
 
-OTLP/protobuf is **not** supported in Phase 1 — Content-Type:
+OTLP/protobuf is **not** supported in Content-Type:
 application/x-protobuf returns 415 Unsupported Media Type with a
 remediation hint. Most collectors can be configured to use the
-JSON encoder; that's the lighter-dep path for E3.
+JSON encoder; that's the lighter-dep path for the OTLP/JSON implementation.
 
 DoS hardening (round-2 review #1): the handler caps the request
 body at :data:`_MAX_INGEST_BYTES` and the underlying socket
@@ -77,7 +77,7 @@ DEFAULT_INGEST_TASK = "otel-ingest"
 
 # Base URL appended to error responses so an operator hitting a
 # 415 can jump straight to the relevant recipe. The site goes
-# live with E5 / E6; until then the URL is harmless boilerplate
+# live with the docs site; until then the URL is harmless boilerplate
 # that resolves once inkfoot.dev ships.
 _DOCS_BASE_URL = "https://inkfoot.dev"
 
@@ -115,7 +115,7 @@ def _attr_value(otel_attr: Mapping[str, Any]) -> Any:
         arr = otel_attr["arrayValue"].get("values") or []
         return [_attr_value(v) for v in arr]
     if "kvlistValue" in otel_attr:
-        # GenAI Phase 1 doesn't emit kvlist attrs, but a forward-
+        # GenAI does not emit kvlist attrs, but a forward-
         # compatible decode keeps the receiver from silently
         # dropping a future-spec field. Return as a Python dict so
         # downstream code can introspect.
@@ -396,7 +396,7 @@ class OTLPHTTPReceiver:
                 if ctype == "application/x-protobuf":
                     self._send_text(
                         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                        "inkfoot Phase 1 ingest accepts application/json only "
+                        "inkfoot ingest accepts application/json only "
                         "(configure your collector to use the OTLP JSON "
                         "encoder) — see "
                         f"{_DOCS_BASE_URL}/recipes/otel-honeycomb/#1-configure-the-collector",
@@ -538,7 +538,7 @@ def _looks_like_genai_span(attrs: Mapping[str, Any]) -> bool:
     """Return True when ``attrs`` carries a GenAI attribute.
 
     The receiver's contract is "translate GenAI spans"
-    (phase-1-explain §4.2.2); spans from unrelated subsystems
+    ; spans from unrelated subsystems
     (HTTP, DB) shouldn't surface as ``provider="unknown"`` cost
     rows in storage."""
     if GEN_AI_SYSTEM in attrs:

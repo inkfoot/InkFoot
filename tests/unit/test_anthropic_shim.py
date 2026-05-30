@@ -1,4 +1,4 @@
-"""AnthropicShim tests (E3-S2 acceptance).
+"""AnthropicShim tests.
 
 Covers:
 - After install, ``Messages.create`` is the shim; the original

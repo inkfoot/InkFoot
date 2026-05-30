@@ -1,17 +1,17 @@
-"""E1-S5 — Pattern B ergonomic helpers (``tag_node`` + ``checkpoint``).
+"""Pattern B ergonomic helpers (``tag_node`` + ``checkpoint``).
 
 Pattern B is the raw-SDK integration shape: ``@agent_run`` already
-exists from Phase 0 E5; Phase 1 promotes it to the canonical no-
-framework path and adds:
+provides run scoping; these helpers make raw-SDK instrumentation the
+canonical no-framework path:
 
 * :func:`inkfoot.tag_node` — manual analogue of LangGraph per-node
   attribution. Sets ``InMemoryRunState.node_name`` so the *next*
   LLM call's translator stamps it onto
   ``NeutralCall.metadata["node_name"]``.
 * :func:`inkfoot.checkpoint` — emits a ``checkpoint`` event so
-  reports can compute time deltas between named phases.
+  reports can compute time deltas between named checkpoints.
 
-The Phase-0 ``@agent_run`` decorator stays unchanged; these tests
+The current ``@agent_run`` decorator stays unchanged; these tests
 cover the new surface + assert the integration with the existing
 run-lifecycle ContextVar.
 """
@@ -110,7 +110,7 @@ def test_tag_node_outside_run_raises_no_active_run() -> None:
 def test_tag_node_flows_into_translator_metadata(
     instrumented: Path,
 ) -> None:
-    """The end-to-end semantic: after ``tag_node('phase')``, a
+    """The end-to-end semantic: after ``tag_node('retrieval')``, a
     translator running under the same run sees the value on
     :class:`InMemoryRunState` and stamps it onto
     :attr:`NeutralCall.metadata`."""
@@ -217,7 +217,7 @@ def test_checkpoint_rejects_non_string_label(instrumented: Path) -> None:
 def test_checkpoint_outside_run_raises_no_active_run() -> None:
     _clear_current_run()
     with pytest.raises(NoActiveRun, match="agent_run"):
-        checkpoint("phase")
+        checkpoint("stage")
 
 
 # ----------------------------------------------------------------------

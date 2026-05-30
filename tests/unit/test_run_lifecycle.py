@@ -1,5 +1,5 @@
 """Tests for ``inkfoot.agent_run`` + ``set_outcome`` / ``tag`` /
-``tag_retrieval`` / ``report_cost`` (E5-S1 + E5-S2 acceptance).
+``tag_retrieval`` / ``report_cost`` .
 
 The run-lifecycle code touches storage, so each test sets up a
 real :class:`SQLiteStorage` (in-memory or tempfile) via

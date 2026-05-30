@@ -1,4 +1,4 @@
-"""Tokeniser tests (E2-S3 acceptance).
+"""Tokeniser tests.
 
 Covers:
 - OpenAI ``gpt-4o`` returns an exact ``tiktoken`` count with
@@ -227,7 +227,7 @@ def test_tokenise_tools_propagates_estimation_flag_on_anthropic(
 
 
 # ----------------------------------------------------------------------
-# Tool-schema accuracy baseline (E2-S3 T4 — ±5% bar)
+# Tool-schema accuracy baseline (accuracy baseline: +/-5% bar)
 # ----------------------------------------------------------------------
 
 
@@ -327,7 +327,7 @@ def test_tokenise_tools_matches_deterministic_baseline() -> None:
 def test_tokenise_tools_is_within_five_percent_of_baseline() -> None:
     """Acceptance bar: the spec's ±5% target against
     provider-reported counts. We don't have a recorded provider
-    count yet (deferred to E6's hand-labelled corpus), so we
+    count yet (deferred to the hand-labelled corpus), so we
     bracket the bar against the deterministic baseline. This
     catches a future refactor that swaps in a worse tokeniser
     accidentally."""

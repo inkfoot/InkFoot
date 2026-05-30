@@ -1,10 +1,10 @@
-"""Tests for the frozen public import surface (E1-S1 acceptance).
+"""Tests for the frozen public import surface.
 
 The contract: ``from inkfoot import *`` exposes exactly the names in
 ``inkfoot.__all__`` — no underscore-prefixed modules leak, no module
 attributes from imported deps bleed through, and every documented
 callable exists (even if it raises ``NotImplementedError`` because it
-ships in a later epic).
+ships in a later release).
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ EXPECTED_SURFACE = frozenset(
         "__version__",
         "instrument",
         "agent_run",
-        "checkpoint",  # Phase 1 / E1-S5
+        "checkpoint",  # public helper
         "set_outcome",
         "tag",
-        "tag_node",  # Phase 1 / E1-S5
+        "tag_node",  # public helper
         "tag_retrieval",
         "report_cost",
         "InkfootError",
@@ -85,7 +85,7 @@ def test_all_public_callables_resolve_to_real_implementations(
 ) -> None:
     """Every name in ``__all__`` that's a callable now points at a
     real implementation (no more NotImplementedError stubs after
-    E5)."""
+    )."""
     fn = getattr(inkfoot, callable_name)
     assert callable(fn)
     assert fn.__module__ == expected_module

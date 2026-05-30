@@ -1,11 +1,11 @@
 """Pricing module — per-token nanodollar rates for cost estimation.
 
-Snapshot of the public per-Mtok pricing of every model Phase 0
+Snapshot of the public per-Mtok pricing of every model the current implementation
 supports, expressed as integer nanodollars per token (ADR-0-4). All
-math is integer; no floats anywhere. See ``phase-0-classify.md``
+math is integer; no floats anywhere. See ``the architecture notes``
 §5.11 for the source table.
 
-The OSS ships a *static* snapshot; Phase 3's Cloud variant pulls
+The OSS ships a *static* snapshot; future Cloud variant pulls
 fresh tables on signin (see ``PRICING_TABLE_REVISION`` for the
 revision the dashboard checks against).
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily fixture extractor — exports recent runs as JSON fixtures.
 
-Per E6-S1 T4: a cron-friendly script the team runs nightly on the
+Cron-friendly script the team runs on the
 production DB to harvest the prior day's runs as JSON fixtures.
 The fixtures land alongside ``tests/fixtures/internal/`` (default)
 or wherever ``--output`` points. Each fixture is the same shape the
@@ -16,7 +16,7 @@ validation harness consumes:
       "response": { ... }
     }
 
-For runs recorded under ``capture_mode='metadata'`` (the Phase 0
+For runs recorded under ``capture_mode='metadata'`` (the current implementation
 default), only request/response **metadata** is exported — the
 ``event_contents`` sibling table doesn't get queried, so prompts +
 responses are never written to disk. Set ``--include-content`` to
@@ -154,11 +154,11 @@ def extract(
     storage = SQLiteStorage(path=db_path)
     storage.connect()
     try:
-        # TODO(phase-2/postgres): the Storage Protocol has no
+        # TODO(future/postgres): the Storage Protocol has no
         # ``iter_events_since(occurred_at_ms, kind=...)`` method
         # yet so we reach into the SQLite connection directly.
-        # Phase 2's Postgres backend will need a Protocol method
-        # (CL5 review Finding #3 enumerates the other call sites
+        # a future Postgres backend will need a Protocol method
+        # (review finding #3 enumerates the other call sites
         # that share this pattern).
         conn = storage._conn()  # type: ignore[attr-defined]
         where = "e.kind = 'llm_call' AND e.occurred_at >= ?"

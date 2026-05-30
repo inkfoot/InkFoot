@@ -1,13 +1,13 @@
 """OpenAI Agents SDK adapter — Pattern-C wrap for ``Agent.run`` plus
 the tool-dispatch layer.
 
-Per phase-1-explain §4.1.2 + E1-S3 task list:
+OpenAI Agents adapter:
 
 * Wrap ``Agent.run`` and ``Agent.run_async`` so the loop is scoped
   under an :func:`inkfoot.agent_run`.
 * Emit a ``tool_dispatched`` event per tool invocation with
   ``tool_name``, ``tool_args_hash``, and ``dispatch_latency_ms``.
-* Declare capability so Phase-2 modification policies that target
+* Declare capability so future modification policies that target
   ``Agent.run`` register cleanly.
 
 Duck-typed against the SDK — no module-load-time import. The
@@ -18,7 +18,7 @@ The wrapping primitives (``wrap_run_method``, ``wrap_tool_dispatcher``,
 ``install_attr``, ``TOOL_DISPATCH_CANDIDATES``) live in
 :mod:`inkfoot.adapters._shared` so the Anthropic Agent adapter can
 share them without reaching for cross-module private names
-(CL-E1 review Finding #3).
+(review finding #3).
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class _OpenAIAgentsInstrumentation:
     ``shutdown()`` unwraps the entry-point + tool-dispatch patches
     on the agent instance. The adapter-level active-pointer in
     :data:`~inkfoot.adapters._registry.AdapterRegistry` is handled
-    by the adapter's install-count book-keeping (CL-E1 review
+    by the adapter's install-count book-keeping (review
     Finding #4) — when the last live instrumentation shuts down,
     the active pointer clears automatically. Operators who want to
     force an early deactivation can call
@@ -162,7 +162,7 @@ class OpenAIAgentsAdapter:
         the install count. When the count reaches zero, the adapter
         auto-clears its active-pointer slot — so a user who only
         calls ``inst.shutdown()`` doesn't leave the registry
-        pointing at a "dead" adapter (CL-E1 review Finding #4).
+        pointing at a "dead" adapter (review finding #4).
         """
         if self._install_count > 0:
             self._install_count -= 1
@@ -172,11 +172,11 @@ class OpenAIAgentsAdapter:
                 AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
-        """Phase 1: observation-only — Phase 2 modification policies
+        """Observation-only — future modification policies
         (``LazyToolExposure``, ``CheapSummariser``) will enumerate
         here when they land. Empty set for now means the
         observation-policy fallback path in :func:`register_policies`
-        accepts the three Phase-0 observation policies cleanly."""
+        accepts the three current observation policies cleanly."""
         return set()
 
     def shutdown(self) -> None:

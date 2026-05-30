@@ -1,4 +1,4 @@
-"""Bidirectional mapping tests (Phase 1 / E3-S1 T3)."""
+"""Bidirectional mapping tests."""
 
 from __future__ import annotations
 

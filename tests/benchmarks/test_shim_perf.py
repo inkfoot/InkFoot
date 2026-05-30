@@ -1,4 +1,4 @@
-"""Shim hot-path benchmark — covers Finding #6 in the CL3 review.
+"""Shim hot-path benchmark — covers Finding #6 in the review.
 
 §9.1 budgets:
 
@@ -72,7 +72,7 @@ def _seed(storage: SQLiteStorage) -> str:
 
 
 def test_metadata_mode_hot_path_under_perf_budget(benchmark, shim_setup) -> None:
-    """Metadata mode (the default Phase 0 posture) hits the §9.1
+    """Metadata mode (the default metadata-only posture) hits the §9.1
     hot-path budget.
 
     Asserts on median + p95 rather than mean: shared CI runners
