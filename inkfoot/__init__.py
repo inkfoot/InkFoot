@@ -32,7 +32,14 @@ Phase 1 progress:
   ``inkfoot/diff-action`` GitHub Action (sticky PR comment via the
   hidden ``<!-- inkfoot-diff-action -->`` marker). Modules:
   ``inkfoot.benchmark`` and ``inkfoot.diff``.
-* E3 / E4 / E5 / E6 — not yet shipped.
+* E3 — OpenTelemetry ingest + export. Ships
+  ``inkfoot.instrument(otel_ingest_port=..., otel_export_endpoint=...)``
+  and the :mod:`inkfoot.otel` package (pinned GenAI conventions
+  v1.27.0, bidirectional mapping, stdlib-only OTLP/JSON listener
+  with ADR-1-2 ``(span_id, response_id)`` dedup, batched
+  background exporter that WARN-and-continues on collector
+  failures).
+* E4 / E5 / E6 — not yet shipped.
 
 E2 + E3 internals (``CausalTokenLedger``, ``NeutralCall``,
 ``AnthropicTranslator``, ``OpenAITranslator``,

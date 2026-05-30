@@ -10,12 +10,12 @@ automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
 savings against real provider invoices.
 
-**Status:** Phase 0 is **code-complete** and Phase 1 E1 + E2 are
-now landed. Phase 0 epics E1–E6 shipped the Pattern-A SDK shims,
-the 14-field Causal Token Ledger, the smell engine, the report
-CLI, the validation harness, and the perf gates. Phase 1 E1 ships
-Pattern-C framework adapters (LangGraph, OpenAI Agents SDK,
-Anthropic Agent SDK) + the Pattern-B ergonomic helpers
+**Status:** Phase 0 is **code-complete** and Phase 1 E1 + E2 + E3
+are now landed. Phase 0 epics E1–E6 shipped the Pattern-A SDK
+shims, the 14-field Causal Token Ledger, the smell engine, the
+report CLI, the validation harness, and the perf gates. Phase 1
+E1 ships Pattern-C framework adapters (LangGraph, OpenAI Agents
+SDK, Anthropic Agent SDK) + the Pattern-B ergonomic helpers
 (`tag_node`, `checkpoint`) — `inkfoot.langgraph.instrument(graph)`
 gives per-node attribution via `inkfoot report --run <id>
 --group-by node`. Phase 1 E2 ships the CI cost-review workflow:
@@ -24,13 +24,20 @@ artefact; `inkfoot diff` compares two artefacts and produces a
 Markdown PR comment + JSON report with an `ok|warn|fail` verdict
 and exit codes; the composite `inkfoot/diff-action` GitHub Action
 wraps both behind a one-line workflow step with a sticky PR
-comment. The remaining Phase 0 work is the *operator-process*
-half of E6 (six weeks of production exposure, 50 labelled runs,
-weekly smell review, go/no-go decision). Phase 1 E3–E6 (OTel
-ingest/export, smell rendering + tail, docs site, OSS launch) are
-still ahead. The architecture spec + roadmap + per-phase epic
-docs live in a separate documentation repository (see project
-owner).
+comment. Phase 1 E3 ships bidirectional OpenTelemetry GenAI
+compatibility: `inkfoot.instrument(otel_ingest_port=4318)` opens
+a stdlib-only OTLP/JSON receiver that translates `gen_ai.*`
+spans into Inkfoot's 14-field ledger (deduplicated against the
+native shim via ADR-1-2), and
+`inkfoot.instrument(otel_export_endpoint=...)` mirrors every
+`llm_call` event back out as an OTel span (smells / outcomes as
+logs) to any collector. The remaining Phase 0 work is the
+*operator-process* half of E6 (six weeks of production
+exposure, 50 labelled runs, weekly smell review, go/no-go
+decision). Phase 1 E4–E6 (smell rendering + tail, docs site, OSS
+launch) are still ahead. The architecture spec + roadmap +
+per-phase epic docs live in a separate documentation repository
+(see project owner).
 
 The user-facing surface today: `inkfoot.instrument()` to monkey-
 patch the SDKs, `@inkfoot.agent_run(task=...)` decorator + context
