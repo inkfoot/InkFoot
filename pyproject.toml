@@ -54,6 +54,24 @@ anthropic-agent = [
     "anthropic-agent>=0.1,<0.3",
 ]
 
+# Convenience meta-extra: install every framework adapter at
+# once. This is the shape the ``inkfoot/diff-action`` GitHub
+# Action installs in CI, so consumer scenarios can import any of
+# the adapters without a per-extra dance.
+all = [
+    "inkfoot[langgraph,openai-agents,anthropic-agent]",
+]
+
+# Docs site build deps. Installed by `pip install inkfoot[docs]`;
+# CI's docs workflow uses the same extra so the build never falls
+# out of sync with the dev recipe documented in the README.
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+    "pymdown-extensions>=10.7",
+]
+
 [project.scripts]
 inkfoot = "inkfoot.cli.main:main"
 
