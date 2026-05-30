@@ -166,7 +166,7 @@ def test_raising_smell_is_isolated_others_continue() -> None:
     assert results[0].smell.id == "ok"
 
 
-def test_evaluate_aggregate_concatenates_per_run_findings() -> None:
+def test_evaluate_aggregate_groups_run_ids_per_smell() -> None:
     def _always(run, events):
         return DetectionResult(
             smell=ALW, triggered_at_sequence=0, severity="info"
@@ -178,12 +178,47 @@ def test_evaluate_aggregate_concatenates_per_run_findings() -> None:
     )
     engine = SmellEngine([ALW])
     runs: list[tuple[Any, Iterable[dict]]] = [
-        (fixture_run(), []),
-        (fixture_run(), []),
-        (fixture_run(), []),
+        ({"id": "run-A", "task": "t", "agent_kind": "x"}, []),
+        ({"id": "run-B", "task": "t", "agent_kind": "x"}, []),
+        ({"id": "run-C", "task": "t", "agent_kind": "x"}, []),
     ]
-    results = engine.evaluate_aggregate(runs)
-    assert len(results) == 3
+    triggered = engine.evaluate_aggregate(runs)
+    assert triggered == {"alw": {"run-A", "run-B", "run-C"}}
+
+
+def test_evaluate_aggregate_skips_runs_without_id() -> None:
+    def _always(run, events):
+        return DetectionResult(
+            smell=ALW, triggered_at_sequence=0, severity="info"
+        )
+
+    ALW = CostSmell(
+        id="alw", title="t", description="d", severity="info",
+        detect=_always, recommendation="r",
+    )
+    engine = SmellEngine([ALW])
+    triggered = engine.evaluate_aggregate(
+        [
+            ({"task": "no-id"}, []),
+            ({"id": "run-K", "task": "t"}, []),
+        ]
+    )
+    assert triggered == {"alw": {"run-K"}}
+
+
+def test_evaluate_aggregate_returns_empty_for_clean_runs() -> None:
+    def _never(run, events):
+        return None
+
+    NEV = CostSmell(
+        id="nev", title="t", description="d", severity="info",
+        detect=_never, recommendation="r",
+    )
+    engine = SmellEngine([NEV])
+    triggered = engine.evaluate_aggregate(
+        [({"id": "run-A", "task": "t"}, [])]
+    )
+    assert triggered == {}
 
 
 def test_engine_smells_attr_is_read_only_tuple() -> None:

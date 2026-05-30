@@ -285,7 +285,14 @@ def run(args: Any) -> int:
             return 0
 
         ledger_totals = _aggregate_ledger_totals(events)
-        smells = SmellEngine(list(DEFAULT_SMELLS)).evaluate(row, events)
+        # ``--no-smells`` is the power-user opt-out for the inline
+        # rendering. When set we hand an empty list to the renderer
+        # so the stanza disappears (and the cheaper code path skips
+        # smell evaluation entirely).
+        if getattr(args, "no_smells", False):
+            smells = []
+        else:
+            smells = SmellEngine(list(DEFAULT_SMELLS)).evaluate(row, events)
         print(
             render(
                 run=row,
@@ -544,4 +551,142 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
             f"{success_pct:>8.1f}% "
             f"{cost_per_success:>14}"
         )
+
+    if not getattr(args, "no_smells", False):
+        aggregate_stanza = _render_aggregate_smells(
+            storage=storage,
+            since_ms=cutoff_ms,
+            window_label=last,
+            task_filter=task_filter,
+        )
+        if aggregate_stanza:
+            lines.append("")
+            lines.append(aggregate_stanza)
+
     return "\n".join(lines)
+
+
+# Maximum number of recent runs the aggregate smell evaluator will
+# pull events for. Set high enough to give a meaningful "hit rate %"
+# on a busy task without making the cross-run scan unboundedly slow
+# on a years-old database. Operators with very large stores can pass
+# a tighter ``--last`` window if they want the full picture.
+_MAX_AGGREGATE_SMELL_RUNS = 500
+
+
+def _render_aggregate_smells(
+    *,
+    storage: "Storage",
+    since_ms: int,
+    window_label: str,
+    task_filter: Optional[str],
+) -> str:
+    """Render the "Aggregate smells (last 7d):" stanza for the
+    aggregate report view.
+
+    Streams up to :data:`_MAX_AGGREGATE_SMELL_RUNS` of the most
+    recent runs in the window through
+    :meth:`SmellEngine.evaluate_aggregate`, then emits
+    ``<id>: <n>/<total> runs (<pct>%)`` per smell id so the eye
+    lands on prevalence rather than absolute count.
+
+    The engine sees the runs through a counting generator so we
+    never materialise every run's events at once — important for
+    multi-turn agents where a single run can carry hundreds of
+    event rows.
+
+    Returns ``""`` when no runs matched the window — callers
+    decide whether to suppress the blank-line separator.
+    """
+    from inkfoot.smells import DEFAULT_SMELLS  # noqa: PLC0415
+    from inkfoot.smells.engine import SmellEngine  # noqa: PLC0415
+
+    counter = _CountingRunStream(
+        _iter_recent_runs_with_events(
+            storage=storage,
+            since_ms=since_ms,
+            task_filter=task_filter,
+            limit=_MAX_AGGREGATE_SMELL_RUNS,
+        )
+    )
+    engine = SmellEngine(list(DEFAULT_SMELLS))
+    triggered_runs = engine.evaluate_aggregate(counter)
+    total_runs = counter.consumed
+
+    if total_runs == 0:
+        return ""
+
+    rows = sorted(
+        ((sid, len(ids)) for sid, ids in triggered_runs.items()),
+        key=lambda row: (-row[1], row[0]),
+    )
+    if not rows:
+        return f"Aggregate smells (last {window_label}): none detected"
+
+    lines = [f"Aggregate smells (last {window_label}):"]
+    for smell_id, hit_count in rows:
+        pct = (hit_count / total_runs * 100) if total_runs else 0.0
+        lines.append(
+            f"  · {smell_id}: {hit_count}/{total_runs} runs ({pct:.0f}%)"
+        )
+    return "\n".join(lines)
+
+
+class _CountingRunStream:
+    """Generator wrapper that counts pairs consumed.
+
+    The engine reads ``(run, events)`` pairs one at a time and
+    discards each pair's events before reaching for the next, so
+    memory usage is O(1 run) rather than O(all runs). We still
+    need the total count to render the ``X/Y runs (Z%)`` line, so
+    this small adapter records the number of pairs yielded."""
+
+    def __init__(self, source: Iterable[tuple[dict[str, Any], Iterable[dict[str, Any]]]]) -> None:
+        self._source = source
+        self.consumed = 0
+
+    def __iter__(self):
+        for pair in self._source:
+            self.consumed += 1
+            yield pair
+
+
+def _iter_recent_runs_with_events(
+    *,
+    storage: "Storage",
+    since_ms: int,
+    task_filter: Optional[str],
+    limit: int,
+) -> Iterable[tuple[dict[str, Any], Iterable[dict[str, Any]]]]:
+    """Yield ``(run_row, events_iter)`` for the most recent runs in
+    the window, one at a time.
+
+    Reaches into the SQLite connection directly — the Storage
+    Protocol still needs ``recent_runs(since_ms, task, limit)`` /
+    ``max_event_rowid()`` / ``events_after_rowid(cursor, task,
+    limit)`` so a future Postgres backend can avoid raw-SQL
+    special-casing here, in the aggregate-runs SELECT above, and
+    in :mod:`inkfoot.cli.tail`. Tracked as a follow-up; the
+    current implementation keeps the layering loose so each new
+    aggregate-view feature doesn't compound the debt."""
+    conn = storage._conn()  # type: ignore[attr-defined]
+    where = "started_at >= ?"
+    params: list[Any] = [since_ms]
+    if task_filter:
+        where += " AND task = ?"
+        params.append(task_filter)
+    cur = conn.execute(
+        f"""
+        SELECT * FROM runs
+        WHERE {where}
+        ORDER BY started_at DESC
+        LIMIT ?
+        """,
+        [*params, int(limit)],
+    )
+    runs = [dict(row) for row in cur.fetchall()]
+    for run in runs:
+        run_id = run.get("id")
+        if not run_id:
+            continue
+        yield run, storage.iter_events(run_id)

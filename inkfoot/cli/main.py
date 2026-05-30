@@ -1,6 +1,6 @@
 """Top-level ``inkfoot`` CLI entry point.
 
-The current implementation ships three subcommands:
+Currently shipping subcommands:
 
 * ``inkfoot report`` — single-run attribution + smells, or
   aggregate view across recent runs (``--last 7d``).
@@ -8,9 +8,10 @@ The current implementation ships three subcommands:
   the event log after a crash or manual edit.
 * ``inkfoot tag`` — attach a ``user_tag`` event to an existing
   run after the fact.
-
-Future releases register more subcommands (``inkfoot tail``,
-``inkfoot contract check``, etc.).
+* ``inkfoot benchmark`` / ``inkfoot diff`` — scenario runner and
+  artefact comparison for the CI cost-review workflow.
+* ``inkfoot tail`` — live event stream for debugging an agent
+  while it runs.
 """
 
 from __future__ import annotations
@@ -20,7 +21,14 @@ import sys
 from typing import Sequence
 
 from inkfoot._version import __version__
-from inkfoot.cli import benchmark, diff, rebuild_aggregates, report, tag
+from inkfoot.cli import (
+    benchmark,
+    diff,
+    rebuild_aggregates,
+    report,
+    tag,
+    tail,
+)
 from inkfoot.diff.thresholds import THRESHOLD_PRESETS, DEFAULT_THRESHOLD_NAME
 
 
@@ -86,6 +94,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--show-zero",
         action="store_true",
         help="Show all 14 ledger fields including always-zero ones.",
+    )
+    rep.add_argument(
+        "--no-smells",
+        action="store_true",
+        help=(
+            "Suppress the smells stanza. By default `report` evaluates "
+            "the smell engine and renders any hits inline; pass this "
+            "for a smell-free attribution view."
+        ),
     )
     rep.set_defaults(func=report.run)
 
@@ -165,6 +182,45 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Also write the rendered report to this path.",
     )
     df.set_defaults(func=diff.run)
+
+    tl = subparsers.add_parser(
+        "tail",
+        help=(
+            "Stream events live from the database. Useful for "
+            "watching an agent's calls + smells as they happen."
+        ),
+    )
+    tl.add_argument("--db", default=None, help="Override the default DB path.")
+    tl.add_argument(
+        "--task",
+        default=None,
+        help="Only show events on runs whose `task` matches this value.",
+    )
+    tl.add_argument(
+        "--since",
+        default=None,
+        help=(
+            "Backfill events occurring within this window before tailing "
+            "live (e.g. `10m`, `2h`, `7d`). Default: no backfill — only "
+            "events inserted after the command starts."
+        ),
+    )
+    tl.add_argument(
+        "--poll-interval-ms",
+        type=int,
+        default=200,
+        help="Storage poll interval in ms (default: 200).",
+    )
+    tl.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help=(
+            "Exit after this many poll iterations. Mostly useful for "
+            "tests and one-shot scripts; omit to run until interrupted."
+        ),
+    )
+    tl.set_defaults(func=tail.run)
 
     return parser
 
