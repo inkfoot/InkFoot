@@ -244,23 +244,32 @@ class OTLPExporter:
                     exc_info=True,
                 )
         if spans:
-            self._send("traces", {"resourceSpans": [self._wrap_spans(spans)]})
+            self._send(
+                "traces",
+                {"resourceSpans": [self._wrap_spans(spans)]},
+                count=len(spans),
+            )
         if logs:
-            self._send("logs", {"resourceLogs": [self._wrap_logs(logs)]})
+            self._send(
+                "logs",
+                {"resourceLogs": [self._wrap_logs(logs)]},
+                count=len(logs),
+            )
 
-    def _send(self, kind: str, body: Mapping[str, Any]) -> None:
+    def _send(
+        self, kind: str, body: Mapping[str, Any], *, count: int
+    ) -> None:
+        """Post one OTLP batch.
+
+        The caller passes ``count`` (the number of spans / log
+        records in this batch) so the exported counter reflects
+        events, not batches (round-2 review #2)."""
         try:
             if kind == "traces":
                 self._transport.post_traces(body)
             else:
                 self._transport.post_logs(body)
-            self._stats["exported"] += sum(
-                len(rl.get("scopeLogs", [{}])[0].get("logRecords", []))
-                if kind == "logs"
-                else len(rs.get("scopeSpans", [{}])[0].get("spans", []))
-                for rs in body.get("resourceSpans", [])
-                for rl in body.get("resourceLogs", [])
-            ) or len(body.get("resourceSpans") or body.get("resourceLogs") or [])
+            self._stats["exported"] += int(count)
         except urllib.error.URLError as exc:
             self._stats["failures"] += 1
             _LOG.warning(
@@ -308,14 +317,15 @@ class OTLPExporter:
             INKFOOT_SEQUENCE: int(event.get("sequence") or 0),
         }
         body = event.get("payload_json")
-        if isinstance(body, (bytes, str)):
-            try:
-                parsed = json.loads(body)
-                body_text = json.dumps(parsed)
-            except (TypeError, ValueError):
-                body_text = body if isinstance(body, str) else body.decode(
-                    "utf-8", errors="replace"
-                )
+        # Pass the original JSON text through unchanged (round-2
+        # review #9). Re-encoding via ``json.loads/dumps`` only
+        # normalises whitespace at the cost of a wasted round-trip
+        # and an indexer's view that doesn't match what storage
+        # actually wrote.
+        if isinstance(body, bytes):
+            body_text = body.decode("utf-8", errors="replace")
+        elif isinstance(body, str):
+            body_text = body
         else:
             body_text = json.dumps(body or {})
         occurred = int(event.get("occurred_at") or 0) * 1_000_000

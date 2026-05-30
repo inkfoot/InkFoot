@@ -237,7 +237,12 @@ def test_receiver_translates_span_into_neutral_call_envelope():
         )
     )
     stats = recv.ingest_payload(payload)
-    assert stats == {"accepted": 1, "duplicates": 0, "rejected": 0}
+    assert stats == {
+        "accepted": 1,
+        "duplicates": 0,
+        "rejected": 0,
+        "skipped_non_genai": 0,
+    }
     assert len(persisted) == 1
     envelope = persisted[0]
     assert envelope["span_id"] == "span-1"
@@ -266,7 +271,12 @@ def test_receiver_dedupes_duplicate_span_id_and_response_id():
     )
     recv.ingest_payload(_otlp_payload(span))
     stats = recv.ingest_payload(_otlp_payload(span))
-    assert stats == {"accepted": 0, "duplicates": 1, "rejected": 0}
+    assert stats == {
+        "accepted": 0,
+        "duplicates": 1,
+        "rejected": 0,
+        "skipped_non_genai": 0,
+    }
     assert len(persisted) == 1
 
 
@@ -300,14 +310,24 @@ def test_receiver_records_rejected_count_when_persist_raises():
     stats = recv.ingest_payload(
         _otlp_payload(_span("span-1", attrs={GEN_AI_SYSTEM: "anthropic"}))
     )
-    assert stats == {"accepted": 0, "duplicates": 0, "rejected": 1}
+    assert stats == {
+        "accepted": 0,
+        "duplicates": 0,
+        "rejected": 1,
+        "skipped_non_genai": 0,
+    }
 
 
 def test_receiver_empty_payload_returns_zero_accepted():
     persisted: list[dict[str, Any]] = []
     recv = OTLPHTTPReceiver(persist=persisted.append, port=0)
     stats = recv.ingest_payload({})
-    assert stats == {"accepted": 0, "duplicates": 0, "rejected": 0}
+    assert stats == {
+        "accepted": 0,
+        "duplicates": 0,
+        "rejected": 0,
+        "skipped_non_genai": 0,
+    }
     assert persisted == []
 
 
@@ -315,6 +335,147 @@ def test_receiver_empty_payload_returns_zero_accepted():
 # Round-trip with the mapping module so a renamed field anywhere
 # in the chain trips this test, not the mapping suite.
 # ----------------------------------------------------------------------
+
+
+def test_receiver_inherits_resource_level_genai_attributes():
+    # Review #8: a collector that pins gen_ai.system on the
+    # resource and lets spans inherit must still produce a fully
+    # typed NeutralCall.
+    persisted: list[dict[str, Any]] = []
+    recv = OTLPHTTPReceiver(persist=persisted.append, port=0)
+    payload = {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        _kv(GEN_AI_SYSTEM, "openai"),
+                        _kv(GEN_AI_REQUEST_MODEL, "gpt-4"),
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "t",
+                                "spanId": "s",
+                                "startTimeUnixNano": "1",
+                                "endTimeUnixNano": "2",
+                                "attributes": [
+                                    _kv(cause_attr("user_input_tokens"), 20)
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    recv.ingest_payload(payload)
+    assert len(persisted) == 1
+    call = persisted[0]["neutral_call"]
+    assert call.provider == "openai"
+    assert call.model == "gpt-4"
+    assert call.ledger.user_input_tokens == 20
+
+
+def test_receiver_span_attribute_wins_over_resource_attribute():
+    persisted: list[dict[str, Any]] = []
+    recv = OTLPHTTPReceiver(persist=persisted.append, port=0)
+    payload = {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [_kv(GEN_AI_SYSTEM, "openai")]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "t",
+                                "spanId": "s",
+                                "startTimeUnixNano": "1",
+                                "endTimeUnixNano": "2",
+                                "attributes": [_kv(GEN_AI_SYSTEM, "anthropic")],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    recv.ingest_payload(payload)
+    assert persisted[0]["neutral_call"].provider == "anthropic"
+
+
+def test_receiver_skips_spans_without_genai_attribute():
+    # Review #4: non-GenAI spans (HTTP / DB / queue) skipped, and
+    # the skipped count surfaces in the stats delta.
+    persisted: list[dict[str, Any]] = []
+    recv = OTLPHTTPReceiver(persist=persisted.append, port=0)
+    payload = _otlp_payload(
+        _span("span-http", attrs={"http.method": "GET"})
+    )
+    stats = recv.ingest_payload(payload)
+    assert stats == {
+        "accepted": 0,
+        "duplicates": 0,
+        "rejected": 0,
+        "skipped_non_genai": 1,
+    }
+    assert persisted == []
+
+
+def test_receiver_kvlist_attribute_decoded_as_dict():
+    # Review #7: ``kvlistValue`` round-trips into a Python dict so
+    # downstream code can introspect future GenAI extensions
+    # without a new receiver release.
+    from inkfoot.otel.ingest import _attr_value
+
+    decoded = _attr_value(
+        {
+            "kvlistValue": {
+                "values": [
+                    {"key": "model.family", "value": {"stringValue": "claude"}}
+                ]
+            }
+        }
+    )
+    assert decoded == {"model.family": "claude"}
+
+
+def test_storage_persist_factory_evicts_oldest_trace_when_capacity_exceeded():
+    # Review #3: long-lived ingest can't grow trace_to_run
+    # without bound. Evicted entries get a fresh run id on the
+    # second visit — recorded by inserting a new run row.
+    from inkfoot.otel.ingest import storage_persist_factory
+
+    inserted: list[dict[str, Any]] = []
+
+    class _Fake:
+        def start_run(self, **kwargs):
+            inserted.append(kwargs)
+
+        def insert_event(self, **kwargs):
+            pass
+
+    persist = storage_persist_factory(storage=_Fake(), trace_map_max=2)
+    from inkfoot.ledger import CausalTokenLedger
+    from inkfoot.normalise import NeutralCall
+
+    call = NeutralCall(
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        started_at=1,
+        ended_at=2,
+        ledger=CausalTokenLedger(),
+    )
+    persist({"neutral_call": call, "trace_id": "A", "run_id": None})
+    persist({"neutral_call": call, "trace_id": "B", "run_id": None})
+    persist({"neutral_call": call, "trace_id": "C", "run_id": None})  # evicts A
+    persist({"neutral_call": call, "trace_id": "A", "run_id": None})  # fresh run
+    # 4 distinct run rows because A was evicted before its revival.
+    run_ids = [row["run_id"] for row in inserted]
+    assert len(set(run_ids)) == 4
 
 
 def test_full_round_trip_through_otlp_ingest_path():

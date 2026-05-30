@@ -70,7 +70,13 @@ def _otlp_request(span_id: str, *, response_id: str) -> dict[str, Any]:
     }
 
 
-def _post(url: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _post(
+    url: str, payload: dict[str, Any]
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """POST OTLP/JSON and return ``(status, body, headers)``.
+
+    Headers are returned as a flat dict so tests can assert on
+    the ``X-Inkfoot-Stats`` response header the receiver emits."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -79,7 +85,11 @@ def _post(url: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=5) as resp:
-        return resp.status, json.loads(resp.read().decode("utf-8"))
+        return (
+            resp.status,
+            json.loads(resp.read().decode("utf-8")),
+            dict(resp.headers.items()),
+        )
 
 
 @pytest.fixture
@@ -105,12 +115,15 @@ def receiver(storage):
 
 
 def test_post_traces_persists_an_llm_call_event(storage, receiver):
-    status, body = _post(
+    status, body, headers = _post(
         f"http://127.0.0.1:{receiver.port}/v1/traces",
         _otlp_request("span-int-1", response_id="resp-int-1"),
     )
     assert status == 200
-    assert body["_inkfoot"]["accepted"] == 1
+    # Spec-clean response body — stats ride on a response header
+    # (round-2 review #5).
+    assert body == {"partialSuccess": {}}
+    assert "accepted=1" in headers["X-Inkfoot-Stats"]
     # Drain any events under the synthesised run. There's exactly
     # one because the ingest fixture sent one span.
     conn = storage._conn()
@@ -127,12 +140,13 @@ def test_post_traces_persists_an_llm_call_event(storage, receiver):
 def test_post_traces_deduplicates_on_repeat(storage, receiver):
     payload = _otlp_request("span-dup", response_id="resp-dup")
     _post(f"http://127.0.0.1:{receiver.port}/v1/traces", payload)
-    status, body = _post(
+    status, body, headers = _post(
         f"http://127.0.0.1:{receiver.port}/v1/traces", payload
     )
     assert status == 200
-    assert body["_inkfoot"]["accepted"] == 0
-    assert body["_inkfoot"]["duplicates"] == 1
+    stats = headers["X-Inkfoot-Stats"]
+    assert "accepted=0" in stats
+    assert "duplicates=1" in stats
 
 
 def test_post_traces_rejects_protobuf_with_415(storage, receiver):
@@ -169,6 +183,77 @@ def test_post_traces_invalid_json_returns_400(storage, receiver):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 400
+
+
+def test_post_traces_rejects_oversized_body_with_413(storage, receiver):
+    # Review #1: an oversize Content-Length must bounce with 413
+    # before the server tries to allocate a multi-GB buffer.
+    from inkfoot.otel.ingest import _MAX_INGEST_BYTES
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{receiver.port}/v1/traces",
+        method="POST",
+        data=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(_MAX_INGEST_BYTES + 1),
+        },
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=5)
+    assert exc.value.code == 413
+
+
+def test_post_traces_rejects_substring_content_type_match(storage, receiver):
+    # Review #6: a media-type that contains the substring
+    # "application/json" but isn't actually JSON must be rejected.
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{receiver.port}/v1/traces",
+        method="POST",
+        data=b"{}",
+        headers={"Content-Type": "text/x-application/json-bogus"},
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=5)
+    assert exc.value.code == 415
+
+
+def test_post_traces_skips_non_genai_spans(storage, receiver):
+    # Review #4: a collector forwarding its full trace export
+    # shouldn't drop HTTP / DB rows into storage as
+    # ``provider="unknown"`` llm_call events.
+    payload = {
+        "resourceSpans": [
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "trace-x",
+                                "spanId": "span-x",
+                                "startTimeUnixNano": "1",
+                                "endTimeUnixNano": "2",
+                                "attributes": [
+                                    {
+                                        "key": "http.method",
+                                        "value": {"stringValue": "GET"},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    status, body, headers = _post(
+        f"http://127.0.0.1:{receiver.port}/v1/traces", payload
+    )
+    assert status == 200
+    assert "skipped_non_genai=1" in headers["X-Inkfoot-Stats"]
+    conn = storage._conn()
+    cur = conn.execute("SELECT COUNT(*) FROM events")
+    assert cur.fetchone()[0] == 0
 
 
 def test_two_distinct_traces_land_under_two_runs(storage, receiver):

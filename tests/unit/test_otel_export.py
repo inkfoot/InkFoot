@@ -156,6 +156,76 @@ def test_smell_event_becomes_one_log_record():
     assert "unstable-prompt-prefix" in record["body"]["stringValue"]
 
 
+def test_exported_counter_equals_event_count_not_batch_count():
+    # Review #2: the stats counter previously incremented by 1
+    # per batch regardless of the span count. With a batch of N
+    # events the counter must read N afterwards.
+    transport = _FakeTransport()
+    exporter = _exporter_with(transport, batch_size=4)
+    exporter.start()
+    try:
+        for i in range(4):
+            exporter.enqueue_event(_llm_call_event(event_id=f"evt-{i}"))
+        assert _wait_until(lambda: exporter.stats["exported"] == 4)
+    finally:
+        exporter.stop()
+    # Exactly one HTTP batch was sent (batch_size=4) carrying
+    # four spans; the counter must reflect events, not batches.
+    assert len(transport.traces) == 1
+    assert exporter.stats["exported"] == 4
+
+
+def test_exported_counter_counts_log_records_per_event():
+    transport = _FakeTransport()
+    exporter = _exporter_with(transport, batch_size=3)
+    exporter.start()
+    try:
+        for i in range(3):
+            exporter.enqueue_event(
+                {
+                    "event_id": f"evt-smell-{i}",
+                    "run_id": "run-1",
+                    "kind": "smell",
+                    "occurred_at": 1_700_000_000_000,
+                    "sequence": i,
+                    "payload_json": json.dumps(
+                        {"smell_id": "unstable-prompt-prefix"}
+                    ),
+                }
+            )
+        assert _wait_until(lambda: exporter.stats["exported"] == 3)
+    finally:
+        exporter.stop()
+    assert len(transport.logs) == 1
+    assert exporter.stats["exported"] == 3
+
+
+def test_log_body_preserves_original_payload_text():
+    # Review #9: backends indexing log bodies as strings should
+    # see the same text that storage wrote, not a json.loads /
+    # json.dumps re-encoding.
+    transport = _FakeTransport()
+    exporter = _exporter_with(transport, batch_size=1)
+    original_body = '{"smell_id":"unstable-prompt-prefix","extra":1}'
+    exporter.start()
+    try:
+        exporter.enqueue_event(
+            {
+                "event_id": "evt-smell-orig",
+                "run_id": "run-1",
+                "kind": "smell",
+                "occurred_at": 1_700_000_000_000,
+                "sequence": 1,
+                "payload_json": original_body,
+            }
+        )
+        assert _wait_until(lambda: transport.logs)
+    finally:
+        exporter.stop()
+    record = transport.logs[0]["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
+    assert record["body"]["stringValue"] == original_body
+
+
 def test_outcome_event_becomes_info_log():
     transport = _FakeTransport()
     exporter = _exporter_with(transport)
