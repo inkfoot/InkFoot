@@ -29,6 +29,8 @@ import threading
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from inkfoot.otel.export import OTLPExporter
+    from inkfoot.otel.ingest import OTLPHTTPReceiver
     from inkfoot.policy import Policy
     from inkfoot.storage import Storage
     from inkfoot.storage.aggregator import AggregatorWorker
@@ -48,6 +50,8 @@ _CAPTURE_MODE = "metadata"
 # References to objects we need to tear down at exit.
 _STORAGE: Optional["Storage"] = None
 _WORKER: Optional["AggregatorWorker"] = None
+_OTEL_INGEST: Optional["OTLPHTTPReceiver"] = None
+_OTEL_EXPORTER: Optional["OTLPExporter"] = None
 _ATEXIT_REGISTERED = False
 
 
@@ -64,6 +68,9 @@ def instrument(
     storage: Optional["Storage"] = None,
     log_level: str = "WARNING",
     capture_mode: str = "metadata",
+    otel_export_endpoint: Optional[str] = None,
+    otel_ingest_port: Optional[int] = None,
+    otel_ingest_host: str = "127.0.0.1",
 ) -> None:
     """Install Pattern A monkey-patches for the detected SDKs, start
     the aggregator, and register the supplied policies.
@@ -72,8 +79,19 @@ def instrument(
     the second call (idempotent). Subsequent calls do **not** add
     new policies; clear via :func:`shutdown` first if you need to
     re-instrument with a different policy set.
+
+    Phase 1 / E3 OTel kwargs:
+
+    * ``otel_export_endpoint`` — when set, every ``llm_call`` event
+      is mirrored to this OTel collector base URL via OTLP/JSON
+      HTTP. Smells + outcomes mirror as OTel logs. Default: off.
+    * ``otel_ingest_port`` — when set, a local OTLP/JSON HTTP
+      receiver listens on ``otel_ingest_host:port`` and translates
+      GenAI spans into ``llm_call`` events. Default: off (no port
+      opened).
     """
     global _INSTRUMENTED, _CAPTURE_MODE, _STORAGE, _WORKER
+    global _OTEL_INGEST, _OTEL_EXPORTER
 
     if capture_mode not in {"metadata", "replay"}:
         raise ValueError(
@@ -95,6 +113,33 @@ def instrument(
 
             storage = SQLiteStorage()
         storage.connect()
+        # Keep a reference to the raw storage so the OTel ingest
+        # receiver can write straight into it. That avoids a cycle
+        # where an ingested span re-exports out the same endpoint
+        # it came from.
+        raw_storage = storage
+
+        # OTel export tap (E3-S3): wrap storage so insert_event
+        # mirrors to the exporter. Installed *before* the policy /
+        # shim plumbing reads ``_STORAGE`` so every subsequent
+        # write goes through the tap.
+        if otel_export_endpoint:
+            from inkfoot.otel.export import (  # noqa: PLC0415
+                ExportTransport,
+                OTLPExporter,
+                tap_storage,
+            )
+
+            transport = ExportTransport(endpoint=otel_export_endpoint)
+            exporter = OTLPExporter(transport=transport)
+            exporter.start()
+            storage = tap_storage(storage, exporter)
+            _OTEL_EXPORTER = exporter
+            _LOG.info(
+                "OTel export enabled — forwarding events to %s",
+                otel_export_endpoint,
+            )
+
         _STORAGE = storage
 
         # Configure logger level for the inkfoot tree.
@@ -128,6 +173,25 @@ def instrument(
         worker.start()
         _WORKER = worker
 
+        # OTel ingest receiver (E3-S2): bound to the *unwrapped*
+        # storage so spans dropped in by external collectors don't
+        # bounce back out through the OTel export tap (the shim's
+        # own writes still tap as normal).
+        if otel_ingest_port is not None:
+            from inkfoot.otel.ingest import (  # noqa: PLC0415
+                OTLPHTTPReceiver,
+                storage_persist_factory,
+            )
+
+            persist = storage_persist_factory(storage=raw_storage)
+            receiver = OTLPHTTPReceiver(
+                host=otel_ingest_host,
+                port=int(otel_ingest_port),
+                persist=persist,
+            )
+            receiver.start()
+            _OTEL_INGEST = receiver
+
         _register_atexit_hook_once()
         _INSTRUMENTED = True
 
@@ -141,7 +205,24 @@ def shutdown() -> None:
     the atexit hook does it on process exit.
     """
     global _INSTRUMENTED, _STORAGE, _WORKER, _CAPTURE_MODE
+    global _OTEL_INGEST, _OTEL_EXPORTER
     with _INSTRUMENT_LOCK:
+        # Tear down OTel ingest *first* so no more spans land while
+        # we're closing storage. Stop is idempotent.
+        if _OTEL_INGEST is not None:
+            try:
+                _OTEL_INGEST.stop()
+            except Exception:  # pylint: disable=broad-except
+                _LOG.warning("OTel ingest stop raised", exc_info=True)
+            _OTEL_INGEST = None
+        # Export drains its queue before shutting down so events
+        # already produced by the agent aren't silently dropped.
+        if _OTEL_EXPORTER is not None:
+            try:
+                _OTEL_EXPORTER.stop()
+            except Exception:  # pylint: disable=broad-except
+                _LOG.warning("OTel exporter stop raised", exc_info=True)
+            _OTEL_EXPORTER = None
         # E5: any active agent_run that didn't exit cleanly (process
         # exit between start_run and end_run) needs its row flipped
         # from 'running' to 'error' with error_message='abandoned'.
