@@ -1,0 +1,133 @@
+site_name: Inkfoot
+site_url: https://inkfoot.dev
+site_description: >-
+  Inkfoot — Find the hidden cost trail in every AI agent run.
+  Causal token economics for LLM agents: per-token attribution,
+  named cost smells, declarative Token Contracts, OpenTelemetry,
+  and CI cost review.
+# ``repo_name`` controls the label rendered next to the GitHub
+# icon in the page header. We drop the org slug so the visible
+# label reads ``Inkfoot`` — the brand — and matches ``site_name``
+# above. The ``repo_url`` below is the GitHub-canonical mixed-
+# case URL (``inkfoot/InkFoot``) so the actual link still
+# resolves.
+repo_name: Inkfoot
+repo_url: https://github.com/inkfoot/InkFoot
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - search.suggest
+    - search.share
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+  logo: assets/inkfoot-mark.svg
+  favicon: assets/favicon.svg
+
+extra_css:
+  - assets/brand.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/inkfoot/InkFoot
+      name: Inkfoot on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/inkfoot/
+      name: Inkfoot on PyPI
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: false
+            docstring_style: google
+            members_order: source
+            heading_level: 3
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts:
+      - The Causal Token Ledger: concepts/causal-token-ledger.md
+      - Cost Smells: concepts/cost-smells.md
+      - Accuracy & Estimation: concepts/accuracy.md
+      - Observation Policies: concepts/observation-policies.md
+      - Tracking Runs: concepts/tracking-runs.md
+      - Storage & Configuration: concepts/storage.md
+      - Performance & Overhead: concepts/performance.md
+      - OpenTelemetry: concepts/otel.md
+  - Frameworks:
+      - LangGraph: frameworks/langgraph.md
+      - OpenAI Agents SDK: frameworks/openai-agents.md
+      - Anthropic Agent SDK: frameworks/anthropic-agent.md
+      - Raw Provider SDK: frameworks/raw-sdk.md
+  - Recipes:
+      - Find your most expensive agent: recipes/find-expensive-agent.md
+      - Spot cache-miss patterns: recipes/spot-cache-misses.md
+      - Set up CI cost review: recipes/set-up-ci.md
+      - OTel + Honeycomb: recipes/otel-honeycomb.md
+      - CI on GitLab: recipes/ci-gitlab.md
+      - CI on Bitbucket: recipes/ci-bitbucket.md
+      - Extract replay fixtures: recipes/extract-fixtures.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Python API: reference/api.md

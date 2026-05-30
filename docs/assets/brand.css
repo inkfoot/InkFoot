@@ -1,0 +1,49 @@
+/* Minimal brand overrides on top of mkdocs-material. */
+
+:root {
+  --md-text-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --md-code-font: "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code",
+    "Roboto Mono", Consolas, monospace;
+}
+
+/* Tighten the hero "above-the-fold" treatment on the homepage so
+   the value prop + install command are visible on a laptop screen
+   without scrolling. */
+.md-typeset h1#inkfoot {
+  font-size: 2.6rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.4em;
+}
+
+.md-typeset .lede {
+  font-size: 1.15rem;
+  line-height: 1.55;
+  color: var(--md-default-fg-color--light);
+  margin: 0 0 1.2em;
+  max-width: 36em;
+}
+
+/* "Call-to-action" buttons styled flatter than the default
+   pill-button — closer to the GitHub release-page convention. */
+.md-typeset .cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  margin: 1.6em 0 2em;
+}
+
+.md-typeset .cta-row .md-button {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Footnote-style "what this isn't" callouts on concept pages. */
+.md-typeset .not-this {
+  border-left: 3px solid var(--md-accent-fg-color);
+  background: var(--md-default-bg-color);
+  padding: 0.8em 1em;
+  margin: 1.2em 0;
+  font-size: 0.92rem;
+  color: var(--md-default-fg-color--light);
+}
