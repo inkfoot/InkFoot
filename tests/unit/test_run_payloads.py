@@ -1,4 +1,4 @@
-"""Tests for the event payload dataclasses (E2-S2 acceptance).
+"""Tests for the event payload dataclasses.
 
 Covers:
 - ``Run`` field set matches the SQLite ``runs`` table 1:1
@@ -193,14 +193,14 @@ def test_in_memory_run_state_has_no_storage_helpers() -> None:
         "stable_system_prefix",
         "recent_calls",
         "retry_counts",
-        # E5 added a pre-call token counter for inkfoot.tag_retrieval.
+        # The run lifecycle added a pre-call token counter for inkfoot.tag_retrieval.
         # Process-local; not persisted.
         "pending_retrieved_context_tokens",
-        # Phase 1 E1 (ADR-1-1): adapter / tag_node-supplied node name
+        # the adapter work (framework metadata contract): adapter / tag_node-supplied node name
         # the translator stamps onto NeutralCall.metadata["node_name"].
         # Process-local; not persisted.
         "node_name",
-        # Phase 1 E1: LangGraph adapter snapshots a stable fingerprint
+        # the adapter work: LangGraph adapter snapshots a stable fingerprint
         # of the compiled graph's tools array. Process-local; not
         # persisted.
         "tools_fingerprint",

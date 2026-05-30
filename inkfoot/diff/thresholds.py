@@ -1,4 +1,4 @@
-"""Verdict threshold presets for ``inkfoot diff`` (phase-1-explain §4.4).
+"""Verdict threshold presets for ``inkfoot diff``.
 
 The architecture pins three presets:
 
@@ -11,8 +11,8 @@ Thresholds are *positive* fractions for cost regressions (where a
 positive delta means "worse") and *positive* fractions for cache-hit
 drops (where the absolute drop magnitude crosses the threshold).
 ``_critical_smells`` is the set of smell ids that mean an automatic
-``fail`` when newly introduced — Phase 1 ships the two
-clearest-cut Phase-0 smells; Phase 2's Token Contracts override
+``fail`` when newly introduced — The current release ships the two
+clearest-cut current smells; future Token Contracts override
 this per-task.
 """
 

@@ -1,7 +1,7 @@
 """Pinned OTel GenAI semantic-conventions version + attribute names.
 
 The OTel GenAI conventions are still evolving as of mid-2026
-(phase-1-explain ADR-1-1 "OTel mapping drift" risk). We pin against
+We pin against
 a specific spec version here so an upstream rename can't silently
 shift our wire format. Bumping the version requires:
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 OTEL_GENAI_CONVENTIONS_VERSION = "1.27.0"
 
 
-# Core GenAI attributes (mirrors phase-1-explain §4.2.1's table).
+# Core GenAI attributes (mirrors the OTLP mapping table).
 GEN_AI_SYSTEM = "gen_ai.system"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
@@ -46,15 +46,15 @@ INKFOOT_ESTIMATION_FLAGS = "inkfoot.estimation_flags"
 INKFOOT_ESTIMATED_NANODOLLARS = "inkfoot.estimated_nanodollars"
 
 # Per-call provenance attrs (helpful when ingest dedup needs to
-# trace a span back to its source pipeline). Phase 1 only writes
-# these on export; Phase 3's Cloud reads them on ingest.
+# trace a span back to its source pipeline). The current release only writes
+# these on export; future Cloud reads them on ingest.
 INKFOOT_RUN_ID = "inkfoot.run_id"
 INKFOOT_EVENT_KIND = "inkfoot.event_kind"
 INKFOOT_SEQUENCE = "inkfoot.sequence"
 
 
 # The 11 structural causes + 2 cache overlays exposed as
-# ``inkfoot.cause.<field>``. Order matches the Phase-0 ledger
+# ``inkfoot.cause.<field>``. Order matches the current ledger
 # declaration order so a renderer iterating this list emits in
 # the same order the report CLI does.
 INKFOOT_CAUSE_FIELDS: tuple[str, ...] = (

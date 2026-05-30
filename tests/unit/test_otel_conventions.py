@@ -1,7 +1,6 @@
-"""Convention pin guard (Phase 1 / E3-S1 T2).
+"""Convention pin guard.
 
-The OTel GenAI conventions are still evolving — phase-1-explain's
-risk register flags "OTel mapping drift" explicitly. We pin
+The OTel GenAI conventions are still evolving, so Inkfoot pins
 against a known spec version in :mod:`inkfoot.otel.conventions`;
 this test asserts the pinned literal so a careless edit doesn't
 silently switch us to a different convention version.
@@ -34,7 +33,7 @@ def test_inkfoot_extension_prefix_lives_under_inkfoot_namespace():
     assert conventions.INKFOOT_ESTIMATED_NANODOLLARS == "inkfoot.estimated_nanodollars"
 
 
-def test_cause_fields_match_phase0_ledger_categories():
+def test_cause_fields_match_ledger_categories():
     # Mapping table covers the 13 input-side ledger fields exactly
     # (11 structural causes + 2 cache overlays). Output is handled
     # via the spec's gen_ai.usage.output_tokens attribute, not the

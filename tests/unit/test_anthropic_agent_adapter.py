@@ -1,4 +1,4 @@
-"""E1-S4 — Anthropic Agent SDK adapter unit tests.
+"""Anthropic Agent SDK adapter unit tests.
 
 The adapter is structurally identical to the OpenAI Agents adapter
 (shared helpers in :mod:`inkfoot.adapters.openai_agents`), so the
@@ -142,7 +142,7 @@ def test_top_level_module_reexports_instrument() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """CL-E1 review Finding #4 — symmetric with the OpenAI Agents +
+    """review finding #4 — symmetric with the OpenAI Agents +
     LangGraph adapters."""
     agent = _StubAnthAgent()
     inst = instrument(agent, task="t")

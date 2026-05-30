@@ -1,10 +1,10 @@
 """Smell engine — the wedge.
 
 Instrumentation alone is commodity. The first "aha" report is what
-makes Phase 0 valuable, and the smells are how a reader looking at a
+makes Inkfoot useful, and the smells are how a reader looking at a
 bar chart sees *why* their tokens are doing what they're doing.
 
-Phase 0 ships five smells. Each is **data, not code** — a frozen
+The current implementation ships five smells. Each is **data, not code** — a frozen
 :class:`CostSmell` carries the id, title, description, severity, a
 ``detect(run, events) -> DetectionResult | None`` callable, the
 recommendation text, the suggested follow-up policy, and an
@@ -16,7 +16,7 @@ in a sibling module to keep this file thin. Concrete smells live in
 their own files; this module re-exports them as the
 :data:`DEFAULT_SMELLS` list.
 
-See ``phase-0-classify.md`` §5.9 for the authoritative shape.
+See ``the architecture notes`` §5.9 for the authoritative shape.
 """
 
 from __future__ import annotations
@@ -158,8 +158,8 @@ def iter_llm_calls(
 # Registry
 # ----------------------------------------------------------------------
 
-# Module-level registry of all known smells, keyed by id. Phase 0 only
-# registers the five Phase-0 smells here; Phase 4's community Cost
+# Module-level registry of all known smells, keyed by id. The current implementation only
+# registers the five current smells here; future aggregate analysis's community Cost
 # Smell Library plugs into this same dict.
 _registry: dict[str, CostSmell] = {}
 
@@ -195,7 +195,7 @@ def get_smell(smell_id: str) -> CostSmell:
 def list_smells() -> list[CostSmell]:
     """Snapshot of every registered smell, in registration order.
 
-    Phase 0 callers use this to drive the engine; Phase 4 will use it
+    Current callers use this to drive the engine; future aggregate analysis will use it
     to render the public Cost Smell Library catalogue."""
     return list(_registry.values())
 
@@ -219,7 +219,7 @@ from inkfoot.smells.expensive_model_low_entropy import (  # noqa: E402
 )
 from inkfoot.smells.recurring_cache_writes import RECURRING_CACHE_WRITES  # noqa: E402
 
-# The five Phase-0 smells, in canonical reporting order.
+# The five current smells, in canonical reporting order.
 DEFAULT_SMELLS: tuple[CostSmell, ...] = (
     UNSTABLE_PROMPT_PREFIX,
     RUNAWAY_RETRY_LOOP,

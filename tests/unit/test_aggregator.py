@@ -1,4 +1,4 @@
-"""Aggregator worker tests (E1-S4 acceptance).
+"""Aggregator worker tests.
 
 Covers:
 - Pure ``project_run_totals`` projection over the event log.

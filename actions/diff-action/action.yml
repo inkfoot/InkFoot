@@ -1,7 +1,7 @@
 name: "Inkfoot diff"
 description: >-
   Runs `inkfoot benchmark` + `inkfoot diff` against a baseline artefact
-  and posts a sticky PR comment with the result (Phase 1 / E2-S3). See
+  and posts a sticky PR comment with the result. See
   the action's README for inputs, the baseline-source DSL, and the
   sticky-comment marker.
 author: "Inkfoot maintainers"
@@ -53,7 +53,7 @@ inputs:
     description: >-
       Comma-separated extras to install. Defaults to `all` so scenarios
       importing `langgraph` / `openai-agents` / `anthropic-agent` work
-      out of the box (phase-1-explain §4.5 step 1). Set to an empty
+      out of the box. Set to an empty
       string to install bare `inkfoot` without extras.
     required: false
     default: "all"
@@ -101,7 +101,7 @@ runs:
         INKFOOT_EXTRAS: ${{ inputs.inkfoot-extras }}
       run: |
         set -euo pipefail
-        # `inkfoot[all]` per phase-1-explain §4.5 step 1 so the
+        # `inkfoot[all]` so the
         # consumer's scenarios can import langgraph / openai-agents /
         # anthropic-agent without a follow-up install step.
         SPEC="inkfoot"

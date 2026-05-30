@@ -1,14 +1,14 @@
 """Process-local active-run pointer used by the SDK shims.
 
 The shim needs to know "which run am I emitting this event into?"
-on every call. In Phase 0 there are three ways the active run gets
+on every call. In the current implementation there are three ways the active run gets
 set:
 
-1. **Explicit** — E5's :func:`inkfoot.agent_run` decorator / context
+1. **Explicit** — :func:`inkfoot.agent_run` decorator / context
    manager will set + clear via :func:`_set_current_run`.
 2. **Ambient** — when no run is active and the shim fires anyway,
    it lazily creates an "ambient" run (one per process, reused
-   across calls) so the event isn't dropped. E5 will replace this
+   across calls) so the event isn't dropped. The run lifecycle replaces this
    path with explicit scoping in production code.
 3. **Tests** — tests can drive the pointer directly via
    :func:`_set_current_run` / :func:`_clear_current_run`.
@@ -98,7 +98,7 @@ def _drop_run_state(run_id: str) -> None:
 # --------------------------------------------------------------------
 
 # One ambient run per process. Reused across calls until the process
-# exits. E5's ``agent_run`` will replace this in production code.
+# exits. ``agent_run`` will replace this in production code.
 _AMBIENT_RUN_LOCK = threading.Lock()
 _ambient_run_id: Optional[str] = None
 

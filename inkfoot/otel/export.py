@@ -1,4 +1,4 @@
-"""OTLP/JSON exporter (Phase 1 / E3-S3).
+"""OTLP/JSON exporter.
 
 Taps the event stream emitted by the shim and forwards each event
 to an OTel collector over OTLP/JSON HTTP. ``llm_call`` events
@@ -234,9 +234,9 @@ class OTLPExporter:
                     logs.append(self._build_log(ev))
                 # Other event kinds (run_start / run_end / checkpoint
                 # / policy events) are intentionally not exported in
-                # Phase 1 — they would clutter the GenAI view without
-                # adding signal an OTel backend can use. Phase 3
-                # exports them as logs.
+                # they would clutter the GenAI view without
+                # adding signal an OTel backend can use. A future Cloud backend
+                # can export them as logs.
             except Exception:  # pylint: disable=broad-except
                 _LOG.warning(
                     "OTel export: failed to build payload for event %s",

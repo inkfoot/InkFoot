@@ -1,6 +1,6 @@
 """Sticky-comment poster for the inkfoot/diff-action GitHub Action.
 
-Per ADR-1-6: identify our own comment via a hidden HTML marker, and
+identify our own comment via a hidden HTML marker, and
 update it on subsequent pushes instead of appending a new one. The
 marker (``<!-- inkfoot-diff-action -->``) is embedded by
 :mod:`inkfoot.diff.render_markdown` so the diff CLI and the action

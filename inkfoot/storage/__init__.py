@@ -1,7 +1,7 @@
 """Storage layer Protocol + lazy default-backend factory.
 
-The Protocol is the contract every storage backend honours (SQLite in
-Phase 0, Postgres in Phase 2). The contract is *narrow* — just the
+The Protocol is the contract every storage backend honours (SQLite now,
+Postgres in a future release). The contract is *narrow* — just the
 methods the shim hot path and aggregator need.
 
 ``SQLiteStorage`` is intentionally **not** imported at module load:
@@ -26,9 +26,9 @@ DirtyRun = dict[str, Any]
 
 @runtime_checkable
 class Storage(Protocol):
-    """Phase 0 storage Protocol (phase-0-classify §5.5, §5.6).
+    """Storage Protocol .
 
-    The methods listed in the E1-S3 spec are ``connect``,
+    The methods listed in the storage protocol are ``connect``,
     ``insert_event``, ``mark_dirty``, ``read_dirty``, and
     ``update_aggregates``. We also expose ``start_run`` and
     ``end_run`` because ADR-0-1's two-tier write semantics require a
@@ -87,15 +87,15 @@ class Storage(Protocol):
         ``aggregates_dirty`` flag in a single transaction (§5.6).
         Returns when the row is durable in WAL.
 
-        Replay-mode content kwargs (ADR-0-9): when
+        Replay-mode content kwargs (replay-mode storage contract): when
         ``capture_mode='replay'`` *and* any of ``request_json`` /
         ``response_json`` / ``tool_result_json`` is non-None, the
         implementation writes an ``event_contents`` row in the same
         transaction. ``capture_mode='metadata'`` always suppresses
         the sibling row. Backends that don't support replay should
         accept these kwargs (so the shim call site doesn't have to
-        branch) and ignore them — Phase 2's Postgres backend may
-        defer the replay implementation to Phase 3.
+        branch) and ignore them — a future Postgres backend may
+        defer the replay implementation to future Cloud code.
         """
 
     def mark_dirty(self, run_id: str) -> None:
@@ -138,7 +138,7 @@ class Storage(Protocol):
 
 
 def default_storage(path: Optional[Any] = None) -> "SQLiteStorage":
-    """Return the default Phase 0 backend (:class:`SQLiteStorage`).
+    """Return the default backend (:class:`SQLiteStorage`).
 
     Imported lazily so plain ``import inkfoot.storage`` doesn't pay
     the cost of pulling in the SQLite implementation module.

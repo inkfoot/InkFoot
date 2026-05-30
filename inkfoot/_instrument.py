@@ -1,6 +1,6 @@
-"""``inkfoot.instrument()`` — Phase 0 entry point.
+"""``inkfoot.instrument()`` — the current implementation entry point.
 
-Contract per ``phase-0-classify.md`` §5.1:
+Contract per ``the architecture notes`` §5.1:
 
 1. Detect installed SDKs (or use the explicit list).
 2. For each detected SDK, install its shim (monkey-patch).
@@ -18,7 +18,7 @@ is a no-op on the second call — the module-level
 
 **Fail-loud-at-registration**: registering a Pattern-C-only policy
 on Pattern A raises :class:`~inkfoot.errors.PolicyNotSupported`
-with a remediation hint pointing at the docs URL (ADR-0-2).
+with a remediation hint pointing at the docs URL (observe-only policy contract).
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def instrument(
     new policies; clear via :func:`shutdown` first if you need to
     re-instrument with a different policy set.
 
-    Phase 1 / E3 OTel kwargs:
+    OpenTelemetry keyword arguments:
 
     * ``otel_export_endpoint`` — when set, every ``llm_call`` event
       is mirrored to this OTel collector base URL via OTLP/JSON
@@ -119,7 +119,7 @@ def instrument(
         # it came from.
         raw_storage = storage
 
-        # OTel export tap (E3-S3): wrap storage so insert_event
+        # OTel export tap: wrap storage so insert_event
         # mirrors to the exporter. Installed *before* the policy /
         # shim plumbing reads ``_STORAGE`` so every subsequent
         # write goes through the tap.
@@ -173,7 +173,7 @@ def instrument(
         worker.start()
         _WORKER = worker
 
-        # OTel ingest receiver (E3-S2): bound to the *unwrapped*
+        # OTel ingest receiver: bound to the *unwrapped*
         # storage so spans dropped in by external collectors don't
         # bounce back out through the OTel export tap (the shim's
         # own writes still tap as normal).
@@ -223,7 +223,7 @@ def shutdown() -> None:
             except Exception:  # pylint: disable=broad-except
                 _LOG.warning("OTel exporter stop raised", exc_info=True)
             _OTEL_EXPORTER = None
-        # E5: any active agent_run that didn't exit cleanly (process
+        # Run lifecycle: any active agent_run that didn't exit cleanly (process
         # exit between start_run and end_run) needs its row flipped
         # from 'running' to 'error' with error_message='abandoned'.
         # Done BEFORE we stop the worker so the post-write

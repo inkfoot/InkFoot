@@ -1,6 +1,6 @@
 """Top-level ``inkfoot`` CLI entry point.
 
-Phase 0 ships three subcommands:
+The current implementation ships three subcommands:
 
 * ``inkfoot report`` — single-run attribution + smells, or
   aggregate view across recent runs (``--last 7d``).
@@ -9,7 +9,7 @@ Phase 0 ships three subcommands:
 * ``inkfoot tag`` — attach a ``user_tag`` event to an existing
   run after the fact.
 
-Future epics register more subcommands (``inkfoot tail``,
+Future releases register more subcommands (``inkfoot tail``,
 ``inkfoot contract check``, etc.).
 """
 
@@ -79,7 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Bucket the report. 'task' / 'agent_kind' apply to the "
             "aggregate view (--last); 'node' applies to single-run "
             "view (--run) and slices the ledger by LangGraph / "
-            "Pattern-B node_name (ADR-1-1)."
+            "Pattern-B node_name (framework metadata contract)."
         ),
     )
     rep.add_argument(
@@ -106,7 +106,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "benchmark",
         help=(
             "Run scenario suites under instrumentation and emit a "
-            "benchmark JSON artefact (Phase 1 / E2-S1)."
+            "benchmark JSON artefact."
         ),
     )
     bench.add_argument(
@@ -140,7 +140,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "diff",
         help=(
             "Compare two benchmark artefacts and emit a Markdown or JSON "
-            "report (Phase 1 / E2-S2)."
+            "report."
         ),
     )
     df.add_argument("baseline", help="Baseline benchmark JSON artefact.")

@@ -1,4 +1,4 @@
-"""Tests for the per-run sequence counter — Finding #1 in CL3 review.
+"""Tests for the per-run sequence counter — Finding #1 in review.
 
 The pre-fix dict-check-then-set pattern was racy: two threads could
 each create a separate ``itertools.count`` for the same run_id and

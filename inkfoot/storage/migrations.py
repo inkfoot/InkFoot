@@ -4,8 +4,8 @@ Each migration is an idempotent block of SQL executed in sequence on a
 fresh database. ``applied_migrations`` records what's been run so
 re-opening an existing database is a no-op.
 
-v1 = the full Phase 0 schema (phase-0-classify §5.5 + §5.5.1 + ADR-0-9).
-Future phases append entries — they never edit v1.
+v1 = the full initial SQLite schema.
+Future migrations append entries — they never edit v1.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Sequence
 _MIGRATIONS: Sequence[tuple[int, str, str]] = (
     (
         1,
-        "Phase 0 schema: runs + events + event_contents (ADR-0-9)",
+        "initial schema: runs + events + event_contents (replay-mode storage contract)",
         """
         CREATE TABLE IF NOT EXISTS runs (
             id TEXT PRIMARY KEY,
@@ -55,8 +55,8 @@ _MIGRATIONS: Sequence[tuple[int, str, str]] = (
             FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
         );
 
-        -- ADR-0-9: ship the sibling table now even though Phase 0
-        -- never writes to it, so Phase 3 doesn't need a retroactive
+        -- replay-mode storage contract: ship the sibling table now even though the current implementation
+        -- never writes to it, so future Cloud code doesn't need a retroactive
         -- migration that strands earlier runs.
         CREATE TABLE IF NOT EXISTS event_contents (
             event_id TEXT PRIMARY KEY,

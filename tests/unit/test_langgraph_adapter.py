@@ -1,4 +1,4 @@
-"""E1-S2 — LangGraph adapter unit tests.
+"""LangGraph adapter unit tests.
 
 The adapter is **duck-typed** against the LangGraph surface so these
 tests use a tiny stub graph rather than spinning up real LangGraph.
@@ -353,7 +353,7 @@ def test_shutdown_clears_active_adapter_via_LangGraphAdapter_shutdown() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """CL-E1 review Finding #4: a user calling ``inst.shutdown()``
+    """review finding #4: a user calling ``inst.shutdown()``
     on the only live handle should leave the adapter registry's
     active pointer clean. Previously the pointer lingered until
     ``LangGraphAdapter.shutdown()`` was called explicitly."""

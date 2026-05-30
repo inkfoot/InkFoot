@@ -1,15 +1,15 @@
-"""``CacheControlPlacer`` — Anthropic-only Phase 0 cache-control
+"""``CacheControlPlacer`` — Anthropic-only cache-control
 advice.
 
-Phase 0 is observe-only (ADR-0-2). Real injection of
+The current implementation is observe-only. Real injection of
 ``cache_control`` markers into the user's request is a modification
-policy and lands in Phase 2 (Pattern C). Phase 0 inspects the
+policy for a future framework-adapter release. The current implementation inspects the
 request and *emits an advice event* when the system block or tool
 list looks like it could benefit from a marker that isn't there.
 
 The acceptance text "adds cache markers to an Anthropic request"
 is satisfied by surfacing the suggestion — the proposed marker
-placement rides in the event's metadata. A future Phase 2 patch
+placement rides in the event's metadata. A future patch
 will turn the suggestion into an actual request rewrite.
 
 OpenAI calls are silently ignored (the OpenAI API doesn't have an
@@ -80,7 +80,7 @@ def _tools_size_chars(request_kwargs: dict[str, Any]) -> int:
 
 
 class CacheControlPlacer(Policy):
-    """Anthropic-only Phase 0 advice for missing ``cache_control``
+    """Anthropic-only advice for missing ``cache_control``
     markers.
 
     Fires once per run for each unmarked block that exceeds the
@@ -150,7 +150,7 @@ class CacheControlPlacer(Policy):
         )
 
     def after_call(self, ctx: "CallContext", response: Any) -> None:
-        # No-op in Phase 0. Phase 2 will compare cache hit ratios
+        # No-op in the current implementation. Future code can compare cache hit ratios
         # turn-over-turn and re-emit if the advice didn't take.
         return None
 

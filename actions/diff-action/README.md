@@ -2,12 +2,12 @@
 
 GitHub composite Action that runs `inkfoot benchmark` + `inkfoot diff`
 against a baseline benchmark artefact and posts a sticky PR comment
-with the result. Phase 1 / E2-S3 deliverable.
+with the result.
 
 > The Action source lives in this directory of the `inkfoot/inkfoot`
-> repository during Phase 1 development; it will be lifted into its
+> repository during in-repo development; it will be lifted into its
 > own `inkfoot/diff-action` repository ahead of the Marketplace
-> publish step (E2-S3 / T5). See [Marketplace migration plan](#marketplace-migration-plan)
+> publish step. See [Marketplace migration plan](#marketplace-migration-plan)
 > below for the checklist.
 
 ## Usage
@@ -48,7 +48,7 @@ jobs:
 | `fail-threshold` | `default` | `tight` / `default` / `loose` preset, or a path to a JSON file. |
 | `python-version` | `3.12` | Forwarded to `setup-python`. |
 | `inkfoot-version` | _latest_ | Pin a specific PyPI version. |
-| `inkfoot-extras` | `all` | Extras passed to pip (`inkfoot[<extras>]`). Empty string = bare install. Defaults to `all` so scenarios can import framework adapters out of the box (phase-1-explain §4.5 step 1). |
+| `inkfoot-extras` | `all` | Extras passed to pip (`inkfoot[<extras>]`). Empty string = bare install. Defaults to `all` so scenarios can import framework adapters out of the box. |
 | `install-inkfoot` | `true` | Whether the action runs its own `pip install`. Set to `false` when a prior workflow step has already installed inkfoot (e.g. `pip install -e .` for an in-repo self-test). When set, the action still verifies `inkfoot` is importable and fails loudly if not. |
 | `github-token` | `${{ github.token }}` | Needs `pull-requests: write` for the sticky comment. |
 | `scenarios-only` | _all_ | Comma-separated task names to filter to. |
@@ -95,7 +95,7 @@ input:
 8. Exits with the inkfoot-diff exit code (`0` ok, `1` warn, `2` fail).
 
 The sticky-comment marker is the HTML comment
-`<!-- inkfoot-diff-action -->` (ADR-1-6). The Markdown renderer
+`<!-- inkfoot-diff-action -->` (sticky-comment contract). The Markdown renderer
 embeds it automatically; `post_comment.py` re-injects it on the rare
 path where it was stripped.
 
@@ -124,7 +124,7 @@ artefact Marketplace consumers actually run.
 
 ## Marketplace migration plan
 
-E2-S3 / T5 splits this directory into its own `inkfoot/diff-action`
+Marketplace migration splits this directory into its own `inkfoot/diff-action`
 repository ahead of the Marketplace publish. The checklist:
 
 1. `git subtree split --prefix=actions/diff-action -b diff-action-split`
@@ -143,7 +143,7 @@ repository ahead of the Marketplace publish. The checklist:
    with a `MOVED.md` pointer that links to
    `https://github.com/inkfoot/diff-action`.
 5. Update consumer-facing docs (`InkFoot-docs/docs/cli-reference.md`,
-   the Phase 1 epic doc, the launch blog post) to reference
+   the public roadmap and launch docs) to reference
    `inkfoot/diff-action@v1` rather than the in-repo path.
 
 Until those steps complete, downstream workflows can already pin

@@ -1,4 +1,4 @@
-"""E1-S2 T7 — LangGraph end-to-end integration test.
+"""LangGraph end-to-end integration test.
 
 Runs a small **real** ``langgraph.StateGraph`` through Inkfoot's
 adapter and asserts the event sequence + per-node attribution
@@ -7,7 +7,7 @@ matches what the docs promise.
 The test skips cleanly when ``langgraph`` isn't installed
 (``inkfoot[langgraph]`` extra is optional). On CI, the
 ``benchmark`` / ``attribution-validation`` matrix doesn't pull
-``langgraph``; a separate framework-matrix job (E6-S4 / Phase 1)
+``langgraph``; a separate framework-matrix job
 will run this one.
 """
 

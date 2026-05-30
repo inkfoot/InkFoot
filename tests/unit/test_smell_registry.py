@@ -1,4 +1,4 @@
-"""Smell registry tests (E4-S3 acceptance)."""
+"""Smell registry tests."""
 
 from __future__ import annotations
 
@@ -78,9 +78,9 @@ def test_register_smell_rejects_duplicate_id() -> None:
 
 
 def test_register_smell_succeeds_for_new_id() -> None:
-    new = _smell("custom-phase-4-contributed")
+    new = _smell("custom-community-contributed")
     register_smell(new)
-    assert get_smell("custom-phase-4-contributed") is new
+    assert get_smell("custom-community-contributed") is new
 
 
 def test_list_smells_returns_a_snapshot_not_a_view() -> None:

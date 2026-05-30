@@ -1,4 +1,4 @@
-"""SmellEngine + CostSmell + DetectionResult tests (E4-S1)."""
+"""SmellEngine + CostSmell + DetectionResult tests."""
 
 from __future__ import annotations
 

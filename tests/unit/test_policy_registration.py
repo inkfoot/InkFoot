@@ -1,4 +1,4 @@
-"""Policy registration + capability matrix tests (E3-S3 acceptance)."""
+"""Policy registration + capability matrix tests."""
 
 from __future__ import annotations
 
@@ -129,8 +129,8 @@ def test_registry_dispatches_before_and_after_to_every_policy() -> None:
     assert calls == ["a.before", "b.before", "a.after", "b.after"]
 
 
-def test_phase0_observation_policies_all_support_pattern_a() -> None:
-    """Sanity: every Phase-0 policy can be registered on Pattern A."""
+def test_observation_policies_all_support_pattern_a() -> None:
+    """Sanity: every current policy can be registered on Pattern A."""
     register_policies(
         [
             BudgetCap(max_nd=1_000_000_000),

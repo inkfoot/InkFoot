@@ -1,4 +1,4 @@
-"""inkfoot report renderer tests (E5-S3 acceptance).
+"""inkfoot report renderer tests.
 
 The renderer is a pure function ``(run, ledger_totals, smells) →
 str`` so we don't need to spin up storage. These tests build a
@@ -265,7 +265,7 @@ def test_render_with_all_zero_totals_does_not_crash() -> None:
 
 
 def test_always_zero_footnote_uses_oxford_comma_with_and() -> None:
-    """Three always-zero Phase 0 fields should render with an
+    """Three always-zero current fields should render with an
     Oxford-comma-joined list, not "x and y and z"."""
     out = render(run=_basic_run(), ledger_totals=_totals_with_some_zero(), smells=[])
     # All three always-zero fields are zero in the fixture.
@@ -311,7 +311,7 @@ def test_footnote_absent_when_show_zero_true() -> None:
 
 
 def test_aggregate_view_header_lists_all_five_columns(tmp_path) -> None:
-    """The §E5-S3 AC spells out five columns: runs, avg_$, p95_$,
+    """The the documented aggregate view spells out five columns: runs, avg_$, p95_$,
     success%, cost/success."""
     import time
     from types import SimpleNamespace

@@ -1,4 +1,4 @@
-"""E1-S3 — OpenAI Agents SDK adapter unit tests.
+"""OpenAI Agents SDK adapter unit tests.
 
 Duck-typed stub mimics the Agent class surface:
 
@@ -188,7 +188,7 @@ def test_shutdown_restores_originals_and_is_idempotent() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """CL-E1 review Finding #4 — same auto-deactivate semantics as
+    """review finding #4 — same auto-deactivate semantics as
     the LangGraph adapter. ``inst.shutdown()`` on the only live
     handle clears the registry's active pointer."""
     agent = _StubAgent()

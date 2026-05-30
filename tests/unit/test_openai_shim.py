@@ -1,4 +1,4 @@
-"""OpenAIShim tests — same axes as the Anthropic shim tests (E3-S2)."""
+"""OpenAIShim tests — same axes as the Anthropic shim tests."""
 
 from __future__ import annotations
 

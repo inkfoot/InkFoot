@@ -2,10 +2,10 @@
 ``PolicyDecision`` / ``CallContext`` shapes that flow through every
 shim.
 
-Phase 0 ships three *observation* policies (``BudgetCap``,
+The current implementation ships three *observation* policies (``BudgetCap``,
 ``RetryThrottle``, ``CacheControlPlacer``) — none of them block calls
-or rewrite requests (per ADR-0-2's "Phase 0 is observe-only"
-posture). Phase 2 introduces *modification* policies
+or rewrite requests (per the observe-only policy contract
+posture). A future release introduces *modification* policies
 (``LazyToolExposure``, ``CheapSummariser``) that require a framework
 adapter (Pattern C); registering them on Pattern A raises
 :class:`~inkfoot.errors.PolicyNotSupported` with a remediation hint.
@@ -38,11 +38,11 @@ class IntegrationPattern(Enum):
     """The three integration shapes Inkfoot supports.
 
     * ``A`` — SDK shim (monkey-patch ``anthropic.*`` or
-      ``openai.*`` directly). Ships in Phase 0.
+      ``openai.*`` directly).
     * ``B`` — raw-SDK decorator + run context manager. Internal in
-      Phase 0; public in Phase 1.
+      Raw-SDK decorator + run context manager.
     * ``C`` — framework adapter (LangGraph, OpenAI Agents SDK,
-      Anthropic Agent SDK, ...). Ships in Phase 1.
+      Anthropic Agent SDK, ...).
     """
 
     A = "A"
@@ -55,7 +55,7 @@ class CallContext:
     """Mutable per-call context handed to every policy hook.
 
     Carries enough state for an observation policy to decide whether
-    to ``warn`` or ``block`` (Phase 0 never blocks) and to attribute
+    to ``warn`` or ``block`` (the current implementation never blocks) and to attribute
     the decision back to the call. Mutable so a ``before_call`` hook
     can stash metadata for ``after_call`` to read.
     """
@@ -72,9 +72,9 @@ class CallContext:
 class PolicyDecision:
     """What a policy's ``before_call`` returns.
 
-    Phase 0 only ever uses ``allow`` (the policy did nothing) and
+    The current implementation only ever uses ``allow`` (the policy did nothing) and
     ``warn`` (the policy wants to emit an event but the call goes
-    through). ``block`` is wired so Phase 2's ``ContractEnforcer``
+    through). ``block`` is wired so a future ``ContractEnforcer``
     can refuse a call when ``BudgetCap`` enforcement turns on.
     """
 
@@ -87,12 +87,12 @@ class PolicyDecision:
 
 
 class Policy(ABC):
-    """Base class for every Phase 0 + Phase 2 policy.
+    """Base class for every policy.
 
     Subclasses declare their supported integration patterns via the
     class-level :attr:`SUPPORTED_PATTERNS`. The default is "all three"
     — observation policies that work everywhere don't need to
-    override. Modification policies (Phase 2) restrict to
+    override. Modification policies (a future release) restrict to
     ``{IntegrationPattern.C}``.
 
     Both hooks must be implemented but may no-op. They are wrapped
@@ -156,9 +156,9 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     static :attr:`SUPPORTED_PATTERNS` on the policy class doesn't
     enumerate which adapters know how to wire it.
 
-    Phase 0 ships only observation policies that work everywhere; the
+    The current implementation ships only observation policies that work everywhere; the
     early-exit on ``IntegrationPattern.C ∈ policy.SUPPORTED_PATTERNS``
-    handles them without consulting the adapter. Phase 2's
+    handles them without consulting the adapter. A future release
     modification policies (``LazyToolExposure``, ``CheapSummariser``)
     will land with ``SUPPORTED_PATTERNS = {C}`` — for those, the
     adapter has to *also* declare the class in its
@@ -170,7 +170,7 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
         return
 
     # The fallback path: a policy that declares it works across
-    # *every* integration pattern (``{A, B, C}``) — i.e. the Phase-0
+    # *every* integration pattern (``{A, B, C}``) — i.e. the current
     # observation-policy shape — doesn't need adapter-specific
     # wiring. The shim handles it identically under any adapter, so
     # an adapter that hasn't enumerated ``BudgetCap`` / ``RetryThrottle``
@@ -178,13 +178,13 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     #
     # Anything narrower than the full set (``{C}``, ``{B, C}``,
     # ``{A, C}``, ...) is a policy that needs the adapter to know
-    # how to wire it — a hypothetical Phase-2 modification policy
+    # how to wire it — a hypothetical future modification policy
     # declared ``{B, C}`` ("works in raw decorator + framework
     # adapter, but not under the bare SDK shim") should NOT silently
     # pass a registration against an adapter that hasn't enumerated
-    # it. CL-E1 review Finding #1 tightened this from
+    # it. review finding #1 tightened this from
     # ``has-C and has-A-or-B`` to ``equals {A, B, C}`` to make the
-    # contract match phase-1-explain.md §4.1.
+    # contract match the adapter capability model.
     if policy.SUPPORTED_PATTERNS == {
         IntegrationPattern.A,
         IntegrationPattern.B,
@@ -201,7 +201,7 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     raise PolicyNotSupported(
         f"{policy_name} is not supported by the {adapter_name!r} adapter.\n"
         f"  Adapter supports: {{{supported_names}}}.\n"
-        f"  Fix: either upgrade the adapter (Phase 2 ships richer "
+        f"  Fix: either upgrade the adapter (future versions ship richer "
         f"capability surfaces) or drop the policy from this run.\n"
         f"  See: {docs_url}/{policy_name.lower() or 'index'}"
     )

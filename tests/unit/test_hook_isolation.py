@@ -1,4 +1,4 @@
-"""Hook isolation fuzz test (E3-S2 T6).
+"""Hook isolation fuzz test.
 
 Inject random exceptions at every Inkfoot hook point on each call
 and assert the user's call always completes with the original SDK

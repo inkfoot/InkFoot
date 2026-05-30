@@ -1,4 +1,4 @@
-"""Integration test for the OTLP HTTP ingest path (Phase 1 / E3-S2 T5).
+"""Integration test for the OTLP HTTP ingest path.
 
 Boots the receiver on an ephemeral port, issues a real
 ``POST /v1/traces`` over loopback, and asserts the resulting event

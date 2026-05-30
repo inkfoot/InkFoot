@@ -59,7 +59,7 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
             # anything on a cheaper model either.
             continue
 
-        # **Premium-clamp guard (Finding #1 in the CL4 review).**
+        # **Premium-clamp guard (Finding #1 in the review review).**
         # The prefix match catches gpt-4o-mini too because
         # ``"gpt-4o-mini".startswith("gpt-4o")`` is True, but
         # gpt-4o-mini is already cheaper than Haiku — flagging it
@@ -120,11 +120,11 @@ EXPENSIVE_MODEL_LOW_ENTROPY = CostSmell(
     detect=_detect,
     recommendation=(
         "Route short, non-reasoning prompts to a cheaper model. "
-        "Phase 2's CheapSummariser does this automatically for "
+        "a future CheapSummariser does this automatically for "
         "summarisation; for classification + key-extract use a "
         "named-routing wrapper today."
     ),
-    suggested_policy=None,  # Phase 0 has no routing policy.
+    suggested_policy=None,  # the current implementation has no routing policy.
     evidence_query=(
         "SELECT model, output_tokens, reasoning_tokens "
         "FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

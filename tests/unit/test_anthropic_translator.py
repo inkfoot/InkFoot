@@ -1,4 +1,4 @@
-"""Anthropic translator tests (E2-S4 acceptance).
+"""Anthropic translator tests.
 
 Covers:
 - Direct fields (output, cache_read, cache_creation, reasoning)

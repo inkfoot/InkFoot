@@ -5,7 +5,7 @@ the baseline and the current run. Output: a :class:`DiffReport`
 with per-scenario deltas, smell deltas, an overall verdict, and a
 ``fail`` exit code (mapped by the CLI).
 
-The verdict ladder is defined by :class:`Thresholds` (phase-1-explain
+The verdict ladder is defined by :class:`Thresholds` (the documented threshold contract
 §4.4); this module only *computes* and *labels*, it never renders.
 That keeps ``compare_artifacts`` snapshot-testable: same inputs ->
 same DiffReport instance.
@@ -241,7 +241,7 @@ def _diff_scenario(
 ) -> ScenarioDiff:
     """Compute the per-scenario delta + verdict.
 
-    Five comparison axes (phase-1-explain §4.4): p50/p95 cost,
+    Five comparison axes: p50/p95 cost,
     cache-hit rate, LLM-call count, outcome rate, smell deltas.
     """
     if current is None and baseline is not None:

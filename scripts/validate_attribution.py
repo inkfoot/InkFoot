@@ -7,8 +7,7 @@ request + response, and compares the resulting :class:`CausalTokenLedger`
 to the ground-truth labels in ``labels.yaml``. Computes per-category
 mean relative error; fails the CI gate when mean error > 10%.
 
-This is the Phase 0 go/no-go gate's quantitative half (the
-qualitative half is in ``docs/internal/phase-0-go-no-go.md``). Every
+This is the attribution gate's quantitative half. Every
 PR runs this; a regression in any translator that pushes a category
 past 10% blocks the build.
 
@@ -44,7 +43,7 @@ from inkfoot.normalise.openai import OpenAITranslator  # noqa: E402
 from inkfoot.run import InMemoryRunState  # noqa: E402
 
 # Per-category mean-relative-error threshold (§5.3 invariant).
-# Phase 0 ships at 10%; the underlying ledger.validate_against_usage
+# The current implementation ships at 10%; the underlying ledger.validate_against_usage
 # uses 2% for the input-total sum; the harder per-category bar is
 # 10% because individual categories drift more than the aggregate.
 DEFAULT_THRESHOLD = 0.10

@@ -1,4 +1,4 @@
-"""OpenAI translator tests (E2-S4 acceptance).
+"""OpenAI translator tests.
 
 Mirrors the Anthropic translator tests with OpenAI's response shape:
 - ``usage.prompt_tokens_details.cached_tokens`` → ``cache_read_tokens``

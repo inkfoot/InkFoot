@@ -3,14 +3,14 @@
 Fires when the same tool is invoked more than 5 times in a single
 run — the canonical "agent stuck in a loop" pattern. The spec ideal
 would key on ``(tool_name, args_hash)`` so two *different* invocations
-of the same tool aren't conflated, but Phase 0's metadata-mode
+of the same tool aren't conflated, but the current metadata-mode
 events only carry tool *names* (not args). We match by name alone
-and document the args-hash refinement as a Phase 3 replay-mode
+and document the args-hash refinement as a future replay-mode
 enhancement once ``event_contents`` rows are populated end-to-end.
 
 Cost impact: ``sum(retry_overhead_tokens)`` across all events in
-the run. ``retry_overhead_tokens`` isn't populated in Phase 0 (no
-retry classifier yet — E5's tag API + Phase 1 framework adapters
+the run. ``retry_overhead_tokens`` isn't populated in the current implementation (no
+retry classifier yet — the tag API and framework adapters
 land it); when it's 0 we still surface the smell with no dollar
 figure rather than nothing.
 """
@@ -62,15 +62,15 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
         return None
 
     # Cost impact: sum of retry_overhead_tokens × input rate. When
-    # the translator hasn't classified retries yet (Phase 0) this is
+    # the translator hasn't classified retries yet (the current implementation) this is
     # zero — the smell still fires; the user sees the loop, just
     # without a dollar figure.
     #
-    # Scope note (Finding #5 in the CL4 review): this sums retry
+    # Scope note (Finding #5 in the review review): this sums retry
     # overhead across *every* tool in the run, not just the breach
-    # tool. In Phase 0 retry_overhead_tokens is always 0 so the
-    # difference is invisible; once E5/E6 starts populating it the
-    # E5 renderer should label the impact line "all retry overhead
+    # tool. In the current implementation retry_overhead_tokens is always 0 so the
+    # difference is invisible; once retry classification starts populating it the
+    # the report renderer should label the impact line "all retry overhead
     # on the run" rather than "retries from the breach tool", and a
     # follow-up may want to split by tool name to be more precise.
     cost_impact_nd = 0

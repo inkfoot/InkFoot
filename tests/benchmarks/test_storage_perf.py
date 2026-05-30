@@ -1,4 +1,4 @@
-"""Storage hot-path benchmark (E1-S5 acceptance).
+"""Storage hot-path benchmark.
 
 Asserts the §9.1 perf budget: ``insert_event`` p95 < 1 ms. CI fails
 when the budget is missed. The benchmark runs against a tempfile DB

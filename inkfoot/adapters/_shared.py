@@ -5,7 +5,7 @@
 Both SDKs expose an ``Agent`` class with ``run`` / ``run_async``
 plus an internal tool-dispatch method whose exact name varies by
 build. The wrapping primitives live here so neither sibling adapter
-has to import a leading-underscore name from the other (CL-E1
+has to import a leading-underscore name from the other (review
 review Finding #3 — fixed by promoting the helpers to a shared
 module the package treats as its own private surface).
 

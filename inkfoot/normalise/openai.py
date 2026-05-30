@@ -275,7 +275,7 @@ class OpenAITranslator:
             or 0
         )
 
-        # E5: consume any pending tag_retrieval marker — see
+        # Run lifecycle: consume any pending tag_retrieval marker — see
         # AnthropicTranslator.translate for the full rationale.
         retrieved = int(getattr(run_state, "pending_retrieved_context_tokens", 0) or 0)
         run_state.pending_retrieved_context_tokens = 0
@@ -309,7 +309,7 @@ class OpenAITranslator:
             if tc.estimated:
                 flags.append(name)
 
-        # ADR-1-1 — Pattern-C metadata pass-through (mirror of the
+        # framework metadata contract — Pattern-C metadata pass-through (mirror of the
         # Anthropic translator's handling).
         metadata = _collect_runtime_metadata(run_state)
 

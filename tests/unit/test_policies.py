@@ -1,4 +1,4 @@
-"""Tests for the three Phase-0 observation policies (E3-S4)."""
+"""Tests for the three current observation policies."""
 
 from __future__ import annotations
 

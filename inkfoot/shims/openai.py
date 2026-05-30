@@ -138,7 +138,7 @@ class OpenAIShim:
         before_decisions, ctx, started_at = self._before(kwargs)
         # Provider exceptions propagate; we record a NeutralError
         # event first so reports don't under-count failures
-        # (Finding #4 in the CL3 review). Re-raised exception is
+        # (Finding #4 in the review). Re-raised exception is
         # identical to what the user would have seen without
         # instrumentation.
         try:

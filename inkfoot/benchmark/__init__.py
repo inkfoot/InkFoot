@@ -1,9 +1,9 @@
-"""`inkfoot benchmark` — scenario runner + JSON artefact (Phase 1 / E2-S1).
+"""`inkfoot benchmark` — scenario runner + JSON artefact.
 
 This package wraps three small responsibilities:
 
 * :mod:`inkfoot.benchmark.scenario` — discovery and loading of
-  ``.py`` scenario files (per phase-1-explain §4.3).
+  ``.py`` scenario files (by the benchmark contract).
 * :mod:`inkfoot.benchmark.runner` — executes ``scenario × fixture``
   under instrumentation and aggregates per-scenario stats.
 * :mod:`inkfoot.benchmark.schema` — the stable JSON artefact shape

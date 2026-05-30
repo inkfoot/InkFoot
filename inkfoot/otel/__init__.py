@@ -1,4 +1,4 @@
-"""OpenTelemetry ingest + export (Phase 1 / E3).
+"""OpenTelemetry ingest + export.
 
 Inkfoot speaks the OTel GenAI semantic conventions both ways:
 
@@ -8,11 +8,11 @@ Inkfoot speaks the OTel GenAI semantic conventions both ways:
   auto-pull (see :data:`OTEL_GENAI_CONVENTIONS_VERSION`).
 * :mod:`inkfoot.otel.mapping` — pure bidirectional translator
   between :class:`inkfoot.normalise.NeutralCall` and the OTel
-  attribute dict described in phase-1-explain §4.2.1.
+  attribute dict used by Inkfoot OTLP mapping.
 * :mod:`inkfoot.otel.ingest` — stdlib HTTP receiver that accepts
   OTLP/JSON `POST /v1/traces` requests, maps each ``gen_ai.*`` span
   into a :class:`NeutralCall`, and persists it to storage. Per
-  ADR-1-2 ingest de-duplicates against the native shim using
+  dedup contract ingest de-duplicates against the native shim using
   ``(span_id, response_id)`` so a user running both auto-OTel and
   our SDK shim doesn't double-count calls.
 * :mod:`inkfoot.otel.export` — taps the event stream emitted by
@@ -23,7 +23,7 @@ Inkfoot speaks the OTel GenAI semantic conventions both ways:
 The OTel SDK is **not** a hard dependency: the package speaks
 OTLP/JSON over plain HTTP using the stdlib only. Consumers who
 already run an OTel collector point it at our ingest port and
-configure our export endpoint, and that's the whole story.
+configure our export endpoint, and that's all.
 """
 
 from __future__ import annotations

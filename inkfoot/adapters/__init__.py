@@ -1,6 +1,6 @@
-"""Framework adapter package — Phase 1's Pattern-C surface.
+"""Framework adapter package — the framework-adapter surface.
 
-Phase 1 ships four adapters:
+The current release ships four adapters:
 
 * :mod:`inkfoot.adapters.langgraph` — the headline LangGraph adapter
   with per-node attribution + tools-fingerprint capture.

@@ -5,13 +5,13 @@ The engine is **lazy and off the hot path** (per §5.9). Reports
 materialise an event stream from storage, then call
 :meth:`evaluate`; the engine never touches storage itself. This
 keeps the SDK shim's hot path clean and lets the same engine plug
-into Phase 3's Cloud dashboard renderer unchanged.
+into future Cloud dashboard renderer unchanged.
 
 Each smell's ``detect`` callable returns at most one
 :class:`DetectionResult` per call — repeated triggers in a single
 run land as a single result with the highest-impact evidence. Cross-
 run findings (``evaluate_aggregate``) currently re-run per-run
-detection and concatenate; Phase 4 will add genuinely cross-run
+detection and concatenate; future aggregate analysis will add genuinely cross-run
 smells (e.g. "this run pattern repeats across N+ runs").
 """
 
@@ -89,9 +89,9 @@ class SmellEngine:
     ) -> list["DetectionResult"]:
         """Run :meth:`evaluate` over every ``(run, events)`` pair.
 
-        Phase 0 simply concatenates per-run findings — there is no
+        The current implementation simply concatenates per-run findings — there is no
         "the same smell fires in 80% of runs" cross-run summarising
-        yet. Phase 4's Cost Smell Library adds genuine aggregate
+        yet. future aggregate analysis's Cost Smell Library adds genuine aggregate
         rules; this method's signature is forward-compatible so the
         renderer doesn't have to change.
         """

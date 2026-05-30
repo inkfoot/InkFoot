@@ -1,11 +1,11 @@
 """``RetryThrottle`` — emits when retries in a rolling window exceed
 the threshold.
 
-Phase 0 detects retries by inspecting ``ctx.metadata["retry"]`` — the
+The current implementation detects retries by inspecting ``ctx.metadata["retry"]`` — the
 shim doesn't classify retries directly (no SDK call comes labelled
 "this is a retry"), so the policy relies on the caller setting that
-flag through ``inkfoot.tag`` (E5) or via an integration that knows
-about retries. For Phase 0 internal use the test fixtures set the
+flag through ``inkfoot.tag``  or via an integration that knows
+about retries. For tests and direct policy use the test fixtures set the
 flag manually.
 
 The window is wall-clock seconds; we record event timestamps and

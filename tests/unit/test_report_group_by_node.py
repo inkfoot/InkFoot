@@ -1,4 +1,4 @@
-"""``inkfoot report --run <id> --group-by node`` — E1-S2 T5.
+"""``inkfoot report --run <id> --group-by node``
 
 Tests the per-node slice of the single-run report. Builds a fixture
 DB with two LLM calls tagged with different ``node_name`` values

@@ -1,7 +1,7 @@
 """Run-lifecycle API: ``@inkfoot.agent_run``, ``set_outcome``,
 ``tag``, ``tag_retrieval``, ``report_cost``.
 
-E3 already provides the ContextVar-based active-run pointer (see
+The instrumentation layer already provides the ContextVar-based active-run pointer (see
 ``inkfoot/_run_context.py``) plus an ambient-run fallback for
 SDK-only callers who never enter an explicit run. This module
 layers the *explicit* run lifecycle on top: a context manager + a
@@ -24,7 +24,7 @@ left at ``status='running'``. The atexit hook from
 so anything still ``running`` flips to ``status='error'`` with
 ``error_message='abandoned'``.
 
-**State machine** (per phase-0-classify §5.7):
+**State machine** (per the architecture notes §5.7):
 
   Created → Running → Complete   (no exception + outcome set)
                     → Errored    (exception)
@@ -87,7 +87,7 @@ def _now_ms() -> int:
 
 def _next_sequence_for(run_id: str) -> int:
     """Allocate the next sequence number for ``run_id``, sharing the
-    counter the shim uses (E3-S2). Run-lifecycle events
+    counter the shim uses. Run-lifecycle events
     (``run_start``, ``run_end``, ``outcome``, ``user_tag``) need
     sequence numbers too; reusing the shim's counter keeps
     ``ORDER BY sequence`` consistent across all event kinds."""
@@ -210,7 +210,7 @@ def tag(key: str, value: Any) -> None:
 
 def tag_node(name: Optional[str]) -> None:
     """Mark the current run's "active node" name (Pattern B's manual
-    analogue of LangGraph per-node attribution — ADR-1-1).
+    analogue of LangGraph per-node attribution — framework metadata contract).
 
     The next LLM call's translator reads
     ``InMemoryRunState.node_name`` and attaches it to
@@ -254,7 +254,7 @@ def checkpoint(label: str) -> None:
     """Emit a ``checkpoint`` event so reports can show time spent
     between checkpoints.
 
-    Useful for raw-SDK / Pattern B agents that want to mark phase
+    Useful for raw-SDK / Pattern B agents that want to mark workflow
     boundaries without committing to LangGraph node names. Two
     successive checkpoints in the event stream let a report
     subtract the second's ``occurred_at`` from the first's to show
@@ -322,8 +322,8 @@ def tag_retrieval(text: str) -> None:
         return  # no-op for empty marker
 
     # Token count via the same fallback encoding the translators use
-    # for Anthropic. Phase 2's per-call model tokeniser would refine
-    # this; Phase 0 is consistent enough to feed retrieved_context
+    # for Anthropic. A future per-call model tokeniser would refine
+    # this; the current implementation is consistent enough to feed retrieved_context
     # attribution.
     import tiktoken  # noqa: PLC0415
 
@@ -338,7 +338,7 @@ def report_cost():
     """Return the current run's accumulated cost as a
     :class:`decimal.Decimal` USD value.
 
-    Phase 0 reads from ``runs.total_nanodollars`` — which the
+    The current implementation reads from ``runs.total_nanodollars`` — which the
     aggregator updates lazily — so the value is at most one poll
     interval (500 ms by default) behind. Reports that demand
     strict consistency should call ``inkfoot rebuild-aggregates``
@@ -445,8 +445,8 @@ class _RunHandle:
             self._context_token = None
 
         # Release per-run in-memory state so long-lived processes
-        # don't accumulate one dict entry per run (E3 left this as
-        # a TODO; CL5 review Finding #2 flagged it). Abandonment
+        # don't accumulate one dict entry per run (an earlier version left this as
+        # a TODO; review finding #2 flagged it). Abandonment
         # cleanup does the same via _release_run_state below.
         _release_run_state(self._run_id)
         self._ended = True
@@ -625,16 +625,16 @@ def _mark_abandoned_runs() -> None:
     exits between ``start_run`` and ``end_run`` leaves a clean row
     rather than a perpetual "running" zombie. Also releases the
     abandoned run's in-memory state so it doesn't outlive the row
-    (CL5 review Finding #2)."""
+    (review finding #2)."""
     from inkfoot._instrument import _STORAGE  # noqa: PLC0415
 
     storage = _STORAGE
     if storage is None:
         return
-    # TODO(phase-2/postgres): the Storage Protocol has no
+    # TODO(future/postgres): the Storage Protocol has no
     # ``find_runs_with_status(status)`` method yet. Reaching into
-    # SQLiteStorage._conn() works today but Phase 2's Postgres
-    # backend will need a Protocol method (CL5 review Finding #3).
+    # SQLiteStorage._conn() works today but a future Postgres
+    # backend will need a Protocol method (review finding #3).
     try:
         conn = storage._conn()  # type: ignore[attr-defined]
     except Exception:  # pragma: no cover — defensive

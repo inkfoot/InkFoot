@@ -1,11 +1,11 @@
 """``BudgetCap`` — observation-only budget watcher.
 
-Phase 0 behaviour (per §5.8 + ADR-0-2):
+Current implementation behaviour (per §5.8 + observe-only policy contract):
 
 * Estimate the call's nanodollar cost in ``before_call``.
 * If the run's running total + this call's estimate exceeds
   ``max_nd``, emit a ``budget_warning`` event.
-* **Never block** — Phase 0 is observe-only. Phase 2's
+* **Never block** — the current implementation is observe-only. A future release
   ``ContractEnforcer`` will turn the same data into an enforcement
   action.
 
@@ -38,7 +38,7 @@ class BudgetCap(Policy):
 
     ``max_nd`` is the total budget for the *run*, not per-call.
 
-    **Phase 0 timing quirk** (Finding #5 in the CL3 review):
+    **Current timing quirk** (Finding #5 in the review):
     ``before_call`` doesn't know the *current* call's cost yet —
     that's populated by the shim's ``after_call`` once the
     translator has run on the response. So the policy fires on the
@@ -46,9 +46,9 @@ class BudgetCap(Policy):
     total over ``max_nd`` and call N+1's ``before_call`` is what
     emits ``budget_warning``. Reports still surface the breach
     correctly; the event's ``occurred_at`` just lags by one call.
-    Phase 2's ``ContractEnforcer`` will gain a pre-call estimator
+    a future ``ContractEnforcer`` will gain a pre-call estimator
     and shift the warning to fire on the breach call itself, but
-    the Phase 0 observe-only posture (ADR-0-2) accepts the lag.
+    The current implementation observe-only posture (observe-only policy contract) accepts the lag.
 
     The policy fires *once* per run — a follow-up call that would
     have also breached doesn't re-fire until the totals are reset
@@ -75,10 +75,10 @@ class BudgetCap(Policy):
     def before_call(self, ctx: "CallContext") -> "PolicyDecision":
         # ``ctx.estimated_nanodollars`` is populated by the shim
         # *after* the call (we know real token counts then), so on
-        # ``before_call`` we use a pre-call rough estimator. Phase 0
-        # uses a flat 0 — Phase 2's ``ContractEnforcer`` adds a
+        # ``before_call`` we use a pre-call rough estimator. The current implementation
+        # uses a flat 0 — a future ``ContractEnforcer`` adds a
         # tokeniser-driven pre-call estimate. We rely on ``after_call``
-        # in Phase 0 to update the running total; ``before_call``
+        # in the current implementation to update the running total; ``before_call``
         # just emits the breach event if the *prior* total already
         # exceeds the budget.
         running = self._totals.get(ctx.run_id, 0)

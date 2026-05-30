@@ -7,19 +7,19 @@ tool output back into context every turn" failure mode — the
 provider doesn't summarise it; the agent doesn't summarise it; the
 bill grows linearly in turn count.
 
-**Phase 0 approximation (broader than the spec).** The spec's
+**Current approximation (broader than the spec).** The spec's
 literal wording — *"a tool result of > 2000 tokens appears in
 tool_result_tokens for ≥ 3 turns"* — naturally reads as "the *same*
 oversized result appears across 3 turns". Tracking *which* result
 is which requires args-or-content identity, which only exists in
-``event_contents`` (replay mode, Phase 3). Phase 0's metadata-mode
+``event_contents`` (replay mode). The current metadata-mode
 events carry per-call token totals but no result identity, so we
 approximate the spec as: "at least one turn has an oversized
 result AND at least N turns have any tool-result tokens at all."
 
 That broader heuristic false-positives on the shape
 ``[5000, 50, 50]`` — one large result followed by small follow-ups
-— which is a legitimately benign pattern. Phase 3's replay-mode
+— which is a legitimately benign pattern. future Cloud replay-mode
 upgrade lets us key on a content hash and drop the false positives;
 until then the bias is towards alerting over silence.
 
@@ -108,14 +108,14 @@ OVERSIZED_TOOL_RESULT_RECYCLED = CostSmell(
         "context across 3+ turns. The agent is paying full input "
         "rate for that body on every turn it stays in scope. The "
         "right fix is to summarise the tool result before reusing "
-        "it — Phase 2's CheapSummariser does this automatically."
+        "it — a future CheapSummariser does this automatically."
     ),
     severity="warn",
     detect=_detect,
     recommendation=(
         "Summarise large tool results before recycling them across "
         "turns. Enable CheapSummariser(threshold_tokens=1500) once "
-        "Phase 2 ships; until then, prune the messages array "
+        "A future release ships; until then, prune the messages array "
         "manually after each tool invocation."
     ),
     suggested_policy="CheapSummariser",

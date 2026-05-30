@@ -1,4 +1,4 @@
-"""E1-S3 T4 — OpenAI Agents SDK end-to-end integration test.
+"""OpenAI Agents SDK end-to-end integration test.
 
 Skips when the SDK isn't installed (``inkfoot[openai-agents]`` extra
 is optional). The OpenAI Agents SDK surface is still evolving as of

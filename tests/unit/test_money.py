@@ -1,4 +1,4 @@
-"""Nanodollar money type tests (E1-S2 acceptance)."""
+"""Nanodollar money type tests."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """Adapter registry — the process-global pointer to the active
 Pattern-C adapter.
 
-Only one adapter can be active at a time (per ADR-1-1 + the capability
+Only one adapter can be active at a time (per framework metadata contract + the capability
 matrix: the policy registration check needs a single source of truth
 for ``supported_policies()``). The registry stores adapters by their
 :attr:`~inkfoot.adapters.base.FrameworkAdapter.name` and rejects
@@ -72,7 +72,7 @@ class _AdapterRegistry:
         second call silently wins — both instrumentations stay
         installed on their respective targets, but policy capability
         checks now consult the newest adapter only. A WARNING is
-        logged to flag the switch (CL-E1 review Finding #2): a real
+        logged to flag the switch (review finding #2): a real
         process that mixes frameworks probably wants to be aware
         that its ``BudgetCap`` registration will no longer go
         through the same capability surface.

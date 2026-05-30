@@ -1,11 +1,11 @@
-"""Report renderer hot-path benchmark (E6-S4 acceptance).
+"""Report renderer hot-path benchmark.
 
 §9.1 budget: ``inkfoot report --run <id>`` end-to-end completes in
 under 200 ms for a 50-event run. The renderer is a pure function of
 ``(run, ledger_totals, smells)`` so we exercise the slice CI sees:
 storage → per-category roll-up → smell engine → render → ``join``.
 
-Asserts on **median** and **p95** rather than mean (the CL3 review
+Asserts on **median** and **p95** rather than mean (the review
 established this pattern — shared CI runners produce outlier ms
 spikes that drag arithmetic means above the budget without
 representing a real regression).
