@@ -1,0 +1,133 @@
+name: Early-access pre-release
+
+# Tag-triggered pre-release build + publish to PyPI.
+#
+# This is the *early-access* pipeline, NOT the public release. It exists
+# so an internal reference repo can `pip install inkfoot==<X>a<N>` and
+# exercise the capability set end-to-end before the public release.
+#
+# Trigger: pushing a PEP 440 pre-release tag (a/b/rc), e.g. `v1.0.0a1`.
+# The tag filter below is a coarse first gate; `check_prerelease_tag.py`
+# is the authoritative guard (it also asserts tag == _version.py and
+# rejects final releases that slip through the glob).
+#
+# Auth: PyPI Trusted Publishing (OIDC) — no long-lived API token lives
+# in repo secrets. The `id-token: write` permission below is what lets
+# `pypa/gh-action-pypi-publish` mint a short-lived token from PyPI. The
+# `pypi` environment gives maintainers an approval gate + a place to
+# scope the trusted-publisher config.
+
+on:
+  push:
+    tags:
+      # PEP 440 pre-releases only: 1.0.0a1, 1.0.0b2, 1.0.0rc1, with or
+      # without a leading 'v'. Final releases (v1.0.0) deliberately do
+      # not match — the public release path is handled separately.
+      - "v[0-9]+.[0-9]+.[0-9]+a[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+b[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+a[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+b[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Validate pre-release tag
+    runs-on: ubuntu-latest
+    # Don't let a fork's tag push try to publish to the project's PyPI.
+    if: ${{ github.repository == 'inkfoot/inkfoot' }}
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag is a publishable pre-release
+        id: guard
+        # Tag pushes validate ${GITHUB_REF_NAME}; dispatch runs (no tag)
+        # use --from-package, which validates _version.py directly. Both
+        # paths go through the guard script and neither imports inkfoot
+        # (the guard job installs no deps, so importing the package would
+        # crash on the missing tiktoken dependency).
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="$(python scripts/check_prerelease_tag.py --from-package)"
+          else
+            VERSION="$(python scripts/check_prerelease_tag.py "${GITHUB_REF_NAME}")"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build sdist + wheel
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Check distribution metadata
+        run: |
+          python -m pip install --upgrade twine
+          twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+          retention-days: 7
+
+  publish:
+    name: Publish to PyPI (trusted publishing)
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/inkfoot/${{ needs.guard.outputs.version }}/
+    permissions:
+      # Required by Trusted Publishing — mints a short-lived OIDC token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No `password:` — Trusted Publishing (OIDC) supplies auth.
+
+  github-release:
+    name: Create GitHub pre-release
+    needs: [guard, publish]
+    runs-on: ubuntu-latest
+    # Only meaningful for an actual tag push — a workflow_dispatch run
+    # has no tag to hang a Release off, and PyPI already has the build.
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      # Creating a Release writes to the repo's releases.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+      - name: Create the pre-release
+        # This is what fires `release: published`, which in turn triggers
+        # release-smoke.yml against the version that just went to PyPI.
+        # `prerelease: true` keeps it out of the "Latest release" slot —
+        # this is an early-access release, not the public launch.
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: "v${{ needs.guard.outputs.version }} (early access)"
+          generate_release_notes: true
+          files: dist/*
