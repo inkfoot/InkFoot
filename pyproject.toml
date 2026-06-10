@@ -23,6 +23,10 @@ dynamic = ["version"]
 dependencies = [
     "python-ulid>=2.2.0",
     "tiktoken>=0.7",
+    # Token Contracts are loaded from YAML at runtime (instrument time
+    # and in the CI gate), so the parser is a core dependency, not a
+    # dev-only one.
+    "pyyaml>=6",
     # python-ulid 2.x uses typing_extensions.Self; pin explicitly so a
     # fresh CI runner doesn't fail on the transitive miss.
     "typing_extensions>=4.10",

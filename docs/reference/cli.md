@@ -265,6 +265,77 @@ and update its own PR comment on subsequent pushes.
 See [CI cost review recipes](#ci-cost-review-recipes) below for
 GitHub / GitLab / Bitbucket wiring.
 
+## `inkfoot contract`
+
+Work with [Token Contracts](../concepts/token-contracts.md) — the
+version-controlled budget and outcome files that govern a task. Two
+subcommands: `draft` generates a starting-point contract from run
+history, `check` evaluates contracts against a benchmark artefact in CI.
+
+### `inkfoot contract draft`
+
+Read the runs recorded for a task and emit a contract YAML sized just
+above the observed spread:
+
+```bash
+inkfoot contract draft --task customer-support-triage --window 30d --output contracts/triage.yaml
+```
+
+| Flag | Purpose |
+|---|---|
+| `--task <name>` | Task to draft a contract for. Required. |
+| `--window <duration>` | History window to learn from (`30d`, `24h`, `90m`). Default `30d`. |
+| `--output PATH` | Write the YAML here instead of stdout. |
+| `--db <path>` | Override the default database path. |
+
+The draft sets `max_nanodollars` to p95 cost + 10% headroom,
+`max_llm_calls` to p99 + 1, `cache_hit_rate_min` to the p25 hit rate,
+and `required_success_rate` to the observed rate minus a 1pp tolerance.
+Cost outliers above 10× the median are listed in a header comment and
+excluded from the percentiles rather than silently inflating the
+budget. A window with fewer than 20 runs still produces a draft, but
+prepends a warning that the numbers are a placeholder. The draft is a
+starting point — review it, adjust, and commit it like any other code.
+
+### `inkfoot contract check`
+
+Evaluate a directory of contracts against a benchmark artefact — the CI
+gate:
+
+```bash
+inkfoot contract check ./contracts --against current.json --format markdown
+```
+
+| Flag | Purpose |
+|---|---|
+| `[DIR]` | Directory (or file) of contract YAML. Default `.`. |
+| `--against <benchmark.json>` | Benchmark artefact to evaluate against. Required. |
+| `--format {markdown,json}` | Output format. `markdown` (default) is the PR-comment shape; `json` is for machine composition. |
+| `--output PATH` | Also write the rendered report to `PATH`. |
+
+Each contract is matched to the benchmark scenario of the same task
+name. Budget clauses are checked against the scenario's stats; outcome
+clauses are shown tagged **(advisory)** and never fail the build.
+
+| Verdict | Condition | Exit code |
+|---|---|---|
+| passed | every budget clause comfortably within its ceiling | 0 |
+| passed with warnings | a clause within 10% of its ceiling/floor | 1 |
+| failed | at least one budget clause violated | 2 |
+
+Clauses the benchmark can't measure (`max_tool_result_tokens`,
+`max_run_duration_seconds`) are reported as "not checked" and enforced
+at runtime instead.
+
+To post a single combined PR comment covering both the cost diff and
+the contract verdict, pass `--contracts` to `inkfoot diff`:
+
+```bash
+inkfoot diff baseline.json current.json --contracts ./contracts
+```
+
+The combined exit code is the more severe of the two reports.
+
 ## `inkfoot tail`
 
 Stream events live from the database — one line per event, as

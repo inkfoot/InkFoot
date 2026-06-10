@@ -59,13 +59,57 @@ def run(args: Any) -> int:
         print(f"inkfoot diff: {exc}", file=sys.stderr)
         return 2
 
+    # Optional composition: when a contracts directory is supplied, run
+    # the contract check against the *current* artefact and fold its
+    # output into the same report so CI posts a single sticky PR comment
+    # covering both the cost diff and the contract verdict. The combined
+    # exit code is the more severe of the two.
+    contracts_dir = getattr(args, "contracts", None)
+    contract_report = None
+    if contracts_dir:
+        from inkfoot.contracts.check import check_contracts  # noqa: PLC0415
+        from inkfoot.contracts.loader import load_contracts  # noqa: PLC0415
+        from inkfoot.contracts.schema import (  # noqa: PLC0415
+            ContractValidationError,
+        )
+
+        try:
+            loaded = load_contracts([contracts_dir])
+        except ContractValidationError as exc:
+            print(f"inkfoot diff: {exc}", file=sys.stderr)
+            return 2
+        contract_report = check_contracts(loaded, current)
+
     if fmt == "markdown":
         rendered = render_markdown(report)
+        if contract_report is not None:
+            from inkfoot.contracts.check import (  # noqa: PLC0415
+                render_markdown as render_contract_markdown,
+            )
+
+            rendered = (
+                rendered.rstrip("\n")
+                + "\n\n---\n\n"
+                + render_contract_markdown(contract_report)
+            )
     else:
-        rendered = render_json(report) + "\n"
+        if contract_report is not None:
+            import json as _json  # noqa: PLC0415
+
+            combined = {
+                "diff": report.to_dict(),
+                "contract_check": contract_report.to_dict(),
+            }
+            rendered = _json.dumps(combined, indent=2, sort_keys=False) + "\n"
+        else:
+            rendered = render_json(report) + "\n"
+
+    exit_code = report.exit_code
+    if contract_report is not None:
+        exit_code = max(exit_code, contract_report.exit_code)
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(rendered, encoding="utf-8")
     sys.stdout.write(rendered)
-    return report.exit_code
+    return exit_code

@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Callable, Optional
 
+from inkfoot.contracts.runtime import enforce_before_call
 from inkfoot.normalise.anthropic import AnthropicTranslator
 from inkfoot.policy.registry import PolicyRegistry
 from inkfoot.shims._emit import (
@@ -160,6 +161,11 @@ class AnthropicShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
+        # Contract enforcement runs outside isolation so a ``block``
+        # decision can raise ``PolicyBlocked`` straight to the caller
+        # and the SDK request is never made. A ``switch_to_cheap_model``
+        # decision mutates ``kwargs`` in place before the call.
+        enforce_before_call(ctx)
         # Provider exceptions must propagate to the user — but we
         # record a NeutralError event first so the run shows
         # "N attempted, 1 failed" instead of a silent gap (Finding
@@ -186,6 +192,7 @@ class AnthropicShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
+        enforce_before_call(ctx)
         try:
             response = await original(client_self, *args, **kwargs)
         except Exception as exc:

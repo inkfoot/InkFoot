@@ -174,6 +174,13 @@ def emit_llm_call(
         capture_mode=capture_mode,
     )
 
+    # Fold the call's actuals back into the contract enforcer so the
+    # running spend and the per-task output moving average stay current.
+    # Best-effort: never breaks the emit path.
+    from inkfoot.contracts.runtime import record_call as _record_contract_call
+
+    _record_contract_call(ctx, neutral_call)
+
 
 # Cap on serialised error messages so a giant provider trace doesn't
 # blow out a JSON column. 1 KB matches the §9.3 privacy guidance
