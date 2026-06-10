@@ -1,0 +1,130 @@
+name: Pre-release smoke
+
+# E6-S0 / T3 — install the *published* pre-release in a clean container
+# and run the hello-world quickstart end-to-end.
+#
+# Where `release-prerelease.yml` builds and uploads, this workflow is
+# the after-the-fact proof that what landed on PyPI actually installs
+# and runs on every supported interpreter (3.10/3.11/3.12 per the
+# acceptance criteria). It deliberately installs from PyPI into a bare
+# `python:3.x-slim` container — no checkout, no editable install — so a
+# packaging miss (missing module, broken entry point, bad metadata)
+# fails here instead of in the reference repo.
+#
+# No real LLM key is used: the smoke records a synthetic `llm_call`
+# event through the installed package and asserts `inkfoot report`
+# renders it. ADR-1-4's "live calls" rule is for production CI, not our
+# self-test.
+
+on:
+  # Fired automatically once a (pre-)release is published, and on
+  # demand so a maintainer can validate a specific version.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      inkfoot-version:
+        description: "Pre-release version to smoke (e.g. 1.0.0a1). Empty = latest pre-release."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Quickstart smoke (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'inkfoot/inkfoot' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    container:
+      image: python:${{ matrix.python-version }}-slim
+    steps:
+      - name: Resolve target version
+        id: version
+        run: |
+          set -euo pipefail
+          # release event → the tag that was published; dispatch → input.
+          V="${{ github.event.inputs.inkfoot-version }}"
+          if [ -z "${V}" ] && [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "spec=${V}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install the published pre-release from PyPI
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # `--pre` lets pip pick up a/b/rc releases. A pinned version
+          # (from a release event or dispatch input) is exact; empty
+          # means "latest pre-release".
+          if [ -n "${{ steps.version.outputs.spec }}" ]; then
+            pip install --pre "inkfoot==${{ steps.version.outputs.spec }}"
+          else
+            pip install --pre inkfoot
+          fi
+
+      - name: Hello-world quickstart end-to-end
+        env:
+          # Isolate storage so the smoke never touches a real ~/.inkfoot.
+          INKFOOT_HOME: ${{ runner.temp }}/inkfoot-smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "${INKFOOT_HOME}"
+
+          # Mirror the quickstart's three steps — instrument, wrap a run,
+          # render a report — but record the call synthetically so no
+          # provider key or live tokens are needed.
+          python - <<'PY'
+          import json
+          import inkfoot
+          from inkfoot import _instrument as _inst
+          from inkfoot._run_context import current_run_id
+          from inkfoot.shims._emit import _next_sequence
+          from ulid import ULID
+
+          inkfoot.instrument()
+
+          @inkfoot.agent_run(task="release-smoke")
+          def handle_ticket(ticket_id: str) -> str:
+              payload = {
+                  "provider": "anthropic",
+                  "model": "claude-haiku-4-5",
+                  "system_static_tokens": 10,
+                  "user_input_tokens": 5,
+                  "output_tokens": 5,
+                  "cache_read_tokens": 0,
+                  "cache_creation_tokens": 0,
+                  "estimated_nanodollars": 1_000_000,
+                  "metadata": {},
+              }
+              run_id = current_run_id()
+              _inst._STORAGE.insert_event(
+                  event_id=str(ULID()),
+                  run_id=run_id,
+                  kind="llm_call",
+                  occurred_at=0,
+                  sequence=_next_sequence(run_id),
+                  payload_json=json.dumps(payload),
+                  capture_mode="metadata",
+              )
+              inkfoot.set_outcome("success", quality_score=0.94)
+              return "ok"
+
+          assert handle_ticket("TKT-1234") == "ok"
+          print("agent run recorded")
+          PY
+
+          # The CLI entry point must be installed and able to read the run
+          # the quickstart just wrote.
+          inkfoot report --last 1h | tee report.txt
+          grep -q "release-smoke" report.txt
+
+      - name: Report Python + inkfoot versions
+        if: always()
+        run: |
+          python --version
+          python -c "import inkfoot; print('inkfoot', inkfoot.__version__)" || true

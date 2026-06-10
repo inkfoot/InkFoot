@@ -58,8 +58,8 @@ policies (`BudgetCap`, `RetryThrottle`,
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/inkfoot/InkFoot.git
-cd InkFoot
+git clone https://github.com/inkfoot/inkfoot.git
+cd inkfoot
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
@@ -154,8 +154,13 @@ tests/
 
 ## Operator notes
 
-- **PyPI name:** `inkfoot` is the intended package name. Until a
-  release is published, install from source.
+- **PyPI name:** `inkfoot` is the intended package name. Phase 1
+  ships an **early-access pre-release** (a PEP 440 `a`/`b`/`rc`
+  version such as `1.0.0a1`) so one internal reference repo can
+  exercise the Phase-1 capability set before the public launch (the
+  public release is Phase 3 IN17). Install it with pip's pre-release
+  flag — `pip install --pre inkfoot` (or pin the exact version,
+  `pip install "inkfoot==1.0.0a1"`). Until then, install from source.
 - **Domain:** `inkfoot.dev` is reserved for the public docs site.
 - **Default DB path:** `~/.inkfoot/runs.db`. Override via the
   `INKFOOT_HOME` environment variable (parent dir) or pass an
@@ -163,6 +168,39 @@ tests/
 - **Aggregator poll interval:** defaults to 500 ms; override with
   `INKFOOT_AGGREGATOR_INTERVAL_MS=<int>`. Values under 10 ms are
   clamped to the 10 ms floor with a warning.
+
+## Releasing (early access)
+
+Phase 1 publishes an early-access pre-release to PyPI; the public
+launch (blog post, GitHub mirror, marketplace polish) waits for
+Phase 3 IN17. The pipeline is two tag-driven workflows plus a
+guard script:
+
+1. **Bump** `inkfoot/_version.py` to a PEP 440 pre-release (e.g.
+   `1.0.0a1`) and commit.
+2. **Tag** the commit to match — `git tag v1.0.0a1 && git push
+   origin v1.0.0a1`. The tag glob in
+   [`.github/workflows/release-prerelease.yml`](.github/workflows/release-prerelease.yml)
+   matches `a`/`b`/`rc` tags only (a final `v1.0.0` tag is ignored
+   on purpose).
+3. The **guard** ([`scripts/check_prerelease_tag.py`](scripts/check_prerelease_tag.py))
+   asserts the tag matches `_version.py` and is an actual
+   pre-release, then the workflow builds an sdist + wheel and
+   publishes via PyPI **Trusted Publishing** (OIDC — no API token
+   in repo secrets).
+4. After a successful upload the workflow creates a **GitHub
+   pre-release** (`prerelease: true`) for the tag. That published-release
+   event is what triggers
+   [`.github/workflows/release-smoke.yml`](.github/workflows/release-smoke.yml),
+   which installs the just-published version from PyPI into a clean
+   `python:3.10/3.11/3.12-slim` container and runs the hello-world
+   quickstart end-to-end. (You can also smoke an arbitrary version
+   on demand via the workflow's `workflow_dispatch` input.)
+
+Framework extras ship alongside the release —
+`pip install "inkfoot[langgraph]"`, `[openai-agents]`,
+`[anthropic-agent]`, or `[all]`. (`[langchain]` lands in Phase 3
+IN13, not here.)
 
 ## License
 
