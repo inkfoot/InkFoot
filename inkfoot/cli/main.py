@@ -23,6 +23,7 @@ from typing import Sequence
 from inkfoot._version import __version__
 from inkfoot.cli import (
     benchmark,
+    contract,
     diff,
     rebuild_aggregates,
     report,
@@ -181,6 +182,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Also write the rendered report to this path.",
     )
+    df.add_argument(
+        "--contracts",
+        default=None,
+        help=(
+            "Directory (or file) of Token Contracts to check against the "
+            "current artefact. When set, the contract verdict is folded "
+            "into the same report for a single combined PR comment."
+        ),
+    )
     df.set_defaults(func=diff.run)
 
     tl = subparsers.add_parser(
@@ -221,6 +231,63 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     tl.set_defaults(func=tail.run)
+
+    ct = subparsers.add_parser(
+        "contract",
+        help=(
+            "Draft a Token Contract from run history, or check contracts "
+            "against a benchmark artefact in CI."
+        ),
+    )
+    contract_subs = ct.add_subparsers(dest="contract_command", required=True)
+
+    ct_draft = contract_subs.add_parser(
+        "draft",
+        help="Generate a starting-point contract YAML from a task's history.",
+    )
+    ct_draft.add_argument(
+        "--task", required=True, help="Task name to draft a contract for."
+    )
+    ct_draft.add_argument(
+        "--window",
+        default="30d",
+        help="History window to learn from (e.g. 30d, 24h, 90m). Default: 30d.",
+    )
+    ct_draft.add_argument(
+        "--output",
+        default=None,
+        help="Write the YAML here instead of stdout.",
+    )
+    ct_draft.add_argument("--db", default=None, help="Override the default DB path.")
+    ct_draft.set_defaults(func=contract.run)
+
+    ct_check = contract_subs.add_parser(
+        "check",
+        help="Evaluate contracts against a benchmark JSON and emit a verdict.",
+    )
+    ct_check.add_argument(
+        "contracts",
+        nargs="?",
+        default=".",
+        help="Directory (or file) of contract YAML to check. Default: '.'.",
+    )
+    ct_check.add_argument(
+        "--against",
+        required=True,
+        help="Benchmark JSON artefact to evaluate the contracts against.",
+    )
+    ct_check.add_argument(
+        "--format",
+        default="markdown",
+        choices=["markdown", "json"],
+        help="Output format. 'markdown' is the PR-comment shape (default).",
+    )
+    ct_check.add_argument(
+        "--output",
+        default=None,
+        help="Also write the rendered report to this path.",
+    )
+    ct_check.set_defaults(func=contract.run)
 
     return parser
 

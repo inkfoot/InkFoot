@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Any, Callable, Optional
 
+from inkfoot.contracts.runtime import enforce_before_call
 from inkfoot.normalise.openai import OpenAITranslator
 from inkfoot.policy.registry import PolicyRegistry
 from inkfoot.shims._emit import (
@@ -136,6 +137,10 @@ class OpenAIShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
+        # Outside isolation: a contract ``block`` raises straight to
+        # the caller; ``switch_to_cheap_model`` rewrites the model in
+        # ``kwargs`` before the call is made.
+        enforce_before_call(ctx)
         # Provider exceptions propagate; we record a NeutralError
         # event first so reports don't under-count failures
         # (Finding #4 in the review). Re-raised exception is
@@ -161,6 +166,7 @@ class OpenAIShim:
         kwargs: dict,
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
+        enforce_before_call(ctx)
         try:
             response = await original(client_self, *args, **kwargs)
         except Exception as exc:

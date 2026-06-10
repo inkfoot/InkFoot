@@ -65,6 +65,7 @@ def _capture_mode_getter() -> str:
 def instrument(
     sdks: Optional[list[str]] = None,
     policies: Optional[list["Policy"]] = None,
+    contracts: Optional[list[Any]] = None,
     storage: Optional["Storage"] = None,
     log_level: str = "WARNING",
     capture_mode: str = "metadata",
@@ -79,6 +80,13 @@ def instrument(
     the second call (idempotent). Subsequent calls do **not** add
     new policies; clear via :func:`shutdown` first if you need to
     re-instrument with a different policy set.
+
+    ``contracts`` accepts a list of file or directory paths to Token
+    Contract YAML files. When supplied, the contracts are loaded and a
+    runtime enforcer is installed on the call hot path: a run whose task
+    matches a contract has its degrade ladder applied per call (warn,
+    switch to a cheaper model, or block). Duplicate task names across
+    the combined set are rejected.
 
     OpenTelemetry keyword arguments:
 
@@ -156,6 +164,22 @@ def instrument(
 
         if policies:
             register_policies(policies, active_pattern=IntegrationPattern.A)
+
+        # Load Token Contracts and install the enforcer on the call
+        # hot path. The enforcer is deliberately *not* a policy: a
+        # ``block`` decision must escape policy isolation to raise
+        # ``PolicyBlocked`` straight to the caller, so it's wired
+        # through a dedicated runtime gateway instead.
+        if contracts:
+            from inkfoot.contracts.enforcer import ContractEnforcer  # noqa: PLC0415
+            from inkfoot.contracts.loader import load_contracts  # noqa: PLC0415
+            from inkfoot.contracts.runtime import (  # noqa: PLC0415
+                set_active_enforcer,
+            )
+
+            loaded = load_contracts(contracts)
+            enforcer = ContractEnforcer(loaded)
+            set_active_enforcer(enforcer, storage)
 
         # Install the SDK shims.
         from inkfoot._shim_install import install_shims  # noqa: PLC0415
@@ -260,6 +284,15 @@ def shutdown() -> None:
             PolicyRegistry.clear()
         except Exception:  # pylint: disable=broad-except
             _LOG.warning("policy registry clear raised", exc_info=True)
+
+        try:
+            from inkfoot.contracts.runtime import (  # noqa: PLC0415
+                clear_active_enforcer,
+            )
+
+            clear_active_enforcer()
+        except Exception:  # pylint: disable=broad-except
+            _LOG.warning("contract enforcer clear raised", exc_info=True)
 
         if _STORAGE is not None:
             try:

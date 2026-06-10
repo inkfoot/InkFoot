@@ -170,6 +170,12 @@ def set_outcome(
         kind="outcome",
         payload={"outcome": outcome, "quality_score": quality_score},
     )
+    # Advisory: compare the task's trailing success rate to its
+    # contract floor and emit a violation event if it has slipped.
+    # Never raises into the caller.
+    from inkfoot.contracts import runtime as _contract_runtime
+
+    _contract_runtime.notify_outcome(run_id, outcome)
 
 
 # JSON-scalar value sentinels — what ``tag`` accepts.
@@ -402,6 +408,9 @@ class _RunHandle:
         )
         self._run_id = run_id
         self._context_token = _set_current_run(run_id)
+        from inkfoot.contracts import runtime as _contract_runtime
+
+        _contract_runtime.on_run_start(run_id, self._task, self._metadata)
         _emit_event(
             run_id=run_id,
             kind="run_start",
@@ -449,6 +458,9 @@ class _RunHandle:
         # a TODO; review finding #2 flagged it). Abandonment
         # cleanup does the same via _release_run_state below.
         _release_run_state(self._run_id)
+        from inkfoot.contracts import runtime as _contract_runtime
+
+        _contract_runtime.on_run_end(self._run_id)
         self._ended = True
 
     # ------------------------------------------------------------------
