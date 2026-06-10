@@ -1,12 +1,12 @@
 """Packaging + release-pipeline gate for the early-access PyPI release.
 
-E6-S0 ships three things: the framework-adapter extras in
-``pyproject.toml`` (T2), the tag-triggered publish workflow (T1), and
-the post-publish smoke workflow (T3). These tests assert the static
-shape of all three so a regression — a dropped extra, a leaked
-``langchain`` extra (that's Phase 3 IN13), a publish workflow that
-quietly stops using Trusted Publishing — fails CI instead of surfacing
-at release time.
+The early-access release ships three things: the framework-adapter
+extras in ``pyproject.toml``, the tag-triggered publish workflow, and
+the post-publish smoke workflow. These tests assert the static shape of
+all three so a regression — a dropped extra, a leaked ``langchain``
+extra (deferred to a later release), a publish workflow that quietly
+stops using Trusted Publishing — fails CI instead of surfacing at
+release time.
 
 YAML/TOML parsing skips when the parser isn't importable; both ship in
 the dev extra (``pip install -e ".[dev]"``) which CI installs.
@@ -62,7 +62,7 @@ yaml_required = pytest.mark.skipif(
 def test_framework_extras_declared():
     extras = _load_toml()["project"]["optional-dependencies"]
     for name in ("langgraph", "openai-agents", "anthropic-agent"):
-        assert name in extras, f"missing Phase-1 extra: {name}"
+        assert name in extras, f"missing framework extra: {name}"
         assert extras[name], f"extra {name} declares no requirements"
 
 
@@ -90,8 +90,8 @@ def test_all_meta_extra_bundles_every_framework_extra():
 
 @toml_required
 def test_langchain_extra_not_declared_in_phase_1():
-    # `[langchain]` is Phase-3 IN13 per E6-S0/T2; it must not leak into
-    # the Phase-1 early-access release.
+    # `[langchain]` is deferred to a later release; it must not leak
+    # into the early-access release.
     extras = _load_toml()["project"]["optional-dependencies"]
     assert "langchain" not in extras
 
@@ -208,7 +208,7 @@ def test_publish_workflow_creates_github_release_to_fire_smoke():
     ]
     assert release_jobs, "no job creates a GitHub Release to fire the smoke trigger"
     job = release_jobs[0]
-    # Must be a pre-release (public launch is Phase 3 IN17) and needs
+    # Must be a pre-release (not the public launch) and needs
     # contents: write to create the Release.
     assert job["permissions"]["contents"] == "write"
     gh_step = next(

@@ -154,13 +154,13 @@ tests/
 
 ## Operator notes
 
-- **PyPI name:** `inkfoot` is the intended package name. Phase 1
-  ships an **early-access pre-release** (a PEP 440 `a`/`b`/`rc`
-  version such as `1.0.0a1`) so one internal reference repo can
-  exercise the Phase-1 capability set before the public launch (the
-  public release is Phase 3 IN17). Install it with pip's pre-release
-  flag — `pip install --pre inkfoot` (or pin the exact version,
-  `pip install "inkfoot==1.0.0a1"`). Until then, install from source.
+- **PyPI name:** `inkfoot` is the intended package name. The current
+  release is an **early-access pre-release** (a PEP 440 `a`/`b`/`rc`
+  version such as `1.0.0a1`) so an internal reference repo can
+  exercise the capability set ahead of the public release. Install it
+  with pip's pre-release flag — `pip install --pre inkfoot` (or pin
+  the exact version, `pip install "inkfoot==1.0.0a1"`). Until then,
+  install from source.
 - **Domain:** `inkfoot.dev` is reserved for the public docs site.
 - **Default DB path:** `~/.inkfoot/runs.db`. Override via the
   `INKFOOT_HOME` environment variable (parent dir) or pass an
@@ -171,10 +171,9 @@ tests/
 
 ## Releasing (early access)
 
-Phase 1 publishes an early-access pre-release to PyPI; the public
-launch (blog post, GitHub mirror, marketplace polish) waits for
-Phase 3 IN17. The pipeline is two tag-driven workflows plus a
-guard script:
+The project publishes an early-access pre-release to PyPI; the public
+launch (blog post, GitHub mirror, marketplace polish) lands later. The
+pipeline is two tag-driven workflows plus a guard script:
 
 1. **Bump** `inkfoot/_version.py` to a PEP 440 pre-release (e.g.
    `1.0.0a1`) and commit.
@@ -199,8 +198,8 @@ guard script:
 
 Framework extras ship alongside the release —
 `pip install "inkfoot[langgraph]"`, `[openai-agents]`,
-`[anthropic-agent]`, or `[all]`. (`[langchain]` lands in Phase 3
-IN13, not here.)
+`[anthropic-agent]`, or `[all]`. (A `[langchain]` extra lands in a
+later release, not here.)
 
 ## License
 

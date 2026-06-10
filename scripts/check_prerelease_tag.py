@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard for the early-access pre-release pipeline (E6-S0 / T1).
+"""Guard for the early-access pre-release pipeline.
 
 The pre-release publish workflow is tag-triggered. Before it builds
 and uploads to PyPI we want one cheap, deterministic check that the
@@ -127,7 +127,7 @@ def check(tag: str, package_version: str) -> str:
         raise TagGuardError(
             f"'{package_version}' is not a PEP 440 pre-release. "
             f"The early-access pipeline only publishes a/b/rc releases "
-            f"(e.g. 1.0.0a1); the public release lives in Phase 3 IN17."
+            f"(e.g. 1.0.0a1); the public release is handled separately."
         )
 
     return package_version

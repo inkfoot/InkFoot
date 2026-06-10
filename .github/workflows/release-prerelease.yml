@@ -1,11 +1,10 @@
 name: Early-access pre-release
 
-# E6-S0 / T1 — tag-triggered pre-release build + publish to PyPI.
+# Tag-triggered pre-release build + publish to PyPI.
 #
-# This is the Phase-1 *early-access* pipeline, NOT the public launch
-# (that is Phase 3 IN17). It exists so one internal reference repo can
-# `pip install inkfoot==<X>a<N>` and exercise the Phase-1 capability set
-# end-to-end before the public release.
+# This is the *early-access* pipeline, NOT the public release. It exists
+# so an internal reference repo can `pip install inkfoot==<X>a<N>` and
+# exercise the capability set end-to-end before the public release.
 #
 # Trigger: pushing a PEP 440 pre-release tag (a/b/rc), e.g. `v1.0.0a1`.
 # The tag filter below is a coarse first gate; `check_prerelease_tag.py`
@@ -23,7 +22,7 @@ on:
     tags:
       # PEP 440 pre-releases only: 1.0.0a1, 1.0.0b2, 1.0.0rc1, with or
       # without a leading 'v'. Final releases (v1.0.0) deliberately do
-      # not match — the public release path is owned by Phase 3 IN17.
+      # not match — the public release path is handled separately.
       - "v[0-9]+.[0-9]+.[0-9]+a[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+b[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
@@ -125,7 +124,7 @@ jobs:
         # This is what fires `release: published`, which in turn triggers
         # release-smoke.yml against the version that just went to PyPI.
         # `prerelease: true` keeps it out of the "Latest release" slot —
-        # the public launch is Phase 3 IN17.
+        # this is an early-access release, not the public launch.
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true

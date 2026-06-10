@@ -1,4 +1,4 @@
-"""Unit tests for the early-access pre-release tag guard (E6-S0 / T1).
+"""Unit tests for the early-access pre-release tag guard.
 
 ``scripts/check_prerelease_tag.py`` is the authoritative gate the
 publish workflow runs before it builds and uploads to PyPI. These
@@ -73,7 +73,7 @@ def test_prerelease_versions_accepted(version):
 @pytest.mark.parametrize(
     "version",
     [
-        "1.0.0",          # final release — public launch is Phase 3 IN17
+        "1.0.0",          # final release — not an early-access pre-release
         "1.0.0.post1",    # post-release is not early-access
         "1.0.0.dev1",     # dev-only carries no a/b/rc marker
         "1.0",            # final, short form
@@ -113,7 +113,7 @@ def test_check_rejects_tag_version_mismatch():
 
 def test_check_rejects_final_release_even_when_tag_matches():
     # Tag and version agree, but 1.0.0 is not a pre-release: the public
-    # release path is owned by Phase 3 IN17, not this pipeline.
+    # release path is handled separately, not by this pipeline.
     with pytest.raises(guard.TagGuardError, match="not a PEP 440 pre-release"):
         guard.check("v1.0.0", "1.0.0")
 

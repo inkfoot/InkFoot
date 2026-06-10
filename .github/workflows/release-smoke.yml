@@ -1,7 +1,7 @@
 name: Pre-release smoke
 
-# E6-S0 / T3 — install the *published* pre-release in a clean container
-# and run the hello-world quickstart end-to-end.
+# Install the *published* pre-release in a clean container and run the
+# hello-world quickstart end-to-end.
 #
 # Where `release-prerelease.yml` builds and uploads, this workflow is
 # the after-the-fact proof that what landed on PyPI actually installs
@@ -13,7 +13,7 @@ name: Pre-release smoke
 #
 # No real LLM key is used: the smoke records a synthetic `llm_call`
 # event through the installed package and asserts `inkfoot report`
-# renders it. ADR-1-4's "live calls" rule is for production CI, not our
+# renders it. The "live LLM calls" rule is for production CI, not our
 # self-test.
 
 on:
