@@ -1,0 +1,109 @@
+name: Live framework tests
+
+# Weekly drift check against the real framework SDKs. The unit suite
+# runs on duck-typed stubs, so upstream surface changes (a renamed
+# entry point, a moved tool registry, a new pydantic guard) only show
+# up here — each leg installs one framework extra from PyPI and runs
+# the adapter contract + integration tests against it.
+#
+# Every leg reports its outcome to the run's step summary and uploads
+# a results artifact, so the latest scheduled run doubles as the
+# adapter status page even when a leg goes red.
+
+on:
+  schedule:
+    # Mondays 06:17 UTC — off the top of the hour to dodge the
+    # scheduled-job thundering herd.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  framework:
+    name: ${{ matrix.framework }}
+    runs-on: ubuntu-latest
+    # Scheduled runs only make sense on the canonical repo; forks can
+    # still trigger manually via workflow_dispatch.
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'inkfoot/inkfoot'
+    strategy:
+      fail-fast: false
+      matrix:
+        framework:
+          - langgraph
+          - openai-agents
+          - anthropic-agent
+          - pydantic-ai
+          - crewai
+    env:
+      # Live-marked tests skip cleanly when these are unset; supplying
+      # them (when configured) upgrades the weekly run to true
+      # end-to-end coverage.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + framework extra
+        id: install
+        # An unresolvable extra (e.g. a peer SDK pulled from PyPI) is
+        # exactly the drift this workflow exists to catch — keep going
+        # so the status row still gets written.
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,${{ matrix.framework }}]"
+
+      - name: Run adapter contract tests
+        id: contract
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: pytest tests/contract -v --tb=short -rs
+
+      - name: Run framework integration tests
+        id: integration
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          KEY=$(echo "${{ matrix.framework }}" | tr '-' '_')
+          pytest "tests/integration/test_${KEY}_e2e.py" -v --tb=short -rs
+
+      - name: Write status row
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.framework }}"
+            echo ""
+            echo "| step | outcome |"
+            echo "| --- | --- |"
+            echo "| install | ${{ steps.install.outcome }} |"
+            echo "| contract | ${{ steps.contract.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p live-test-results
+          {
+            echo "framework=${{ matrix.framework }}"
+            echo "install=${{ steps.install.outcome }}"
+            echo "contract=${{ steps.contract.outcome }}"
+            echo "integration=${{ steps.integration.outcome }}"
+          } > "live-test-results/${{ matrix.framework }}.txt"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-test-results-${{ matrix.framework }}
+          path: live-test-results/
+
+      - name: Fail leg if any step failed
+        if: steps.install.outcome != 'success' || steps.contract.outcome != 'success' || steps.integration.outcome != 'success'
+        run: exit 1

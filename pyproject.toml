@@ -57,13 +57,19 @@ anthropic-agent = [
     # ``anthropic-agent`` (subject to confirmation when the SDK GAs).
     "anthropic-agent>=0.1,<0.3",
 ]
+pydantic-ai = [
+    "pydantic-ai>=1.0,<2.0",
+]
+crewai = [
+    "crewai>=0.100,<2.0",
+]
 
 # Convenience meta-extra: install every framework adapter at
 # once. This is the shape the ``inkfoot/diff-action`` GitHub
 # Action installs in CI, so consumer scenarios can import any of
 # the adapters without a per-extra dance.
 all = [
-    "inkfoot[langgraph,openai-agents,anthropic-agent]",
+    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai]",
 ]
 
 # Docs site build deps. Installed by `pip install inkfoot[docs]`;

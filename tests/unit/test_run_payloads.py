@@ -204,6 +204,12 @@ def test_in_memory_run_state_has_no_storage_helpers() -> None:
         # of the compiled graph's tools array. Process-local; not
         # persisted.
         "tools_fingerprint",
+        # Multi-agent attribution: the CrewAI adapter scopes these
+        # around per-agent / per-framework-task execution so the
+        # translator stamps metadata["agent_name"] / ["task_name"].
+        # Process-local; not persisted.
+        "agent_name",
+        "task_name",
     }
     assert public == expected, (
         f"InMemoryRunState public surface drifted: {public ^ expected}"

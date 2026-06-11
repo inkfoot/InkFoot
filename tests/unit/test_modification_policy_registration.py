@@ -128,6 +128,7 @@ def test_adapter_path_still_accepts_observation_policies() -> None:
         "inkfoot.adapters.langgraph.LangGraphAdapter",
         "inkfoot.adapters.openai_agents.OpenAIAgentsAdapter",
         "inkfoot.adapters.anthropic_agent.AnthropicAgentAdapter",
+        "inkfoot.adapters.pydantic_ai.PydanticAIAdapter",
     ],
 )
 def test_real_adapters_enumerate_both_modification_policies(
@@ -137,3 +138,17 @@ def test_real_adapters_enumerate_both_modification_policies(
     module = __import__(module_path, fromlist=[cls_name])
     adapter = getattr(module, cls_name)()
     assert adapter.supported_policies() == {LazyToolExposure, CheapSummariser}
+
+
+def test_crewai_adapter_is_observation_only() -> None:
+    """CrewAI assembles provider requests internally — no rewrite
+    seam — so its adapter deliberately enumerates no modification
+    policies. Registering one against it must raise."""
+    from inkfoot.adapters.crewai import CrewAIAdapter
+
+    adapter = CrewAIAdapter()
+    assert adapter.supported_policies() == set()
+    with pytest.raises(PolicyNotSupported):
+        register_policies([CheapSummariser()], adapter=adapter)
+    register_policies([BudgetCap(max_nd=10**9)], adapter=adapter)
+    assert len(PolicyRegistry) == 1

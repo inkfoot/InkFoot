@@ -176,9 +176,11 @@ def _collect_runtime_metadata(run_state: Any) -> dict[str, Any]:
     snapshot the translator received.
 
     The current release carries ``node_name`` (LangGraph + Pattern B
-    ``tag_node``) and ``tools_fingerprint`` (LangGraph compile-time
-    snapshot). Both are optional — when the adapter hasn't set them
-    the metadata dict is empty and the round-trip stays lossless.
+    ``tag_node``), ``tools_fingerprint`` (LangGraph compile-time
+    snapshot), and ``agent_name`` / ``task_name`` (multi-agent
+    attribution from the CrewAI adapter). All are optional — when the
+    adapter hasn't set them the metadata dict is empty and the
+    round-trip stays lossless.
 
     Defensive: tolerates a ``run_state`` that doesn't have the
     current metadata attributes (older :class:`InMemoryRunState` shape from a
@@ -192,6 +194,12 @@ def _collect_runtime_metadata(run_state: Any) -> dict[str, Any]:
     tools_fp = getattr(run_state, "tools_fingerprint", None)
     if tools_fp:
         metadata["tools_fingerprint"] = tools_fp
+    agent_name = getattr(run_state, "agent_name", None)
+    if agent_name:
+        metadata["agent_name"] = agent_name
+    task_name = getattr(run_state, "task_name", None)
+    if task_name:
+        metadata["task_name"] = task_name
     return metadata
 
 

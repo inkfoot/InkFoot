@@ -1,13 +1,12 @@
-"""Shared helpers for the Agent-SDK-shaped adapters
-(:mod:`inkfoot.adapters.openai_agents`,
-:mod:`inkfoot.adapters.anthropic_agent`).
+"""Wrapping primitives shared across the framework adapters.
 
-Both SDKs expose an ``Agent`` class with ``run`` / ``run_async``
-plus an internal tool-dispatch method whose exact name varies by
-build. The wrapping primitives live here so neither sibling adapter
-has to import a leading-underscore name from the other: the
-helpers are promoted to a shared module the package treats as
-its own private surface.
+Any adapter that scopes an entry point under
+:func:`inkfoot.agent_run` (:func:`wrap_run_method`), intercepts
+tool dispatch (:func:`wrap_tool_dispatcher` +
+:data:`TOOL_DISPATCH_CANDIDATES`), or installs reversible instance
+patches (:func:`install_attr`) imports from here rather than from
+a sibling adapter's leading-underscore names. Some adapters use
+the full surface, others only the entry-point wrap.
 
 The module is leading-underscore-prefixed so it stays out of the
 public adapter surface — :mod:`inkfoot.adapters` deliberately

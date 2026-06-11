@@ -185,6 +185,69 @@ def test_group_by_node_rejected_on_aggregate_view(
         group_by="node",
         show_zero=False,
     )
-    report_run(args)
+    rc = report_run(args)
     out = capsys.readouterr().out
+    assert rc == 2
     assert "only applies to a single run" in out
+
+
+def test_group_by_metadata_without_key_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db_path = tmp_path / "runs.db"
+    run_id = _seed(db_path)
+
+    args = SimpleNamespace(
+        db=str(db_path),
+        run=run_id,
+        last=None,
+        task=None,
+        group_by="metadata.",
+        show_zero=False,
+    )
+    rc = report_run(args)
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "needs a key" in out
+
+
+def test_invalid_group_by_value_errors_on_single_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db_path = tmp_path / "runs.db"
+    run_id = _seed(db_path)
+
+    args = SimpleNamespace(
+        db=str(db_path),
+        run=run_id,
+        last=None,
+        task=None,
+        group_by="bogus",
+        show_zero=False,
+    )
+    rc = report_run(args)
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "invalid --group-by value 'bogus'" in out
+
+
+def test_invalid_group_by_value_errors_on_aggregate_view(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db_path = tmp_path / "runs.db"
+    s = SQLiteStorage(path=db_path)
+    s.connect()
+    s.close()
+
+    args = SimpleNamespace(
+        db=str(db_path),
+        run=None,
+        last="7d",
+        task=None,
+        group_by="bogus",
+        show_zero=False,
+    )
+    rc = report_run(args)
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "invalid --group-by value 'bogus'" in out
