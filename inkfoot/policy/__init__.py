@@ -2,12 +2,13 @@
 ``PolicyDecision`` / ``CallContext`` shapes that flow through every
 shim.
 
-The current implementation ships three *observation* policies (``BudgetCap``,
-``RetryThrottle``, ``CacheControlPlacer``) — none of them block calls
-or rewrite requests (per the observe-only policy contract
-posture). A future release introduces *modification* policies
-(``LazyToolExposure``, ``CheapSummariser``) that require a framework
-adapter (Pattern C); registering them on Pattern A raises
+The package ships two kinds of policy. The three *observation*
+policies (``BudgetCap``, ``RetryThrottle``, ``CacheControlPlacer``)
+never block calls or rewrite requests and work under every
+integration pattern. The two *modification* policies
+(``LazyToolExposure``, ``CheapSummariser``) rewrite the outgoing
+request and therefore require a framework adapter (Pattern C);
+registering them on Pattern A or B raises
 :class:`~inkfoot.errors.PolicyNotSupported` with a remediation hint.
 """
 
@@ -31,6 +32,9 @@ __all__ = [
     "BudgetCap",
     "RetryThrottle",
     "CacheControlPlacer",
+    # Modification policies (framework adapters only).
+    "LazyToolExposure",
+    "CheapSummariser",
 ]
 
 
@@ -129,7 +133,7 @@ def _check_supports(
     """Raise :class:`PolicyNotSupported` with a remediation hint
     when ``policy`` doesn't support ``active_pattern``.
 
-    The message is the customer-visible bit (§5.8) — it names what
+    The message is the customer-visible bit — it names what
     they tried, what's active, and how to fix it.
     """
     supported = policy.SUPPORTED_PATTERNS
@@ -156,21 +160,19 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     static :attr:`SUPPORTED_PATTERNS` on the policy class doesn't
     enumerate which adapters know how to wire it.
 
-    The current implementation ships only observation policies that work everywhere; the
-    early-exit on ``IntegrationPattern.C ∈ policy.SUPPORTED_PATTERNS``
-    handles them without consulting the adapter. A future release
-    modification policies (``LazyToolExposure``, ``CheapSummariser``)
-    will land with ``SUPPORTED_PATTERNS = {C}`` — for those, the
-    adapter has to *also* declare the class in its
-    ``supported_policies()`` set, otherwise it doesn't know how to
-    wire the policy into the framework.
+    Modification policies (``LazyToolExposure``, ``CheapSummariser``)
+    declare ``SUPPORTED_PATTERNS = {C}``: the adapter has to declare
+    the class in its ``supported_policies()`` set, otherwise it
+    doesn't know how to wire the policy into the framework.
+    Observation policies declare every pattern and pass the full-set
+    fallback below without adapter enumeration.
     """
     supported_classes = adapter.supported_policies()
     if type(policy) in supported_classes:
         return
 
     # The fallback path: a policy that declares it works across
-    # *every* integration pattern (``{A, B, C}``) — i.e. the current
+    # *every* integration pattern (``{A, B, C}``) — the
     # observation-policy shape — doesn't need adapter-specific
     # wiring. The shim handles it identically under any adapter, so
     # an adapter that hasn't enumerated ``BudgetCap`` / ``RetryThrottle``
@@ -178,13 +180,11 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
     #
     # Anything narrower than the full set (``{C}``, ``{B, C}``,
     # ``{A, C}``, ...) is a policy that needs the adapter to know
-    # how to wire it — a hypothetical future modification policy
-    # declared ``{B, C}`` ("works in raw decorator + framework
-    # adapter, but not under the bare SDK shim") should NOT silently
-    # pass a registration against an adapter that hasn't enumerated
-    # it. review finding #1 tightened this from
-    # ``has-C and has-A-or-B`` to ``equals {A, B, C}`` to make the
-    # contract match the adapter capability model.
+    # how to wire it — a hypothetical modification policy declared
+    # ``{B, C}`` ("works in raw decorator + framework adapter, but
+    # not under the bare SDK shim") should NOT silently pass a
+    # registration against an adapter that hasn't enumerated it.
+    # Hence ``equals {A, B, C}`` rather than a looser has-C check.
     if policy.SUPPORTED_PATTERNS == {
         IntegrationPattern.A,
         IntegrationPattern.B,
@@ -212,6 +212,8 @@ def _check_adapter_supports(policy: Policy, adapter: Any) -> None:
 # Policy`` — they're not imported here until needed.
 from inkfoot.policy.budget_cap import BudgetCap  # noqa: E402
 from inkfoot.policy.cache_control_placer import CacheControlPlacer  # noqa: E402
+from inkfoot.policy.cheap_summariser import CheapSummariser  # noqa: E402
+from inkfoot.policy.lazy_tool_exposure import LazyToolExposure  # noqa: E402
 from inkfoot.policy.retry_throttle import RetryThrottle  # noqa: E402
 
 
