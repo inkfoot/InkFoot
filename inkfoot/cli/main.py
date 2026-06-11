@@ -83,12 +83,14 @@ def _build_parser() -> argparse.ArgumentParser:
     rep.add_argument(
         "--group-by",
         default="task",
-        choices=["task", "agent_kind", "node"],
         help=(
             "Bucket the report. 'task' / 'agent_kind' apply to the "
-            "aggregate view (--last); 'node' applies to single-run "
-            "view (--run) and slices the ledger by LangGraph / "
-            "Pattern-B node_name (framework metadata contract)."
+            "aggregate view (--last). 'node' or 'metadata.<key>' "
+            "apply to the single-run view (--run) and slice the "
+            "ledger by that adapter-stamped metadata value — 'node' "
+            "is an alias for metadata.node_name (LangGraph / "
+            "tag_node); 'metadata.agent_name' / 'metadata.task_name' "
+            "slice a multi-agent crew per agent / per task."
         ),
     )
     rep.add_argument(

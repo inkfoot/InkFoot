@@ -262,7 +262,14 @@ def run(args: Any) -> int:
     try:
         storage.connect()
 
-        if getattr(args, "last", None):
+        group_by = getattr(args, "group_by", None)
+        is_aggregate = bool(getattr(args, "last", None))
+        group_by_error = _group_by_error(group_by, aggregate=is_aggregate)
+        if group_by_error:
+            print(group_by_error)
+            return 2
+
+        if is_aggregate:
             print(_render_aggregate(storage, args))
             return 0
 
@@ -280,8 +287,9 @@ def run(args: Any) -> int:
 
         events = list(storage.iter_events(run_id))
 
-        if getattr(args, "group_by", None) == "node":
-            print(_render_per_node(row, events))
+        metadata_key = _metadata_group_key(group_by)
+        if metadata_key is not None:
+            print(_render_per_metadata(row, events, key=metadata_key))
             return 0
 
         ledger_totals = _aggregate_ledger_totals(events)
@@ -306,23 +314,82 @@ def run(args: Any) -> int:
         storage.close()
 
 
-def _render_per_node(
-    run: dict[str, Any], events: list[dict[str, Any]]
-) -> str:
-    """Per-node ledger summary for ``inkfoot report --run <id>
-    --group-by node`` (framework metadata contract).
+def _group_by_error(group_by: Any, *, aggregate: bool) -> Optional[str]:
+    """Validate a ``--group-by`` value for the selected view. Returns
+    the error message to print (the CLI exits 2 on it), or ``None``
+    when the value is valid.
 
-    Groups every ``llm_call`` event by its
-    ``payload.metadata.node_name`` and emits one row per node with
-    fresh-input tokens, output tokens, dollar cost (sum of
-    per-category estimates), and call count. Calls without a
-    ``node_name`` land under ``(no node)`` — important to show so
-    the user spots adapters that aren't tagging their nodes.
+    Shared by :func:`run` (so both views fail with the same exit
+    code) and :func:`_render_aggregate` — the latter interpolates the
+    value into SQL, so it re-checks even though the CLI path
+    validates first.
+    """
+    metadata_key = _metadata_group_key(group_by)
+    if metadata_key == "":
+        return (
+            f"inkfoot report: invalid --group-by value {group_by!r} "
+            "(metadata.<key> needs a key, e.g. metadata.agent_name)"
+        )
+    if aggregate:
+        if metadata_key is not None:
+            return (
+                f"inkfoot report: --group-by {group_by} only applies to "
+                "a single run (pair with --run, not --last). "
+                "Per-metadata aggregates across runs are deferred to "
+                "future aggregate analysis."
+            )
+        if (group_by or "task") not in ("task", "agent_kind"):
+            return (
+                f"inkfoot report: invalid --group-by value {group_by!r} "
+                "(expected 'task' or 'agent_kind'; 'node' / "
+                "'metadata.<key>' pair with --run)"
+            )
+        return None
+    if metadata_key is not None:
+        return None
+    if group_by not in (None, "task", "agent_kind"):
+        return (
+            f"inkfoot report: invalid --group-by value {group_by!r} "
+            "(expected 'task', 'agent_kind', 'node', or "
+            "'metadata.<key>')"
+        )
+    return None
+
+
+def _metadata_group_key(group_by: Any) -> Optional[str]:
+    """Map a ``--group-by`` value onto the metadata key the
+    single-run view slices by. ``node`` stays as the alias for
+    ``metadata.node_name``; ``metadata.<key>`` selects any
+    adapter-stamped key (``metadata.agent_name`` /
+    ``metadata.task_name`` for multi-agent crews, ...). ``None``
+    means "not a metadata group-by" (task / agent_kind / default).
+    """
+    if group_by == "node":
+        return "node_name"
+    if isinstance(group_by, str) and group_by.startswith("metadata."):
+        return group_by[len("metadata."):]
+    return None
+
+
+def _render_per_metadata(
+    run: dict[str, Any], events: list[dict[str, Any]], *, key: str
+) -> str:
+    """Per-metadata-value ledger summary for ``inkfoot report --run
+    <id> --group-by metadata.<key>`` (and the ``node`` alias for
+    ``metadata.node_name``) — the framework metadata contract.
+
+    Groups every ``llm_call`` event by its ``payload.metadata.<key>``
+    and emits one row per value with fresh-input tokens, output
+    tokens, dollar cost (sum of per-category estimates), and call
+    count. Calls without the key land under ``(no <label>)`` —
+    important to show so the user spots adapters that aren't
+    stamping the field.
     """
     from inkfoot.smells._helpers import (  # noqa: PLC0415
         ledger_from_payload,
     )
 
+    label = "node" if key == "node_name" else key
     rows: dict[str, dict[str, int]] = {}
     for ev in events:
         if not isinstance(ev, dict) or ev.get("kind") != "llm_call":
@@ -335,10 +402,8 @@ def _render_per_node(
         except (TypeError, ValueError):
             continue
         metadata = payload.get("metadata") or {}
-        node_name = (
-            metadata.get("node_name") if isinstance(metadata, dict) else None
-        )
-        bucket = node_name or "(no node)"
+        value = metadata.get(key) if isinstance(metadata, dict) else None
+        bucket = str(value) if value else f"(no {label})"
         ledger = ledger_from_payload(payload)
         provider = payload.get("provider", "")
         model = payload.get("model", "")
@@ -355,27 +420,38 @@ def _render_per_node(
         bucket_row["nanodollars"] += sum(int(nd) for nd in per_cat.values())
 
     if not rows:
+        header = (
+            f"Run {run.get('id') or '?'} · {run.get('task') or '(no task)'}"
+        )
+        if key == "node_name":
+            return (
+                f"{header}\n"
+                "No node-tagged LLM calls in this run.\n"
+                "Hint: install a framework adapter "
+                "(inkfoot.langgraph.instrument) "
+                "or call inkfoot.tag_node('node-name') before LLM calls."
+            )
         return (
-            f"Run {run.get('id') or '?'} · {run.get('task') or '(no task)'}\n"
-            "No node-tagged LLM calls in this run.\n"
-            "Hint: install a framework adapter (inkfoot.langgraph.instrument) "
-            "or call inkfoot.tag_node('node-name') before LLM calls."
+            f"{header}\n"
+            f"No LLM calls carrying metadata.{key} in this run.\n"
+            "Hint: install a framework adapter that stamps it (e.g. "
+            "inkfoot.crewai.instrument sets agent_name and task_name)."
         )
 
     lines = [
         (
             f"Run {run.get('id') or '?'} · "
-            f"{run.get('task') or '(no task)'} · per-node ledger"
+            f"{run.get('task') or '(no task)'} · per-{label} ledger"
         ),
         "",
         (
-            f"  {'node':<24} {'calls':>6} {'input_tok':>10} "
+            f"  {label:<24} {'calls':>6} {'input_tok':>10} "
             f"{'output_tok':>11} {'cost':>10}"
         ),
     ]
     # Sort by nanodollar spend desc so the eye lands on the most
-    # expensive node first; ``(no node)`` floats wherever its total
-    # places.
+    # expensive bucket first; ``(no <label>)`` floats wherever its
+    # total places.
     for bucket, agg in sorted(
         rows.items(), key=lambda kv: kv[1]["nanodollars"], reverse=True
     ):
@@ -468,18 +544,10 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
         where += " AND task = ?"
         params.append(task_filter)
 
+    error = _group_by_error(getattr(args, "group_by", None), aggregate=True)
+    if error:
+        return error
     group_by = getattr(args, "group_by", None) or "task"
-    if group_by == "node":
-        return (
-            "inkfoot report: --group-by node only applies to a single "
-            "run (pair with --run, not --last). Per-node aggregates "
-            "across runs are deferred to future aggregate analysis."
-        )
-    if group_by not in {"task", "agent_kind"}:
-        return (
-            f"inkfoot report: invalid --group-by value {group_by!r} "
-            f"(expected 'task', 'agent_kind', or 'node' with --run)"
-        )
 
     # Per-bucket aggregates SQLite can compute natively. p95 is
     # computed in Python below from the per-run totals.

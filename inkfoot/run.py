@@ -147,3 +147,12 @@ class InMemoryRunState:
     # ledger + cache-detection heuristics can recognise "same tools as
     # last call". Free-form string; ``None`` outside a Pattern-C run.
     tools_fingerprint: Optional[str] = None
+    # Multi-agent attribution: a framework adapter (CrewAI) sets these
+    # while a specific agent / framework task is executing so the
+    # translator can attach ``metadata["agent_name"]`` /
+    # ``metadata["task_name"]`` to every LLM call made inside that
+    # scope. Same lifetime semantics as ``node_name`` — set on scope
+    # entry, restored to the prior value on exit, ``None`` when no
+    # agent/task context applies.
+    agent_name: Optional[str] = None
+    task_name: Optional[str] = None

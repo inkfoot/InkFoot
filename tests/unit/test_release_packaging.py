@@ -61,7 +61,13 @@ yaml_required = pytest.mark.skipif(
 @toml_required
 def test_framework_extras_declared():
     extras = _load_toml()["project"]["optional-dependencies"]
-    for name in ("langgraph", "openai-agents", "anthropic-agent"):
+    for name in (
+        "langgraph",
+        "openai-agents",
+        "anthropic-agent",
+        "pydantic-ai",
+        "crewai",
+    ):
         assert name in extras, f"missing framework extra: {name}"
         assert extras[name], f"extra {name} declares no requirements"
 
@@ -73,6 +79,8 @@ def test_each_extra_pins_its_peer_framework():
         "langgraph": "langgraph",
         "openai-agents": "openai-agents",
         "anthropic-agent": "anthropic-agent",
+        "pydantic-ai": "pydantic-ai",
+        "crewai": "crewai",
     }
     for extra, peer in expected_peer.items():
         joined = " ".join(extras[extra])
@@ -84,7 +92,13 @@ def test_all_meta_extra_bundles_every_framework_extra():
     extras = _load_toml()["project"]["optional-dependencies"]
     assert "all" in extras
     joined = " ".join(extras["all"])
-    for name in ("langgraph", "openai-agents", "anthropic-agent"):
+    for name in (
+        "langgraph",
+        "openai-agents",
+        "anthropic-agent",
+        "pydantic-ai",
+        "crewai",
+    ):
         assert name in joined, f"[all] should pull in {name}"
 
 

@@ -70,6 +70,8 @@ def test_required_pages_exist():
         "frameworks/langgraph.md",
         "frameworks/openai-agents.md",
         "frameworks/anthropic-agent.md",
+        "frameworks/pydantic-ai.md",
+        "frameworks/crewai.md",
         "frameworks/raw-sdk.md",
         # Reference
         "reference/cli.md",

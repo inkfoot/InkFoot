@@ -37,6 +37,7 @@ inkfoot report --run <run-id>
 | Flag | Purpose |
 |---|---|
 | `--run <id>` | Render the run with this ULID. |
+| `--group-by <field>` | Switch to the per-metadata ledger: `node` (alias for `metadata.node_name`) or any `metadata.<key>`, e.g. `metadata.agent_name` / `metadata.task_name` for a CrewAI crew. |
 | `--show-zero` | Show all fourteen ledger fields including always-zero rows. |
 | `--no-smells` | Skip smell evaluation and hide the smells stanza. Useful when you only want the attribution chart. |
 | `--db <path>` | Override the default database path. |
@@ -74,6 +75,20 @@ categories were hidden.
 If a smell anchors to one of the bar-chart rows (its
 `primary_category`), a `⚠ <short-name>` marker appears beside that row.
 
+### Per-metadata view
+
+```bash
+inkfoot report --run <run-id> --group-by metadata.agent_name
+```
+
+Framework adapters stamp attribution metadata onto every LLM call —
+LangGraph sets `node_name`, the CrewAI adapter sets `agent_name`
+and `task_name`. `--group-by metadata.<key>` (or the `node` alias)
+replaces the bar chart with one ledger row per value of that key:
+calls, fresh-input tokens, output tokens, and cost, sorted by spend
+descending. Calls without the key land under `(no <key>)` so a
+non-stamping adapter is visible rather than silently merged.
+
 ### Aggregate view
 
 ```bash
@@ -83,7 +98,7 @@ inkfoot report --last 7d --group-by task
 | Flag | Purpose |
 |---|---|
 | `--last <duration>` | Time window. Format: `<n><unit>` where unit is `s`, `m`, `h`, or `d`. Examples: `24h`, `7d`, `30d`. |
-| `--group-by <field>` | Bucket the table by `task` (default) or `agent_kind`. |
+| `--group-by <field>` | Bucket the table by `task` (default) or `agent_kind`. (`node` / `metadata.<key>` are single-run slices — pair them with `--run`.) |
 | `--task <name>` | Filter to runs with this `task` value. |
 | `--no-smells` | Skip the cross-run smell rollup at the bottom of the view. |
 | `--db <path>` | Override the default database path. |

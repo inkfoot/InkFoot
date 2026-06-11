@@ -16,10 +16,10 @@ Inkfoot ships two modification policies:
 
 Because they change what the model receives, modification policies are
 only available where a **framework adapter** is active (LangGraph,
-OpenAI Agents SDK, Anthropic Agent SDK). The adapter gives Inkfoot
-enough context — turn boundaries, tool registries, run identity — to
-edit requests safely. Registering a modification policy on the plain
-SDK shim or the raw decorator raises
+OpenAI Agents SDK, Anthropic Agent SDK, Pydantic AI). The adapter
+gives Inkfoot enough context — turn boundaries, tool registries, run
+identity — to edit requests safely. Registering a modification policy
+on the plain SDK shim or the raw decorator raises
 `inkfoot.errors.PolicyNotSupported` with a remediation hint.
 
 ## Registering modification policies
@@ -44,11 +44,16 @@ register_policies([
 ```
 
 `register_policies()` consults the active adapter's
-`supported_policies()` set. All three built-in adapters support both
-modification policies; observation policies pass regardless. Passing a
-modification policy to `inkfoot.instrument(policies=[...])` raises
-`PolicyNotSupported` *before* any instrumentation is installed, so a
-misconfigured startup fails fast rather than half-wiring.
+`supported_policies()` set. The LangGraph, OpenAI Agents, Anthropic
+Agent, and Pydantic AI adapters support both modification policies.
+The [CrewAI adapter](../frameworks/crewai.md) is the exception: CrewAI
+doesn't expose the stable per-turn context (tool registry, turn
+boundaries) that safe request rewriting needs, so it is
+observation-only and rejects both. Observation policies pass
+regardless of adapter. Passing a modification policy to
+`inkfoot.instrument(policies=[...])` raises `PolicyNotSupported`
+*before* any instrumentation is installed, so a misconfigured startup
+fails fast rather than half-wiring.
 
 ## `LazyToolExposure(stale_after_turns=3, core_tools=())`
 

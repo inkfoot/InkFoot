@@ -121,6 +121,8 @@ nav:
       - LangGraph: frameworks/langgraph.md
       - OpenAI Agents SDK: frameworks/openai-agents.md
       - Anthropic Agent SDK: frameworks/anthropic-agent.md
+      - Pydantic AI: frameworks/pydantic-ai.md
+      - CrewAI: frameworks/crewai.md
       - Raw Provider SDK: frameworks/raw-sdk.md
   - Recipes:
       - Find your most expensive agent: recipes/find-expensive-agent.md

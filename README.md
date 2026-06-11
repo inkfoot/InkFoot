@@ -34,13 +34,17 @@ manager for run scoping, `inkfoot.set_outcome / tag / tag_retrieval
 / tag_node / checkpoint / report_cost` for in-run metadata,
 `inkfoot.langgraph.instrument(graph)` /
 `inkfoot.openai_agents.instrument(agent)` /
-`inkfoot.anthropic_agent.instrument(agent)` for framework
-adapters (per-node attribution + tool-dispatch events),
+`inkfoot.anthropic_agent.instrument(agent)` /
+`inkfoot.pydantic_ai.instrument(agent)` /
+`inkfoot.crewai.instrument(crew)` for framework
+adapters (per-node attribution, tool-dispatch events, per-agent /
+per-task crew attribution),
 the rule-based smell engine with five built-in cost smells, and
 the `inkfoot` CLI with `report` (single-run attribution bar chart +
 smells, or aggregate `--last 7d --group-by task` with runs / avg_$
 / p95_$ / success% / cost-per-success, or single-run
-`--group-by node` for per-LangGraph-node ledger totals), `tag`
+`--group-by node` / `--group-by metadata.<key>` for per-node and
+per-agent ledger totals), `tag`
 (late tagging), `rebuild-aggregates`, `benchmark` (scenario
 runner emitting the benchmark JSON artefact), and `diff`
 (structured comparison between two artefacts with `ok/warn/fail`
@@ -116,9 +120,13 @@ inkfoot/                                    # the Python package
     langgraph.py                            # LangGraph adapter (per-node attribution + tools fingerprint)
     openai_agents.py                        # OpenAI Agents SDK adapter (tool-dispatched events)
     anthropic_agent.py                      # Anthropic Agent SDK adapter
+    pydantic_ai.py                          # Pydantic AI adapter (run scoping + registered-tool events)
+    crewai.py                               # CrewAI adapter (per-agent / per-task attribution, observation-only)
   langgraph.py                              # Top-level convenience: inkfoot.langgraph.instrument(graph)
   openai_agents.py                          # Top-level convenience: inkfoot.openai_agents.instrument(agent)
   anthropic_agent.py                        # Top-level convenience: inkfoot.anthropic_agent.instrument(agent)
+  pydantic_ai.py                            # Top-level convenience: inkfoot.pydantic_ai.instrument(agent)
+  crewai.py                                 # Top-level convenience: inkfoot.crewai.instrument(crew)
   smells/
     __init__.py                             # CostSmell + DetectionResult + DEFAULT_SMELLS + registry
     engine.py                               # SmellEngine (lazy, off the hot path)
@@ -198,8 +206,12 @@ pipeline is two tag-driven workflows plus a guard script:
 
 Framework extras ship alongside the release —
 `pip install "inkfoot[langgraph]"`, `[openai-agents]`,
-`[anthropic-agent]`, or `[all]`. (A `[langchain]` extra lands in a
-later release, not here.)
+`[anthropic-agent]`, `[pydantic-ai]`, `[crewai]`, or `[all]`.
+(A `[langchain]` extra lands in a later release, not here.) A
+weekly [live-tests workflow](.github/workflows/live-tests.yml)
+installs each extra from PyPI and runs the adapter contract +
+integration suites against the real SDKs, so upstream drift
+surfaces as a red matrix leg instead of a user bug report.
 
 ## License
 

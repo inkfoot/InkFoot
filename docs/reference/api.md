@@ -39,6 +39,10 @@ namespace and call `.instrument(target)` once you've called
 
 ### ::: inkfoot.anthropic_agent.instrument
 
+### ::: inkfoot.pydantic_ai.instrument
+
+### ::: inkfoot.crewai.instrument
+
 ## Observation policies
 
 Policy classes you pass into
