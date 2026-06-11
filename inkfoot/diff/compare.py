@@ -5,8 +5,8 @@ the baseline and the current run. Output: a :class:`DiffReport`
 with per-scenario deltas, smell deltas, an overall verdict, and a
 ``fail`` exit code (mapped by the CLI).
 
-The verdict ladder is defined by :class:`Thresholds` (the documented threshold contract
-§4.4); this module only *computes* and *labels*, it never renders.
+The verdict ladder is defined by :class:`Thresholds`; this module only
+*computes* and *labels*, it never renders.
 That keeps ``compare_artifacts`` snapshot-testable: same inputs ->
 same DiffReport instance.
 """
@@ -262,7 +262,7 @@ def _diff_scenario(
         # A new scenario has no baseline to compare cost against, but
         # if it ships *with* a critical smell already firing we want
         # the diff to fail loudly — otherwise a PR can introduce a
-        # broken scenario and sail past CI (Finding #5). Build smell
+        # broken scenario and sail past CI. Build smell
         # deltas + verdict from current alone; the cost / cache /
         # outcome axes carry no signal here so they stay None.
         smell_deltas = tuple(
@@ -363,8 +363,7 @@ def _fraction_change(baseline: int, current: int) -> Optional[float]:
     ``None`` when the baseline is zero — the ratio is undefined.
     Callers also pair this with :func:`_cost_appeared` to catch the
     "0 → X" case explicitly so a real cost regression doesn't
-    disappear into a missing-data dash in the rendered diff
-    (Finding #6).
+    disappear into a missing-data dash in the rendered diff.
     """
     if baseline <= 0:
         return None
@@ -432,7 +431,7 @@ def _verdict(
     ``*_cost_appeared`` flips when the baseline cost on that axis
     was zero and the current is positive — represented as FAIL
     because "we measured nothing before and pay X now" is the
-    sharpest possible regression signal (Finding #6).
+    sharpest possible regression signal.
     """
     reasons: list[str] = []
     verdict = Verdict.OK
@@ -485,7 +484,7 @@ def _verdict(
             )
 
     # Outcome (success) rate drops. Use `>=` to match the cost / cache
-    # boundary convention (Finding #8); explicitly require `drop > 0`
+    # boundary convention; explicitly require `drop > 0`
     # so a 0pp drop with outcome_warn=0.0 stays OK.
     if success_delta is not None:
         drop = -success_delta

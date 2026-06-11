@@ -43,8 +43,8 @@ _current_run_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 
 # In-memory state map keyed by run_id. Holds the InMemoryRunState
 # instance the translators mutate (stable_system_prefix etc.). Kept
-# *here* rather than on Storage because §5.4 says explicitly: it's
-# process-local, never persisted.
+# *here* rather than on Storage deliberately: it's process-local,
+# never persisted.
 _run_states: dict[str, "InMemoryRunState"] = {}
 _run_states_lock = threading.Lock()
 

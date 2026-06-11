@@ -1,6 +1,6 @@
-"""Shim hot-path benchmark — covers Finding #6 in the review.
+"""Shim hot-path benchmark.
 
-§9.1 budgets:
+Budgets:
 
 * SDK shim wrapper overhead — under 100 µs p95 in metadata mode.
 * Replay mode is not subject to the 100 µs hot-path budget because
@@ -29,14 +29,14 @@ from tests.unit._fake_sdks import install_fake_anthropic, uninstall_fake_sdks
 
 # Naming clarifications:
 #
-# * ``_METADATA_P95_BUDGET_S`` — the actual §9.1 spec budget for
+# * ``_METADATA_P95_BUDGET_S`` — the nominal perf budget for
 #   the SDK shim wrapper overhead (100 µs p95) in metadata mode.
 # * ``_METADATA_MEDIAN_BUDGET_S`` — median guard. Median is robust
 #   to the occasional 100 ms CI VM-scheduler outlier that would
 #   otherwise drag the arithmetic mean over the line on a shared
-#   runner. Held to 300 µs — well below the §9.1 p95 budget × the
+#   runner. Held to 300 µs — well below the p95 budget × the
 #   typical p95/median ratio on these runners (≈3×).
-# * ``_REPLAY_P95_BUDGET_S`` — looser per Finding #6: replay mode
+# * ``_REPLAY_P95_BUDGET_S`` — deliberately looser: replay mode
 #   adds JSON serialisation that legitimately dominates.
 _METADATA_P95_BUDGET_S = 0.001  # 1 ms — soft p95 bar on noisy CI
 _METADATA_MEDIAN_BUDGET_S = 0.0003  # 300 µs median
@@ -72,7 +72,7 @@ def _seed(storage: SQLiteStorage) -> str:
 
 
 def test_metadata_mode_hot_path_under_perf_budget(benchmark, shim_setup) -> None:
-    """Metadata mode (the default metadata-only posture) hits the §9.1
+    """Metadata mode (the default metadata-only posture) hits the
     hot-path budget.
 
     Asserts on median + p95 rather than mean: shared CI runners
@@ -115,8 +115,8 @@ def test_metadata_mode_hot_path_under_perf_budget(benchmark, shim_setup) -> None
 
 def test_replay_mode_hot_path_under_looser_budget(benchmark, shim_setup) -> None:
     """Replay mode adds JSON serialisation of request_kwargs and the
-    SDK response on every call. Per Finding #6, this isn't subject
-    to the 100 µs §9.1 budget — but it should still complete well
+    SDK response on every call. That isn't subject
+    to the 100 µs hot-path budget — but it should still complete well
     under 5 ms p95 for a small fixture."""
     fakes = shim_setup["fakes"]
     storage = shim_setup["storage"]

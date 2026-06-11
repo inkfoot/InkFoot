@@ -2,8 +2,8 @@
 
 ``instrument()`` calls into :func:`install_shims` once per process.
 The function probes which SDKs are importable and installs only
-those — never crashes on a missing SDK per §5.1's "detect rather
-than require" contract.
+those — never crashes on a missing SDK, honouring the "detect
+rather than require" contract.
 
 Shims are tracked here so :func:`uninstall_shims` can cleanly
 reverse the patch (used by tests + the atexit shutdown).

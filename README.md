@@ -51,7 +51,7 @@ Ledger, per-provider Anthropic + OpenAI translators with
 stable-prefix detection, `tiktoken`-based tokenisers with
 estimation flags, the pricing module, and the three observation
 policies (`BudgetCap`, `RetryThrottle`,
-`CacheControlPlacer`). Six §9.1 perf gates run on every PR.
+`CacheControlPlacer`). Six perf gates run on every PR.
 
 ## Quickstart (development)
 
@@ -89,7 +89,7 @@ inkfoot/                                    # the Python package
   _run_context.py                           # ContextVar-based active-run pointer
   _shim_install.py                          # SDK auto-detect + install/uninstall
   errors.py                                 # InkfootError, PolicyNotSupported, ...
-  money.py                                  # Nanodollar type (ADR-0-4)
+  money.py                                  # Nanodollar integer money type
   ledger.py                                 # 14-field CausalTokenLedger + invariant
   pricing.py                                # PRICING_ND_PER_TOKEN + estimate_nanodollars
   run.py                                    # Run + InMemoryRunState dataclasses
@@ -105,7 +105,7 @@ inkfoot/                                    # the Python package
     retry_throttle.py                       # RetryThrottle
     cache_control_placer.py                 # CacheControlPlacer (Anthropic)
   shims/
-    _isolation.py                           # @isolated_hook / safely_run (ADR-0-3)
+    _isolation.py                           # @isolated_hook / safely_run
     _emit.py                                # shared event-emit pipeline
     anthropic.py                            # AnthropicShim (sync + async)
     openai.py                               # OpenAIShim (sync + async)
@@ -131,7 +131,7 @@ inkfoot/                                    # the Python package
   storage/
     __init__.py                             # Storage Protocol (lazy SQLiteStorage)
     sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
-    migrations.py                           # forward-only DDL (v1 = §5.5 + §5.5.1)
+    migrations.py                           # forward-only DDL (schema v1)
     aggregator.py                           # claim-and-project AggregatorWorker
   _run_lifecycle.py                         # @agent_run + set_outcome/tag/tag_retrieval/report_cost
   cli/

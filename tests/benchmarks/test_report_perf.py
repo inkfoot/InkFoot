@@ -1,14 +1,13 @@
 """Report renderer hot-path benchmark.
 
-§9.1 budget: ``inkfoot report --run <id>`` end-to-end completes in
+Budget: ``inkfoot report --run <id>`` end-to-end completes in
 under 200 ms for a 50-event run. The renderer is a pure function of
 ``(run, ledger_totals, smells)`` so we exercise the slice CI sees:
 storage → per-category roll-up → smell engine → render → ``join``.
 
-Asserts on **median** and **p95** rather than mean (the review
-established this pattern — shared CI runners produce outlier ms
-spikes that drag arithmetic means above the budget without
-representing a real regression).
+Asserts on **median** and **p95** rather than mean — shared CI
+runners produce outlier ms spikes that drag arithmetic means above
+the budget without representing a real regression.
 """
 
 from __future__ import annotations
@@ -29,8 +28,8 @@ from inkfoot.storage.sqlite import SQLiteStorage
 from ulid import ULID
 
 
-_REPORT_MEDIAN_BUDGET_S = 0.100  # 100 ms median — half the §9.1 cap
-_REPORT_P95_BUDGET_S = 0.200  # 200 ms p95 — the §9.1 cap
+_REPORT_MEDIAN_BUDGET_S = 0.100  # 100 ms median — half the p95 cap
+_REPORT_P95_BUDGET_S = 0.200  # 200 ms p95 — the perf cap
 
 
 def _seed_50_event_run(tmp_path: Path) -> tuple[SQLiteStorage, str]:
@@ -102,7 +101,7 @@ def test_report_renders_under_two_hundred_ms_for_fifty_event_run(
     benchmark, primed
 ) -> None:
     """End-to-end report render against a 50-event run sits under
-    the §9.1 budget."""
+    the perf budget."""
     storage, run_id = primed
     run_row = storage.get_run(run_id)
     events = list(storage.iter_events(run_id))

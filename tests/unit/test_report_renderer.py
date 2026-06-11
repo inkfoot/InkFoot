@@ -131,7 +131,7 @@ def test_show_zero_includes_all_fourteen_rows() -> None:
 
 
 def test_dollar_figures_use_four_decimal_precision() -> None:
-    """§5.10: 4-decimal dollar precision in the bar-chart rows."""
+    """4-decimal dollar precision in the bar-chart rows."""
     out = render(run=_basic_run(), ledger_totals=_totals_with_some_zero(), smells=[])
     # Sample a known-cost row.
     body_lines = [
@@ -260,7 +260,7 @@ def test_render_with_all_zero_totals_does_not_crash() -> None:
 
 
 # ----------------------------------------------------------------------
-# Always-zero footnote grammar (review #4)
+# Always-zero footnote grammar
 # ----------------------------------------------------------------------
 
 
@@ -306,7 +306,7 @@ def test_footnote_absent_when_show_zero_true() -> None:
 
 
 # ----------------------------------------------------------------------
-# Aggregate view (Finding #1: p95_$ + cost/success columns)
+# Aggregate view (p95_$ + cost/success columns)
 # ----------------------------------------------------------------------
 
 

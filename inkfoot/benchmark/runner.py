@@ -105,7 +105,7 @@ def run_benchmark(
         output: When provided, the artefact is also written to disk
             at this path. The CLI passes ``--output`` here.
         scenarios_only: Optional iterable of scenario task names; only
-            matching scenarios are run. Mirrors the spec's
+            matching scenarios are run. Mirrors the CLI's
             ``--scenarios-only NAME`` flag.
         instrument: Function called once to boot Inkfoot's
             instrumentation against the runner's storage. Defaults to
@@ -212,7 +212,7 @@ def _execute_one(
     storage; records the run id, success flag, and post-hoc the
     aggregated ledger / smell hits.
 
-    Outcome resolution (Finding #7): we honour any outcome the
+    Outcome resolution: we honour any outcome the
     scenario emits via ``inkfoot.set_outcome(...)``. If the
     scenario doesn't set one and ``run()`` returned normally, we
     fall back to the scenario's declared ``expected_outcome``. On
@@ -270,7 +270,7 @@ def _ensure_outcome(
     Peeks at the run's event stream for an existing ``outcome``
     event; if none, falls back to ``"failure"`` (on exception) or
     the scenario's declared ``expected_outcome`` (on clean return).
-    The fall-through path keeps the spec intent — a scenario that
+    The fall-through path keeps the declared intent — a scenario that
     declares ``expected_outcome="human_escalated"`` and returns
     normally is *not* implicitly demoted to ``"success"``.
     """
@@ -301,7 +301,7 @@ def _summarise_run(
     * ``cache_read_tokens`` / ``cache_creation_tokens``: used by the
       cache-hit-rate formula in :func:`_aggregate_scenario`,
     * ``succeeded``: whether the run's *recorded* outcome matches
-      the scenario's ``expected_outcome`` (Finding #7).
+      the scenario's ``expected_outcome``.
 
     The full event stream stays in storage for the user to drill
     into with ``inkfoot report`` after the fact."""
@@ -459,7 +459,7 @@ def _aggregate_scenario(
         for smell_id in s.get("smell_ids", ()):  # type: ignore[union-attr]
             smell_counts[smell_id] = smell_counts.get(smell_id, 0) + 1
 
-    # Aggregation choice (Finding #9): we use a mean-of-per-run-rates
+    # Aggregation choice: we use a mean-of-per-run-rates
     # rather than a token-weighted ratio-of-sums so a single
     # high-cost outlier run with a cache miss doesn't drown out the
     # other runs' signal. Trade-off: scenarios with extremely

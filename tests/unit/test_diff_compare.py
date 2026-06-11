@@ -160,7 +160,7 @@ def test_outcome_drop_above_fail_threshold_fails():
 
 
 def test_new_scenario_with_critical_smell_fails_not_oks():
-    # Finding #5: a brand-new scenario that ships with a critical
+    # A brand-new scenario that ships with a critical
     # smell already firing must NOT sail through as OK.
     baseline = _artifact()
     current = _artifact(
@@ -189,7 +189,7 @@ def test_new_scenario_with_non_critical_smell_warns():
 
 
 def test_zero_baseline_cost_to_positive_current_promotes_to_fail():
-    # Finding #6: baseline p50/p95 == 0 (no LLM calls; smoke test) and
+    # Baseline p50/p95 == 0 (no LLM calls; smoke test) and
     # current > 0 must NOT render as missing data.
     baseline = _artifact(_scenario(p50=0, p95=0))
     current = _artifact(_scenario(p50=12_345, p95=12_345))
@@ -207,7 +207,7 @@ def test_zero_to_zero_cost_stays_ok():
 
 
 def test_outcome_warn_threshold_boundary_is_inclusive():
-    # Finding #8: with a custom outcome_warn=0.05, a drop of exactly
+    # With a custom outcome_warn=0.05, a drop of exactly
     # 5pp should warn (matching cost / cache `>=` convention).
     custom = Thresholds(
         name="custom",

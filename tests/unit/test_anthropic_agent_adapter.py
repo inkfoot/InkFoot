@@ -115,8 +115,13 @@ def test_instrument_is_idempotent() -> None:
     assert h1 is h2
 
 
-def test_supported_policies_default_is_empty_set() -> None:
-    assert AnthropicAgentAdapter().supported_policies() == set()
+def test_supported_policies_enumerates_modification_policies() -> None:
+    from inkfoot.policy import CheapSummariser, LazyToolExposure
+
+    assert AnthropicAgentAdapter().supported_policies() == {
+        LazyToolExposure,
+        CheapSummariser,
+    }
 
 
 def test_shutdown_restores_originals() -> None:
@@ -142,8 +147,8 @@ def test_top_level_module_reexports_instrument() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """review finding #4 — symmetric with the OpenAI Agents +
-    LangGraph adapters."""
+    """Auto-deactivate semantics are symmetric with the OpenAI
+    Agents + LangGraph adapters."""
     agent = _StubAnthAgent()
     inst = instrument(agent, task="t")
     assert AdapterRegistry.get_active() is not None

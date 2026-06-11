@@ -24,7 +24,7 @@ left at ``status='running'``. The atexit hook from
 so anything still ``running`` flips to ``status='error'`` with
 ``error_message='abandoned'``.
 
-**State machine** (per the architecture notes §5.7):
+**State machine**:
 
   Created → Running → Complete   (no exception + outcome set)
                     → Errored    (exception)
@@ -454,8 +454,7 @@ class _RunHandle:
             self._context_token = None
 
         # Release per-run in-memory state so long-lived processes
-        # don't accumulate one dict entry per run (an earlier version left this as
-        # a TODO; review finding #2 flagged it). Abandonment
+        # don't accumulate one dict entry per run. Abandonment
         # cleanup does the same via _release_run_state below.
         _release_run_state(self._run_id)
         from inkfoot.contracts import runtime as _contract_runtime
@@ -566,7 +565,7 @@ def agent_run(
     metadata: Optional[dict[str, Any]] = None,
 ) -> _AgentRunFactory:
     """Decorator + context-manager + handle factory for one agent
-    run (see §5.7).
+    run.
 
     Usage::
 
@@ -636,8 +635,7 @@ def _mark_abandoned_runs() -> None:
     Called from ``inkfoot._instrument.shutdown`` so a process that
     exits between ``start_run`` and ``end_run`` leaves a clean row
     rather than a perpetual "running" zombie. Also releases the
-    abandoned run's in-memory state so it doesn't outlive the row
-    (review finding #2)."""
+    abandoned run's in-memory state so it doesn't outlive the row."""
     from inkfoot._instrument import _STORAGE  # noqa: PLC0415
 
     storage = _STORAGE
@@ -646,7 +644,7 @@ def _mark_abandoned_runs() -> None:
     # TODO(future/postgres): the Storage Protocol has no
     # ``find_runs_with_status(status)`` method yet. Reaching into
     # SQLiteStorage._conn() works today but a future Postgres
-    # backend will need a Protocol method (review finding #3).
+    # backend will need a Protocol method.
     try:
         conn = storage._conn()  # type: ignore[attr-defined]
     except Exception:  # pragma: no cover — defensive

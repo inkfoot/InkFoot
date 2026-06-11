@@ -372,8 +372,8 @@ class _LangGraphInstrumentation:
     ``shutdown()`` also releases the adapter's install count — when
     the last live instrumentation goes away, the active-adapter
     pointer in :data:`~inkfoot.adapters._registry.AdapterRegistry`
-    clears automatically. This was added under review finding
-    #4: previously a user calling ``inst.shutdown()`` would leave
+    clears automatically. Without this, a user calling
+    ``inst.shutdown()`` would leave
     the registry pointing at a "dead" adapter, so subsequent
     ``register_policies()`` calls would consult its
     ``supported_policies()`` even though no instrumentation was
@@ -433,7 +433,7 @@ class LangGraphAdapter:
     def __init__(self) -> None:
         # Install count — tracked so the adapter's active-pointer in
         # :data:`AdapterRegistry` auto-clears when the last live
-        # instrumentation shuts down (review finding #4).
+        # instrumentation shuts down.
         self._install_count = 0
 
     def detect(self) -> bool:
@@ -457,7 +457,7 @@ class LangGraphAdapter:
         :func:`inkfoot.agent_run`. Defaults to ``"langgraph"`` so a
         report can still bucket by task without the user passing it.
 
-        **Idempotence + mutation caveat** (review finding #6):
+        **Idempotence + mutation caveat**:
         a second ``instrument(graph)`` call returns the *same*
         handle that the first call produced — keyed on the graph
         instance via :data:`_INSTRUMENTED_MARKER`. This is the right
@@ -556,8 +556,7 @@ class LangGraphAdapter:
         the install count. When it reaches zero, the active-pointer
         auto-clears so subsequent ``register_policies()`` calls
         don't consult this adapter's ``supported_policies()`` after
-        the last instrumentation has been torn down (review
-        Finding #4)."""
+        the last instrumentation has been torn down."""
         if self._install_count > 0:
             self._install_count -= 1
         if self._install_count == 0:
@@ -566,19 +565,20 @@ class LangGraphAdapter:
                 AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
-        """The current release ships only observation policies — which all
-        support every integration pattern via the policy class's
-        ``SUPPORTED_PATTERNS`` set. Returning an empty set lets the
-        pattern-fallback path in :func:`register_policies` accept
-        them; future versions can enumerate the modification policies the
-        adapter knows how to wire."""
-        return set()
+        """Modification policies this adapter knows how to wire. The
+        observation policies (``BudgetCap``, ``RetryThrottle``,
+        ``CacheControlPlacer``) don't need enumerating — they support
+        every integration pattern, so the pattern-fallback path in
+        :func:`register_policies` accepts them regardless."""
+        from inkfoot.policy import CheapSummariser, LazyToolExposure  # noqa: PLC0415
+
+        return {LazyToolExposure, CheapSummariser}
 
     def shutdown(self) -> None:
         """Force the adapter to deactivate immediately, regardless of
         how many live instrumentations exist. Use sparingly — the
         per-instrumentation ``shutdown()`` already auto-deactivates
-        on the last release (review finding #4). Use this
+        on the last release. Use this
         method when you need to clear the registry pointer without
         having a handle on the individual ``_LangGraphInstrumentation``
         objects (e.g. test teardown, force-rebind to a different

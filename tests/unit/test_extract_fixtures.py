@@ -204,7 +204,7 @@ def test_filename_uses_full_run_id_avoiding_millisecond_collisions(
     tmp_path: Path,
 ) -> None:
     """Two distinct ULIDs that share their millisecond-derived
-    prefix must not produce colliding filenames (Finding #3). The
+    prefix must not produce colliding filenames. The
     full run id rides in the name; only the ULID's random suffix
     differs between concurrently-started runs."""
     from inkfoot.storage.sqlite import SQLiteStorage

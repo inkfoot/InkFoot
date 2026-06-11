@@ -5,7 +5,7 @@ Smells consume LLM-call events emitted by the shim. Each event's
 output of ``dataclasses.asdict(neutral_call)``); the ledger lives
 under ``payload["ledger"]``. These helpers turn that JSON soup into
 the typed shapes detectors actually want and keep error handling
-consistent across the five smells.
+consistent across the built-in smells.
 """
 
 from __future__ import annotations

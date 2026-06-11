@@ -1,7 +1,7 @@
 # Cost Smells
 
 A *cost smell* is a named pattern in a run's token attribution that is
-almost always wasted money. Inkfoot ships five built-in smells; the
+almost always wasted money. Inkfoot ships six built-in smells; the
 engine evaluates them every time you render a report, and each detected
 smell appears in the "Smells detected" section with a recommendation
 and an estimated cost impact.
@@ -15,9 +15,10 @@ about it, and what the suggested policy is.
 |---|---|---|---|
 | `unstable-prompt-prefix` | warn | `system_dynamic_tokens` | `CacheControlPlacer` |
 | `runaway-retry-loop` | critical | — (run shape) | `RetryThrottle` |
-| `oversized-tool-result-recycled` | warn | `tool_result_tokens` | `CheapSummariser` (future) |
+| `oversized-tool-result-recycled` | warn | `tool_result_tokens` | [`CheapSummariser`](modification-policies.md) |
 | `expensive-model-low-entropy` | info | `output_tokens` | — |
 | `recurring-cache-writes` | warn | `cache_creation_tokens` | `CacheControlPlacer` |
+| `summariser-quality-regression` | critical | `summariser_tokens` | — |
 
 Smells are evaluated lazily. They never touch the SDK hot path; they
 only run when you ask for a report.
@@ -90,9 +91,11 @@ and the number of turns it has been recycled.
 input_price`.
 
 **Recommendation.** Summarise large tool results before recycling them
-across turns. Until automatic summarisation lands as a future policy,
-prune the messages array manually after each tool invocation — keep a
-short summary of the result, drop the full body.
+across turns. If you run under a framework adapter, register the
+[`CheapSummariser`](modification-policies.md) policy and the
+replacement happens automatically; otherwise prune the messages array
+manually after each tool invocation — keep a short summary of the
+result, drop the full body.
 
 ## `expensive-model-low-entropy`
 
@@ -140,6 +143,34 @@ cache_write_premium`.
 prompt — before the unstable section — so the static prefix gets cached
 and the per-call drift becomes a normal input read instead of a fresh
 write.
+
+## `summariser-quality-regression`
+
+**Trigger.** The [`CheapSummariser`](modification-policies.md) policy,
+running in trust mode, found that runs receiving summarised tool
+results succeed measurably less often than runs that kept the raw
+results, and auto-disabled itself for the task. The smell surfaces
+that finding on the run where the comparison tipped.
+
+**Why it matters.** This is the one built-in smell about *quality*
+rather than wasted tokens. Summarisation only pays off if the agent
+still completes its task; when the A/B comparison shows the summarised
+branch trailing, the token savings are being bought with failed runs —
+usually a far worse trade.
+
+**Evidence in the report.** The task name, run counts and success
+rates for both branches, the measured success-rate drop, the
+quality-score delta (when quality scores were recorded), and the
+configured threshold.
+
+**Estimated cost impact.** None — the cost of this smell is degraded
+task quality, not tokens, so no dollar figure is estimated.
+
+**Recommendation.** Inspect the summarised tool results preserved in
+the event log to see what the summaries dropped. Raise the
+summariser's `threshold_tokens` or `max_summary_tokens` so more
+context survives, or leave it disabled for the task. Re-enable with
+`enable_summariser_for_task()` once the configuration changes.
 
 ## Reading the impact summary
 

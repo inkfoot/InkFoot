@@ -231,7 +231,7 @@ def test_metadata_mode_writes_zero_content_rows(tmp_path) -> None:
 def test_replay_mode_does_not_write_content_rows_for_policy_events(
     tmp_path,
 ) -> None:
-    """Finding #3: policy events (e.g. budget_warning) don't carry
+    """Policy events (e.g. budget_warning) don't carry
     request/response content, so even in replay mode the
     event_contents table should grow only by the llm_call count."""
     fakes = install_fake_anthropic()
@@ -276,7 +276,7 @@ def test_replay_mode_does_not_write_content_rows_for_policy_events(
 
 
 def test_provider_error_still_emits_an_llm_call_event(tmp_path) -> None:
-    """Finding #4: when the SDK raises, the run must still grow by
+    """When the SDK raises, the run must still grow by
     one llm_call event carrying NeutralError; the user-visible
     exception is identical to the un-instrumented behaviour."""
     fakes = install_fake_anthropic()

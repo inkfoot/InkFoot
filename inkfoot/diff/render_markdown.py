@@ -1,6 +1,6 @@
 """Markdown rendering for the ``inkfoot diff`` PR comment.
 
-Output structure (matches the architecture's §4.8 expectation):
+Output structure:
 
 1. Verdict header (`✅ ok` / `⚠️ warn` / `❌ fail`) with thresholds preset name.
 2. Per-scenario table — task, p50 delta, p95 delta, cache delta,

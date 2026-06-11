@@ -191,7 +191,7 @@ def test_github_client_find_sticky_returns_none_when_absent(
 def test_github_client_find_sticky_stops_at_pagination_cap(
     poster_module, monkeypatch, caplog
 ):
-    # Finding #12: a PR with absurdly many unrelated comments must
+    # A PR with absurdly many unrelated comments must
     # not burn unbounded action minutes scanning every page.
     client = poster_module.GitHubClient(token="t", api_base="https://api.github.com")
     pages_walked: list[int] = []

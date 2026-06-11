@@ -20,7 +20,7 @@ application/x-protobuf returns 415 Unsupported Media Type with a
 remediation hint. Most collectors can be configured to use the
 JSON encoder; that's the lighter-dep path for the OTLP/JSON implementation.
 
-DoS hardening (round-2 review #1): the handler caps the request
+DoS hardening: the handler caps the request
 body at :data:`_MAX_INGEST_BYTES` and the underlying socket
 honours :data:`_SOCKET_TIMEOUT_S`. The default bind is loopback;
 operators who flip ``otel_ingest_host="0.0.0.0"`` for shared
@@ -329,11 +329,11 @@ class OTLPHTTPReceiver:
         attrs_list = list(span.get("attributes") or [])
         decoded = _decode_attributes(attrs_list)
         # Inherit resource + scope attrs underneath the span's own
-        # values (review #8). Most provider SDKs put the GenAI
+        # values. Most provider SDKs put the GenAI
         # attrs on the span itself, but the collector may rewrite.
         attrs = dict(inherited)
         attrs.update(decoded)
-        # Skip non-GenAI spans (review #4). A pipeline that funnels
+        # Skip non-GenAI spans. A pipeline that funnels
         # its full trace export into our ingest used to land HTTP /
         # DB spans as ``provider="unknown"`` ``llm_call`` rows.
         # Filter at the boundary so storage stays clean.
@@ -379,8 +379,8 @@ class OTLPHTTPReceiver:
                 _LOG.debug("ingest-http: " + format, *args)
 
             # Per-request timeout. BaseHTTPRequestHandler reads
-            # ``self.timeout`` to gate slow-loris clients (review
-            # #1). Setting it at the class level applies to every
+            # ``self.timeout`` to gate slow-loris clients.
+            # Setting it at the class level applies to every
             # connection this handler factory produces.
             timeout = _SOCKET_TIMEOUT_S
 
@@ -389,8 +389,8 @@ class OTLPHTTPReceiver:
                     self._send_text(HTTPStatus.NOT_FOUND, "not found")
                     return
                 ctype_raw = self.headers.get("Content-Type", "")
-                # Strict RFC 9110 split on the media-type proper
-                # (review #6) — substring matching would let
+                # Strict RFC 9110 split on the media-type proper —
+                # substring matching would let
                 # ``text/x-application/json-bullshit`` through.
                 ctype = ctype_raw.split(";", 1)[0].strip().lower()
                 if ctype == "application/x-protobuf":
@@ -422,7 +422,7 @@ class OTLPHTTPReceiver:
                     )
                     return
                 if length > _MAX_INGEST_BYTES:
-                    # Body cap (review #1). 413 with a remediation
+                    # Body cap. 413 with a remediation
                     # message so a misconfigured collector can be
                     # diagnosed from the response body alone.
                     self._send_text(
@@ -448,7 +448,7 @@ class OTLPHTTPReceiver:
                     )
                     return
                 stats = receiver.ingest_payload(dict(payload))
-                # Spec-clean success response (review #5). Stats
+                # Spec-clean success response. Stats
                 # ride on an inkfoot-namespaced response header so
                 # they're available to operators without polluting
                 # the OTLP body.
@@ -506,7 +506,7 @@ def _iter_spans_with_inherited_attrs(
     payload: Mapping[str, Any],
 ):
     """Like :func:`_iter_spans` but also yields the merged
-    resource + scope attribute dict each span inherits (review #8).
+    resource + scope attribute dict each span inherits.
 
     Yields tuples of ``(span, inherited_attrs_dict)``. The dict
     contains every resource + scope attribute flattened in
@@ -552,7 +552,7 @@ def _looks_like_genai_span(attrs: Mapping[str, Any]) -> bool:
 # ----------------------------------------------------------------------
 
 
-# Bound on the trace_id -> run_id memo (review #3). Matches the
+# Bound on the trace_id -> run_id memo. Matches the
 # dedup cache cap. A trace evicted from the map and later
 # revisited gets a new synthesised run row — acceptable trade-off
 # because long-tail trace revivals are rare and the alternative
@@ -577,7 +577,7 @@ def storage_persist_factory(
     """
     # Cache the trace_id -> run_id mapping so back-to-back spans
     # for the same trace land under one synthesised run. LRU
-    # eviction matches :class:`_DedupCache` (review #3).
+    # eviction matches :class:`_DedupCache`.
     trace_to_run: "OrderedDict[str, str]" = OrderedDict()
     lock = threading.Lock()
 

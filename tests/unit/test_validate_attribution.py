@@ -279,14 +279,14 @@ def test_shipped_starter_corpus_passes() -> None:
         pytest.skip("starter corpus not present")
     passed, report = _validate.run_validation(corpus_dir=corpus)
     assert passed is True
-    # And the ground-truth subset must be non-empty — Finding #1
-    # asks for at least one fixture whose labels are derived from
+    # And the ground-truth subset must be non-empty — the corpus needs
+    # at least one fixture whose labels are derived from
     # raw text + provider usage, not snapshotted from the translator.
     assert report["ground_truth_fixture_count"] >= 1
 
 
 # ----------------------------------------------------------------------
-# Ground-truth fixture handling (Finding #1)
+# Ground-truth fixture handling
 # ----------------------------------------------------------------------
 
 
@@ -390,7 +390,7 @@ def test_shipped_ground_truth_fixture_uses_tiktoken_label_provenance() -> None:
 
 
 # ----------------------------------------------------------------------
-# --report-json flag (Finding #2)
+# --report-json flag
 # ----------------------------------------------------------------------
 
 

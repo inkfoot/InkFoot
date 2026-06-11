@@ -31,7 +31,7 @@ class Storage(Protocol):
     The methods listed in the storage protocol are ``connect``,
     ``insert_event``, ``mark_dirty``, ``read_dirty``, and
     ``update_aggregates``. We also expose ``start_run`` and
-    ``end_run`` because ADR-0-1's two-tier write semantics require a
+    ``end_run`` because the two-tier write contract requires a
     synchronous status write, and ``claim_clean`` / ``write_totals``
     because the never-lost-update guarantee requires the projection
     flow to read the event log *between* the claim and the write
@@ -55,7 +55,7 @@ class Storage(Protocol):
         run_kind: str = "root",
         metadata_json: Optional[str] = None,
     ) -> None:
-        """Synchronous status write (ADR-0-1). Fails fast on storage
+        """Synchronous status write. Fails fast on storage
         unavailability so the agent never enters an incomplete
         instrumented state."""
 
@@ -84,7 +84,7 @@ class Storage(Protocol):
         content_redacted: bool = False,
     ) -> None:
         """Append one event row + flip the parent run's
-        ``aggregates_dirty`` flag in a single transaction (§5.6).
+        ``aggregates_dirty`` flag in a single transaction.
         Returns when the row is durable in WAL.
 
         Replay-mode content kwargs (replay-mode storage contract): when

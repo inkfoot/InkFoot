@@ -1,6 +1,6 @@
 """Storage hot-path benchmark.
 
-Asserts the §9.1 perf budget: ``insert_event`` p95 < 1 ms. CI fails
+Asserts the storage perf budget: ``insert_event`` p95 < 1 ms. CI fails
 when the budget is missed. The benchmark runs against a tempfile DB
 (not ``:memory:``) so WAL pragmas are actually exercised.
 
@@ -26,7 +26,7 @@ from inkfoot.storage.sqlite import SQLiteStorage
 
 
 _EVENTS_TO_INSERT = 10_000
-_P95_BUDGET_S = 0.001  # 1 ms — §9.1 spec budget for the SQLite event insert
+_P95_BUDGET_S = 0.001  # 1 ms — perf budget for the SQLite event insert
 # Median guard. Tight on a dev box (<25 µs) and on a quiet CI
 # runner (~30 µs). Set well below the 1 ms p95 budget so a real
 # regression in the SQL/transaction path lights up immediately,
@@ -75,7 +75,7 @@ def test_insert_event_p95_under_one_ms(
     # We deliberately do NOT assert on ``stats.mean``: shared CI
     # runners produce occasional 100-700 ms outliers (VM scheduler
     # blips, neighbour tenants) which drag the arithmetic mean
-    # orders of magnitude above the actual hot path. The §9.1 spec
+    # orders of magnitude above the actual hot path. The contract
     # budgets p95, not mean — and the median is naturally robust to
     # outliers. We assert both.
     assert stats.median < _MEDIAN_BUDGET_S, (

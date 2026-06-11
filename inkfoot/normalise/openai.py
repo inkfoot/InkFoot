@@ -6,7 +6,7 @@ Key differences from Anthropic:
 * ``usage.prompt_tokens`` aggregates *fresh + cached* input tokens
   (no separate ``cache_read`` line item like Anthropic). Cached
   input lives inside ``usage.prompt_tokens_details.cached_tokens``;
-  we lift that into ``cache_read_tokens`` per the §5.3 recipe.
+  we lift that into ``cache_read_tokens``.
 * OpenAI doesn't bill cache *writes* — ``cache_creation_tokens`` is
   always 0 here. The pricing module has ``cache_write=0`` for
   OpenAI rows to match.

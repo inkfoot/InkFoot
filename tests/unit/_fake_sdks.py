@@ -63,10 +63,19 @@ def install_fake_anthropic() -> dict:
                 "content": [{"type": "text", "text": "ack-async"}],
             }
 
+    class Anthropic:
+        """Client facade like the real SDK's — ``client.messages``
+        is an instance of the same ``Messages`` class the shim
+        patches, so client calls flow through the patched method."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.messages = Messages()
+
     messages_mod.Messages = Messages
     messages_mod.AsyncMessages = AsyncMessages
     resources_mod.messages = messages_mod
     anthropic_mod.resources = resources_mod
+    anthropic_mod.Anthropic = Anthropic
 
     sys.modules["anthropic"] = anthropic_mod
     sys.modules["anthropic.resources"] = resources_mod
@@ -76,6 +85,7 @@ def install_fake_anthropic() -> dict:
         "calls": calls,
         "Messages": Messages,
         "AsyncMessages": AsyncMessages,
+        "Anthropic": Anthropic,
         "module": anthropic_mod,
     }
 
@@ -122,11 +132,24 @@ def install_fake_openai() -> dict:
                 ],
             }
 
+    class _Chat:
+        def __init__(self) -> None:
+            self.completions = Completions()
+
+    class OpenAI:
+        """Client facade like the real SDK's — ``client.chat.completions``
+        is an instance of the same ``Completions`` class the shim
+        patches, so client calls flow through the patched method."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.chat = _Chat()
+
     completions_mod.Completions = Completions
     completions_mod.AsyncCompletions = AsyncCompletions
     chat_mod.completions = completions_mod
     resources_mod.chat = chat_mod
     openai_mod.resources = resources_mod
+    openai_mod.OpenAI = OpenAI
 
     sys.modules["openai"] = openai_mod
     sys.modules["openai.resources"] = resources_mod
@@ -137,6 +160,7 @@ def install_fake_openai() -> dict:
         "calls": calls,
         "Completions": Completions,
         "AsyncCompletions": AsyncCompletions,
+        "OpenAI": OpenAI,
         "module": openai_mod,
     }
 

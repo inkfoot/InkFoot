@@ -403,7 +403,7 @@ def test_input_total_matches_independently_tokenised_request_no_cache() -> None:
 
 
 def test_input_total_matches_request_under_cache_hit_regression() -> None:
-    """Finding #1 regression: under the old buggy semantics,
+    """Regression guard: under the old buggy semantics,
     input_total would have been inflated by cache_read_tokens +
     cache_creation_tokens, because the structural categories *and*
     the cache fields both got summed. Under the new semantics

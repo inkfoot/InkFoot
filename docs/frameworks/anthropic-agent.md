@@ -42,7 +42,9 @@ What the adapter does:
    `tool_dispatched` event carrying `tool_name`, `tool_args_hash`,
    `dispatch_latency_ms`.
 3. Reports the Anthropic Agent SDK's policy capabilities so the
-   policy registry knows what's safe to wire in.
+   policy registry knows what's safe to wire in — both
+   [modification policies](../concepts/modification-policies.md)
+   are supported.
 
 ## What you get
 

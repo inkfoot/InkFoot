@@ -1,6 +1,6 @@
 """``inkfoot.instrument()`` — the current implementation entry point.
 
-Contract per ``the architecture notes`` §5.1:
+Contract:
 
 1. Detect installed SDKs (or use the explicit list).
 2. For each detected SDK, install its shim (monkey-patch).

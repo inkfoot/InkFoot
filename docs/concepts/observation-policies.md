@@ -14,7 +14,9 @@ Inkfoot ships three observation policies:
 
 All three are **observe-only**: they emit events into the database when
 their trigger fires, but they never block or rewrite the underlying SDK
-call. Reports surface the events alongside the bar chart.
+call. Reports surface the events alongside the bar chart. Policies that
+*do* rewrite the outgoing request are covered separately in
+[Modification Policies](modification-policies.md).
 
 ## Registering policies
 
@@ -58,8 +60,8 @@ BudgetCap(max_nd=1_000_000_000)  # $1.00
   know the current call's cost, so the warning lags by one call.)
 - Fires once per run — subsequent calls in the same run that would
   also breach do not re-fire.
-- **Never blocks the call.** Inkfoot is currently observe-only;
-  enforcement is a future capability.
+- **Never blocks the call.** Observation policies never interfere
+  with the request; blocking enforcement is a future capability.
 
 **Event payload includes** `current_total_nd` and `max_nd`.
 

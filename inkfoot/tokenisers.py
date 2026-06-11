@@ -1,7 +1,7 @@
 """Tokeniser dispatch — exact counts for OpenAI; best-effort with
 estimation flag for Anthropic.
 
-ADR-0-8 commits to ``tiktoken`` as the exact tokeniser for OpenAI
+Inkfoot commits to ``tiktoken`` as the exact tokeniser for OpenAI
 models and a flagged fallback for Anthropic (``anthropic.tokenize``
 when importable, otherwise ``tiktoken`` with the ``o200k_base``
 encoding). The estimation flag propagates into
@@ -156,8 +156,8 @@ def tokenise(text: str, model: str) -> TokenCount:
 
 
 def tokenise_with_flags(text: str, model: str) -> TokenCount:
-    """Alias for :func:`tokenise` kept for spec-doc alignment. Returns the full :class:`TokenCount` so callers can
-    propagate the estimation flag without re-checking."""
+    """Alias for :func:`tokenise`. Returns the full
+    :class:`TokenCount` so callers can propagate the estimation flag without re-checking."""
     return tokenise(text, model)
 
 
@@ -176,9 +176,8 @@ def tokenise_tools(
 
     The result is a :class:`TokenCount` whose ``estimated`` flag
     reflects the underlying tokeniser's flag — Anthropic fallback
-    propagates the flag, OpenAI exact does not. Acceptance bar (the
-    spec): ±5% of provider-reported tool-schema counts on a typical
-    5-tool array.
+    propagates the flag, OpenAI exact does not. Acceptance bar: ±5% of
+    provider-reported tool-schema counts on a typical 5-tool array.
 
     Returns ``TokenCount(0, False)`` for an empty tools list.
     """

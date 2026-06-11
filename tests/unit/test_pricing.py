@@ -115,7 +115,7 @@ def test_fresh_input_recovered_from_input_total_minus_cache() -> None:
 
 
 def test_no_double_count_on_cache_heavy_call() -> None:
-    """The reviewer's worked example (Finding #1): 5,000-token system
+    """Worked example: 5,000-token system
     block, 4,800 served from cache, 100 fresh.
 
     Under the old (buggy) semantics, ledger.input_total would have
@@ -196,7 +196,7 @@ def test_all_pricing_values_are_non_negative_integers() -> None:
         for attr in ("input", "output", "cache_read", "cache_write"):
             value = getattr(row, attr)
             assert isinstance(value, int), (
-                f"{key}.{attr} must be int (ADR-0-4); got {type(value).__name__}"
+                f"{key}.{attr} must be int; got {type(value).__name__}"
             )
             assert value >= 0, f"{key}.{attr} is negative"
 

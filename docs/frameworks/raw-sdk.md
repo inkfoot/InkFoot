@@ -121,7 +121,7 @@ inkfoot.instrument(
 | Argument | Purpose |
 |---|---|
 | `sdks` | Restrict instrumentation to a subset of installed SDKs. `None` auto-detects. |
-| `policies` | A list of policy objects. See [Observation Policies](../concepts/observation-policies.md). |
+| `policies` | A list of policy objects. See [Observation Policies](../concepts/observation-policies.md). [Modification policies](../concepts/modification-policies.md) are rejected here — they need a framework adapter. |
 | `storage` | Custom storage backend. Pass an explicit `SQLiteStorage(path=...)` only if you want a non-default location. |
 | `log_level` | Sets the level for the `inkfoot` logger tree. Set to `"DEBUG"` while troubleshooting. |
 | `capture_mode` | `"metadata"` records token counts only. `"replay"` *also* writes the full request and response bodies so future tooling can re-run the same call under different conditions. |

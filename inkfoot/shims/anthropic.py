@@ -2,7 +2,7 @@
 ``messages.create`` (sync + async) so every call emits an Inkfoot
 event without touching the user-visible behaviour.
 
-Per §5.2:
+Guarantees:
 
 * Original function pointer is preserved as
   ``_original_messages_create`` / ``_original_async_messages_create``;
@@ -168,8 +168,7 @@ class AnthropicShim:
         enforce_before_call(ctx)
         # Provider exceptions must propagate to the user — but we
         # record a NeutralError event first so the run shows
-        # "N attempted, 1 failed" instead of a silent gap (Finding
-        # #4 in the review). Re-raise after the emit so user
+        # "N attempted, 1 failed" instead of a silent gap. Re-raise after the emit so user
         # call sites see the exact same exception they would have
         # without instrumentation.
         try:

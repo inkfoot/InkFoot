@@ -6,7 +6,7 @@ between the two CLIs and the GitHub Action. Stability matters:
 ``schema_version`` is bumped (and a translation layer added in
 :mod:`inkfoot.diff.compare`) whenever any field changes shape.
 
-The spec calls out a "Pydantic v2 model"; we keep the dependency
+A Pydantic v2 model would be the obvious shape; we keep the dependency
 footprint flat by using plain dataclasses + explicit
 :meth:`from_dict` / :meth:`to_dict` validators. Behaviourally
 equivalent — round-trip through JSON is lossless — without

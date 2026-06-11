@@ -236,7 +236,7 @@ def test_tokenise_tools_propagates_estimation_flag_on_anthropic(
 # directly from ``tiktoken.o200k_base`` on the deterministic
 # JSON-serialised form (sort_keys + minimal separators), pinned so
 # regressions in either the encoding choice or the serialisation
-# format show up immediately. The ±5% bar from the spec is the
+# format show up immediately. The ±5% acceptance bar is the
 # *upper* bound vs. a real provider count; the lower bound is
 # whatever tiktoken returns, which we pin exactly so any drift in
 # our encoder choice is loud rather than silent.
@@ -325,7 +325,7 @@ def test_tokenise_tools_matches_deterministic_baseline() -> None:
 
 
 def test_tokenise_tools_is_within_five_percent_of_baseline() -> None:
-    """Acceptance bar: the spec's ±5% target against
+    """Acceptance bar: the ±5% target against
     provider-reported counts. We don't have a recorded provider
     count yet (deferred to the hand-labelled corpus), so we
     bracket the bar against the deterministic baseline. This

@@ -24,10 +24,12 @@ Re-tokenised against the request:
 * ``retrieved_context_tokens`` — the current implementation leaves at 0; ``tag_retrieval``
   can populate this from explicit user markers.
 
-Bookkeeping (left zero in the current implementation):
+Bookkeeping (left zero by the translator):
 
-* ``summariser_tokens`` — future modification policies will lift
-  this.
+* ``summariser_tokens`` — always 0 here; when a call is a
+  ``CheapSummariser`` helper call the emit path re-attributes its
+  structural input to this category after translation (see
+  ``inkfoot.shims._emit._fold_into_summariser_tokens``).
 * ``guardrail_tokens`` — wired when guardrails are connected.
 * ``retry_overhead_tokens`` — populated by the retry classifier.
 
@@ -121,8 +123,8 @@ def _block_text(block: Any, *, depth: int = 0) -> str:
 
 def _current_user_text(request: dict[str, Any]) -> str:
     """Concatenate text content blocks from the *last* user message
-    in the messages array — that's "the current turn's user input"
-    per the §5.3 recipe.
+    in the messages array — that's "the current turn's
+    user input".
 
     Tool-result blocks (which ride on user-role messages in
     Anthropic's API) are excluded — those count toward
@@ -341,7 +343,7 @@ class AnthropicTranslator:
             memory_tokens=memory.value,
             retrieved_context_tokens=retrieved,
             retry_overhead_tokens=0,  # populated when retry classifier ships
-            summariser_tokens=0,  # reserved for future summariser policies
+            summariser_tokens=0,  # re-attributed post-translation for summariser calls
             reasoning_tokens=reasoning,
             guardrail_tokens=0,
             cache_creation_tokens=cache_create,

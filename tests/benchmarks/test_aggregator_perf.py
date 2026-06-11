@@ -1,13 +1,13 @@
 """Aggregator drain benchmark.
 
-Asserts the §9.1 perf budget for the aggregator worker:
+Asserts the perf budget for the aggregator worker:
 
     Aggregator worker cycle — under 50 ms for 50 dirty runs
 
 We populate 50 runs with 4 events each (a realistic 4-turn agent
 trace), mark every run dirty, then time a single ``drain_once``
 sweep. The benchmark fails if a single sweep blows past 50 ms,
-matching the spec's CI gate.
+matching the CI gate.
 
 Run locally with::
 
@@ -30,7 +30,7 @@ from inkfoot.storage.sqlite import SQLiteStorage
 
 _DIRTY_RUNS = 50
 _EVENTS_PER_RUN = 4
-_DRAIN_BUDGET_S = 0.050  # 50 ms — per the architecture notes §9.1
+_DRAIN_BUDGET_S = 0.050  # 50 ms — the aggregator perf budget
 
 
 def _seed_dirty_runs(s: SQLiteStorage) -> None:
@@ -93,13 +93,13 @@ def test_drain_fifty_dirty_runs_under_fifty_ms(
     # Assert on median rather than mean — shared CI runners produce
     # occasional 40-50 ms outliers (VM-scheduler jitter) which drag
     # the arithmetic mean above the budget on a benchmark whose
-    # median sits comfortably under it. The §9.1 budget is for the
+    # median sits comfortably under it. The budget is for the
     # typical case (the sweep cycle); the p95 assertion below catches
     # tail regressions.
     assert stats.median < _DRAIN_BUDGET_S, (
         f"median drain of {_DIRTY_RUNS} dirty runs took "
         f"{stats.median * 1000:.1f} ms — exceeds "
-        f"{_DRAIN_BUDGET_S * 1000:.0f} ms budget (§9.1)"
+        f"{_DRAIN_BUDGET_S * 1000:.0f} ms budget"
     )
 
     sample = sorted(benchmark.stats.stats.data)

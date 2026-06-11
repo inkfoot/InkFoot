@@ -195,7 +195,7 @@ def test_agent_run_without_instrument_raises_clear_error(tmp_path: Path) -> None
 
 
 # ----------------------------------------------------------------------
-# Per-run state cleanup (Finding #2 — memory leak across runs)
+# Per-run state cleanup — no memory leak across runs
 # ----------------------------------------------------------------------
 
 

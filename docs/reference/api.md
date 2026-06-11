@@ -50,6 +50,20 @@ Policy classes you pass into
 
 ### ::: inkfoot.policy.CacheControlPlacer
 
+## Modification policies
+
+Request-rewriting policies. These require an active framework
+adapter — register them via
+`inkfoot.policy.register_policies([...])` after the adapter's
+`instrument()` call. See
+[Modification Policies](../concepts/modification-policies.md).
+
+### ::: inkfoot.policy.LazyToolExposure
+
+### ::: inkfoot.policy.CheapSummariser
+
+### ::: inkfoot.policy.register_policies
+
 ## Exceptions
 
 ### ::: inkfoot.errors.InkfootError

@@ -9,7 +9,7 @@ Covers:
 - The dirty queue + the claim-and-project lost-update guarantee
   (``claim_clean`` / ``write_totals`` / composite ``update_aggregates``).
 - Cross-thread connection cleanup via ``close()``.
-- ``kill -9`` recovery via a subprocess (WAL durability per ADR-0-5).
+- ``kill -9`` recovery via a subprocess (WAL durability).
 """
 
 from __future__ import annotations
@@ -483,7 +483,7 @@ def test_close_is_idempotent_after_cross_thread_close(tmp_path: Path) -> None:
 
 
 # ----------------------------------------------------------------------
-# Storage Protocol signature alignment (Finding #2)
+# Storage Protocol signature alignment
 # ----------------------------------------------------------------------
 
 
@@ -531,7 +531,7 @@ def test_sqlite_storage_signature_matches_protocol() -> None:
 def test_replay_mode_with_no_content_does_not_write_event_contents(
     memory_storage: SQLiteStorage,
 ) -> None:
-    """Finding #3 regression at the storage layer: when the call site
+    """Regression guard at the storage layer: when the call site
     passes ``capture_mode='replay'`` but doesn't pass any content
     kwargs, no event_contents row is written. Policy events take
     this path."""
@@ -589,7 +589,7 @@ def test_replay_mode_with_request_json_writes_content_row(
     reason="signal.SIGKILL semantics differ on Windows",
 )
 def test_kill_minus_9_after_insert_leaves_db_recoverable(tmp_path: Path) -> None:
-    """ADR-0-5 invariant: SQLite WAL plus ``synchronous=NORMAL`` survives
+    """Durability invariant: SQLite WAL plus ``synchronous=NORMAL`` survives
     a hard kill. We spawn a subprocess that inserts an event, signals
     success, and sleeps; then SIGKILL it and reopen the DB."""
     db_path = tmp_path / "runs.db"
