@@ -31,6 +31,12 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _LOG = logging.getLogger("inkfoot.shims")
 
+# CallContext.metadata key that marks a call as a summariser helper
+# call (set by ``CheapSummariser.before_call`` when its re-entrancy
+# guard sees its own sub-call). Defined here — not on the policy — so
+# the emit hot path can check it without importing the policy package.
+SUMMARISER_CALL_METADATA_KEY = "summariser_call"
+
 # Process-wide monotonic sequence-per-run counter — guarantees event
 # ordering within a run even when wall-clock ms collide.
 #
@@ -38,8 +44,7 @@ _LOG = logging.getLogger("inkfoot.shims")
 # increment is a single atomic step under ``_sequence_lock`` —
 # itertools.count is thread-safe at the C level but the dict
 # check-then-set wrapper around it isn't, which let two concurrent
-# same-run calls land identical sequences (Finding #1 in the review
-# review). The current shape is "lock, read-or-init, increment,
+# same-run calls land identical sequences. The current shape is "lock, read-or-init, increment,
 # return" — one critical section, no race.
 #
 # Cleanup is wired: ``_run_lifecycle._RunHandle.end`` (and the
@@ -131,6 +136,9 @@ def emit_llm_call(
         _LOG.warning("translator returned None for run %s; skipping emit", ctx.run_id)
         return
 
+    if ctx.metadata.get(SUMMARISER_CALL_METADATA_KEY):
+        neutral_call = _fold_into_summariser_tokens(neutral_call)
+
     # Stash the cost on the CallContext so the post-call policy
     # hooks (e.g. BudgetCap) see the freshly-computed number.
     if neutral_call.estimated_nanodollars is not None:
@@ -182,9 +190,39 @@ def emit_llm_call(
     _record_contract_call(ctx, neutral_call)
 
 
+def _fold_into_summariser_tokens(neutral_call: Any) -> Any:
+    """Re-attribute a summariser helper call's structural input to the
+    ledger's ``summariser_tokens`` category.
+
+    The translator attributes the sub-call's prompt like any other
+    request (the oversized tool result it is condensing lands in
+    ``user_input_tokens``), but the *cause* of every one of those
+    tokens is the summariser. Folding the full structural input into
+    ``summariser_tokens`` preserves ``input_total`` — so pricing and
+    the attribution invariant are untouched — while the report's bar
+    chart shows the overhead under the category that explains it.
+    ``output_tokens`` and the cache overlays stay where they are; the
+    event's ``metadata`` flags the call so reports can roll up the
+    sub-call's full input + output cost.
+    """
+    from dataclasses import replace
+
+    from inkfoot.ledger import CausalTokenLedger
+
+    old = neutral_call.ledger
+    folded = CausalTokenLedger(
+        summariser_tokens=old.input_total,
+        cache_creation_tokens=old.cache_creation_tokens,
+        cache_read_tokens=old.cache_read_tokens,
+        output_tokens=old.output_tokens,
+    )
+    metadata = dict(neutral_call.metadata)
+    metadata[SUMMARISER_CALL_METADATA_KEY] = True
+    return replace(neutral_call, ledger=folded, metadata=metadata)
+
+
 # Cap on serialised error messages so a giant provider trace doesn't
-# blow out a JSON column. 1 KB matches the §9.3 privacy guidance
-# for user-facing error text (only one place in the current implementation stores it).
+# blow out a JSON column.
 _MAX_ERROR_MESSAGE_CHARS = 1024
 
 

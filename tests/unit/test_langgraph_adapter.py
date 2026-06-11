@@ -38,7 +38,7 @@ def _isolated_state(tmp_path: Path) -> Any:
     need a real storage backend to assert on what it emitted.
 
     Resets the module-level default adapter's install count so the
-    auto-deactivate test logic (Finding #4) isn't fouled by counter
+    auto-deactivate test logic isn't fouled by counter
     leakage between tests that use the convenience ``instrument()``
     function."""
     from inkfoot._instrument import shutdown
@@ -300,18 +300,22 @@ def test_tools_fingerprint_on_run_state_is_shared_across_nodes() -> None:
 
 
 def test_adapter_registers_active_on_instrument() -> None:
-    """Pattern-A policies must still register cleanly when LangGraph
-    is active (the adapter's empty ``supported_policies`` plus the
-    pattern-fallback path in ``register_policies`` lets them
-    through)."""
+    """Observation policies must still register cleanly when LangGraph
+    is active (the pattern-fallback path in ``register_policies``
+    lets them through regardless of ``supported_policies``)."""
     g = _StubGraph()
     instrument(g, task="t")
     assert AdapterRegistry.get_active() is not None
     assert AdapterRegistry.get_active().name == "langgraph"
 
 
-def test_supported_policies_default_is_empty_set() -> None:
-    assert LangGraphAdapter().supported_policies() == set()
+def test_supported_policies_enumerates_modification_policies() -> None:
+    from inkfoot.policy import CheapSummariser, LazyToolExposure
+
+    assert LangGraphAdapter().supported_policies() == {
+        LazyToolExposure,
+        CheapSummariser,
+    }
 
 
 # ----------------------------------------------------------------------
@@ -353,7 +357,7 @@ def test_shutdown_clears_active_adapter_via_LangGraphAdapter_shutdown() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """review finding #4: a user calling ``inst.shutdown()``
+    """A user calling ``inst.shutdown()``
     on the only live handle should leave the adapter registry's
     active pointer clean. Previously the pointer lingered until
     ``LangGraphAdapter.shutdown()`` was called explicitly."""

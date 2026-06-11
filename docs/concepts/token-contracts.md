@@ -69,6 +69,19 @@ output sizes (defaulting to 500 tokens) and rounds up — and the ladder
 fires at coarse percentages precisely so a noisy estimate still catches
 a runaway run before it blows the ceiling.
 
+### Policy helper calls don't count
+
+Modification policies sometimes make LLM calls of their own —
+[`CheapSummariser`](modification-policies.md#cheapsummariserthreshold_tokens1500)
+calls a cheap model to condense an oversized tool result. Those
+helper calls are exempt from enforcement: they are never warned on,
+model-switched, or blocked, and they don't advance `max_llm_calls`
+or the per-task output average behind the pre-call estimate. Gating
+them would silently degrade the policy exactly when the contract is
+tightest — and the policy exists to *reduce* spend. The helper's
+real cost still folds into the run's running spend, so
+`max_nanodollars` keeps bounding actual money.
+
 ## Enabling enforcement
 
 Pass your contracts to `inkfoot.instrument`:

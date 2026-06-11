@@ -206,7 +206,7 @@ def test_runner_missing_scenarios_dir_raises(tmp_path, stub_instrument):
 def test_runner_marks_success_when_recorded_outcome_matches_expected(
     tmp_path, stub_instrument
 ):
-    # Finding #7: a scenario declaring expected_outcome="human_escalated"
+    # A scenario declaring expected_outcome="human_escalated"
     # and emitting that outcome via inkfoot.set_outcome must be counted
     # as a success against `successes`, not silently demoted to failure.
     scenarios = tmp_path / "scenarios"

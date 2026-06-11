@@ -1,6 +1,6 @@
 """``BudgetCap`` — observation-only budget watcher.
 
-Current implementation behaviour (per §5.8 + observe-only policy contract):
+Current implementation behaviour (observe-only):
 
 * Estimate the call's nanodollar cost in ``before_call``.
 * If the run's running total + this call's estimate exceeds
@@ -38,7 +38,7 @@ class BudgetCap(Policy):
 
     ``max_nd`` is the total budget for the *run*, not per-call.
 
-    **Current timing quirk** (Finding #5 in the review):
+    **Current timing quirk**:
     ``before_call`` doesn't know the *current* call's cost yet —
     that's populated by the shim's ``after_call`` once the
     translator has run on the response. So the policy fires on the

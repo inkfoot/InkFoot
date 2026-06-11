@@ -12,9 +12,8 @@ The Anthropic Agent SDK is newer than the OpenAI one (the SDK GA'd
 mid-2026); the adapter pins against the latest stable's known
 surface and degrades gracefully if internal method names drift.
 
-Wrapping primitives come from :mod:`inkfoot.adapters._shared`
-(review finding #3 — neither sibling adapter "owns" the
-helpers).
+Wrapping primitives come from :mod:`inkfoot.adapters._shared` —
+neither sibling adapter "owns" the helpers.
 """
 
 from __future__ import annotations
@@ -44,7 +43,7 @@ class _AnthropicAgentInstrumentation:
     Symmetric with :class:`~inkfoot.adapters.openai_agents._OpenAIAgentsInstrumentation`
     — ``shutdown()`` unwraps the patches *and* releases the adapter's
     install count so the active-pointer auto-clears when the last
-    live instrumentation goes away (review finding #4).
+    live instrumentation goes away.
     """
 
     def __init__(
@@ -134,7 +133,7 @@ class AnthropicAgentAdapter:
 
     def _release_install(self) -> None:
         """Decrement the install count and auto-clear the active
-        pointer when zero (review finding #4)."""
+        pointer when zero."""
         if self._install_count > 0:
             self._install_count -= 1
         if self._install_count == 0:
@@ -143,11 +142,13 @@ class AnthropicAgentAdapter:
                 AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
-        """Same observation-only posture as the OpenAI Agents adapter — empty
-        set lets the current observation policies through the
-        pattern-fallback path; future versions can enumerate modification
-        policies here."""
-        return set()
+        """Modification policies this adapter knows how to wire — same
+        surface as the OpenAI Agents adapter. Observation policies
+        pass through the pattern-fallback path in
+        :func:`register_policies` without being enumerated here."""
+        from inkfoot.policy import CheapSummariser, LazyToolExposure  # noqa: PLC0415
+
+        return {LazyToolExposure, CheapSummariser}
 
     def shutdown(self) -> None:
         """Force-deactivate; usually unnecessary because the per-

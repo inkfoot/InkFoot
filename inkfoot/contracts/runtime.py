@@ -101,6 +101,14 @@ def enforce_before_call(ctx: "CallContext") -> None:
     if enforcer is None or ctx is None:
         return
 
+    # Policy helper calls (e.g. CheapSummariser's cheap-model call) are
+    # infrastructure that exists to *reduce* spend — gating or blocking
+    # them would silently degrade the policy exactly when the contract
+    # is tightest. They are exempt from enforcement; their real spend
+    # still folds into the run via record_call below.
+    if _is_helper_call(ctx):
+        return
+
     task, tier = _facts_for_run(ctx.run_id, storage)
     if not enforcer.has_contract(task):
         return
@@ -142,11 +150,16 @@ def record_call(ctx: "CallContext", neutral_call: "NeutralCall") -> None:
         ledger = getattr(neutral_call, "ledger", None)
         output_tokens = getattr(ledger, "output_tokens", None) if ledger else None
         task, _ = _facts_for_run(ctx.run_id, _active_storage)
+        # Helper calls fold their spend (budget clauses bound real
+        # money) but don't count as an agent call and don't pollute
+        # the per-task output average used by pre-call estimates.
+        helper = _is_helper_call(ctx)
         enforcer.record_call(
             run_id=ctx.run_id,
             nanodollars=ctx.estimated_nanodollars,
-            output_tokens=output_tokens,
+            output_tokens=None if helper else output_tokens,
             task=task,
+            count_call=not helper,
         )
     except Exception:  # pragma: no cover - defensive; never break a call
         _LOG.warning("contract record_call failed", exc_info=True)
@@ -211,6 +224,20 @@ def _window_size(
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+
+
+def _is_helper_call(ctx: "CallContext") -> bool:
+    """True when ``ctx`` is a policy-internal helper call.
+
+    CheapSummariser stamps its nested cheap-model call before this
+    module sees it (policy ``before_call`` hooks run first in the
+    shims), so the flag is reliably present here.
+    """
+    # Imported at call time: _emit imports policy modules that import
+    # this module's siblings (same cycle _emit_violations avoids).
+    from inkfoot.shims._emit import SUMMARISER_CALL_METADATA_KEY  # noqa: PLC0415
+
+    return bool(ctx.metadata.get(SUMMARISER_CALL_METADATA_KEY))
 
 
 def _facts_for_run(

@@ -233,7 +233,7 @@ def test_write_totals_does_not_touch_dirty_flag(storage: SQLiteStorage) -> None:
 def test_late_event_landing_after_claim_is_not_lost(
     storage: SQLiteStorage,
 ) -> None:
-    """The T0→T1→T2 race the reviewer described:
+    """The T0→T1→T2 race:
 
     * T0: aggregator reads events (only the two seeded so far).
     * T1: shim writes a late event via insert_event → dirty=1 again.

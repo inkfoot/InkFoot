@@ -6,7 +6,7 @@ Covers:
   the two cache billing overlays and ``output_tokens``).
 - ``output_total`` equals ``output_tokens``.
 - ``validate_against_usage`` accepts strictly under 2% and rejects
-  2% / 5% (per the spec's ``< 0.02`` wording); the output check is
+  2% / 5% (the gate is strictly ``< 0.02``); the output check is
   exact.
 - ``CACHE_CATEGORIES`` is disjoint from ``INPUT_CATEGORIES``.
 - Frozen dataclass — assignment raises ``FrozenInstanceError``.
@@ -59,7 +59,7 @@ def test_input_total_sums_eleven_structural_categories() -> None:
 
 
 def test_validate_accepts_just_under_two_percent_slop() -> None:
-    """Spec wording: rel_err < 0.02. 1.9% passes; 2.0% exactly does
+    """The gate is rel_err < 0.02: 1.9% passes; 2.0% exactly does
     not (boundary tested separately)."""
     ledger = CausalTokenLedger(
         user_input_tokens=981,  # 1.9% under 1000
@@ -68,8 +68,8 @@ def test_validate_accepts_just_under_two_percent_slop() -> None:
     validate_against_usage(ledger, raw_input=1000, raw_output=50)
 
 
-def test_validate_rejects_exactly_two_percent_per_spec_wording() -> None:
-    """Per §5.3: `< 0.02`. Exactly 2.0% fails; the check is strict."""
+def test_validate_rejects_exactly_two_percent_boundary() -> None:
+    """The gate is strict (`< 0.02`): exactly 2.0% off fails."""
     ledger = CausalTokenLedger(
         user_input_tokens=98,  # exactly 2% off 100
         output_tokens=50,

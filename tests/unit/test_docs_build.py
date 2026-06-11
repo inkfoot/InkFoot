@@ -49,7 +49,7 @@ def test_docs_tree_exists():
 
 
 def test_required_pages_exist():
-    """The pages enumerated in the docs spec must each be present.
+    """The expected documentation pages must each be present.
 
     Renaming or relocating one would surface as a broken nav link
     via ``mkdocs build --strict`` further down, but listing them

@@ -7,8 +7,7 @@ events become logs (``POST /v1/logs``).
 
 Design constraints:
 
-* **Never block the agent.** The shim's hot path is sensitive
-  (§9.1 perf budgets). Exports run on a background thread fed by
+* **Never block the agent.** The shim's hot path is perf-budgeted. Exports run on a background thread fed by
   a bounded queue; ``llm_call``s under load that overflow the
   queue are dropped with a WARN rather than back-pressuring the
   shim.
@@ -263,7 +262,7 @@ class OTLPExporter:
 
         The caller passes ``count`` (the number of spans / log
         records in this batch) so the exported counter reflects
-        events, not batches (round-2 review #2)."""
+        events, not batches."""
         try:
             if kind == "traces":
                 self._transport.post_traces(body)
@@ -317,8 +316,8 @@ class OTLPExporter:
             INKFOOT_SEQUENCE: int(event.get("sequence") or 0),
         }
         body = event.get("payload_json")
-        # Pass the original JSON text through unchanged (round-2
-        # review #9). Re-encoding via ``json.loads/dumps`` only
+        # Pass the original JSON text through unchanged. Re-encoding
+        # via ``json.loads/dumps`` only
         # normalises whitespace at the cost of a wasted round-trip
         # and an indexer's view that doesn't match what storage
         # actually wrote.

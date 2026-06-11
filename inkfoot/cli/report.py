@@ -1,12 +1,12 @@
 """``inkfoot report`` — attribution bar chart + smells.
 
 The renderer is a **pure function** of ``(run, ledger_totals,
-smells)`` → ``str``. That's the §5.10 contract: no storage I/O, no
+smells)`` → ``str``: no storage I/O, no
 side effects, no terminal-width detection. The CLI scaffold below
 loads the inputs from storage and hands them to the renderer; the
 renderer can be unit-tested without spinning up anything.
 
-Output shape per §5.10:
+Output shape:
 
 * Header line: ``Run <id> · <task> · <duration> · $<cost> · <outcome>``
 * "Causal attribution:" block — one row per ledger field with a
@@ -78,7 +78,7 @@ def _bar(share: float) -> str:
         return "░" * _BAR_WIDTH
     filled = max(0, min(_BAR_WIDTH, int(share * _BAR_WIDTH)))
     # Render at least one filled cell when share is small but non-zero
-    # so a tiny category still shows. Mirrors §5.10's expected output.
+    # so a tiny category still shows.
     if filled == 0 and share > 0:
         filled = 1
     return "█" * filled + "░" * (_BAR_WIDTH - filled)
@@ -123,7 +123,7 @@ def render(
     smells: Sequence["DetectionResult"],
     show_zero: bool = False,
 ) -> str:
-    """Render the §5.10 single-run report as a string.
+    """Render the single-run report as a string.
 
     Pure: same inputs always produce the same output. ``run`` is a
     dict (``SQLiteStorage.get_run`` row), ``ledger_totals`` is the
@@ -156,7 +156,7 @@ def render(
     lines.append("Causal attribution:")
     markers = _smell_markers_by_field(smells)
 
-    # Categories sorted by cost descending (§5.10). When cost is
+    # Categories sorted by cost descending. When cost is
     # zero across the board, fall back to declaration order so the
     # output stays deterministic.
     fields_with_cost = [
@@ -459,7 +459,7 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
     # TODO(future/postgres): the Storage Protocol has no
     # ``aggregate_runs_since`` method yet so we reach into the
     # SQLite connection directly. A future Postgres backend will
-    # need a proper Protocol method; see review finding #3.
+    # need a proper Protocol method.
     conn = storage._conn()  # type: ignore[attr-defined]
     task_filter = getattr(args, "task", None)
     where = "started_at >= ?"

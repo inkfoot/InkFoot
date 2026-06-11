@@ -7,9 +7,6 @@ the bar chart along these fields; smells look at ratios between
 them; contracts assert on them; the Cloud dashboard rolls them up
 across runs.
 
-See ``the architecture notes`` §5.3 + the §5.4 class diagram for the
-authoritative shape.
-
 **Field roles.** The ledger has 14 fields:
 
 1. **11 structural cause categories** (``INPUT_CATEGORIES``):
@@ -83,7 +80,7 @@ CACHE_CATEGORIES: tuple[str, ...] = (
 )
 
 # Acceptable tokeniser slop when validating attribution against the
-# provider's reported usage (§5.3). 2% covers Anthropic's fallback
+# provider's reported usage. 2% covers Anthropic's fallback
 # tokeniser at typical context sizes; OpenAI with tiktoken should be
 # under 0.5% in practice.
 INPUT_INVARIANT_TOLERANCE = 0.02
@@ -159,7 +156,7 @@ def validate_against_usage(
     tolerance: float = INPUT_INVARIANT_TOLERANCE,
 ) -> None:
     """Assert the ledger's structural sum matches the provider-
-    reported usage within tolerance (§5.3 validation invariant).
+    reported usage within tolerance (the ledger validation invariant).
 
     ``raw_input`` is the **total billed input** the provider charged
     for. Per-provider mapping:
@@ -182,8 +179,8 @@ def validate_against_usage(
     output check is exact — we read it from the response, never
     estimate.
 
-    The relative-error gate matches the spec's wording (§5.3:
-    ``< 0.02``) — equal to tolerance is rejected. Pass
+    The relative-error gate is strict (``< 0.02``) — equal to
+    tolerance is rejected. Pass
     ``tolerance=0.02 + epsilon`` if you want inclusive.
 
     Raises :class:`AssertionError` with a diagnostic message on

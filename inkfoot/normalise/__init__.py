@@ -37,7 +37,7 @@ __all__ = [
 class NeutralError:
     """Provider-neutral error wrapper carried by :class:`NeutralCall`
     when the underlying SDK call failed. Truncated to keep the event
-    payload small (privacy §9.3 caps user-facing error text at 1 KB).
+    payload small (error text is capped at 1 KB).
     """
 
     type: str
@@ -52,8 +52,7 @@ _VALID_CACHE_STATUSES = frozenset({"hit", "partial", "miss", "n/a"})
 class NeutralCall:
     """Provider-neutral payload for one LLM call.
 
-    Field order follows the §5.4 class diagram. The ledger is
-    **always** populated; estimation flags list which ledger fields
+    The ledger is **always** populated; estimation flags list which ledger fields
     were tokeniser-estimated rather than provider-reported.
 
     ``cache_status`` is validated in ``__post_init__`` so a
@@ -200,7 +199,7 @@ def update_stable_prefix(current_prefix: str, new_system_block: str) -> str:
     """Return the new ``stable_system_prefix`` after observing
     ``new_system_block``.
 
-    Algorithm (§5.3 stable-prefix detection): the longest character-
+    Algorithm: the longest character-
     level common prefix of the previous prefix and the incoming
     system block. **Monotonically shortening** — never grows. The
     first observation seeds the prefix with the entire system block.

@@ -4,7 +4,7 @@ class InkfootError(Exception):
 
 class PolicyNotSupported(InkfootError):
     """Raised at instrument() time when a policy is registered against
-    an integration pattern that doesn't support it (ADR-0-3). Surfacing
+    an integration pattern that doesn't support it. Surfacing
     here is intentional and load-bearing — silent degradation would let
     a user think they have enforcement when they don't."""
 

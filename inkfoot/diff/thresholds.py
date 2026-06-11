@@ -1,9 +1,9 @@
 """Verdict threshold presets for ``inkfoot diff``.
 
-The architecture pins three presets:
+Three presets are pinned:
 
 * ``tight`` — strict CI; small regressions fail the build.
-* ``default`` — the spec's documented thresholds (cost +20% warn,
+* ``default`` — the standard thresholds (cost +20% warn,
   +50% fail; cache-hit -10% warn, -25% fail).
 * ``loose`` — early-stage projects; only catastrophic regressions.
 
@@ -38,7 +38,7 @@ class Thresholds:
     Each field is a positive fraction (e.g. ``0.20`` for 20%).
     ``cost_*`` apply to ``p50_nanodollars`` and ``p95_nanodollars``;
     ``cache_*`` to ``mean_cache_hit_rate``. Outcome regressions are
-    pinned to the spec — a non-zero drop in success rate is always a
+    pinned — a non-zero drop in success rate is always a
     warn, a drop ≥ 10pp is always a fail.
     """
 

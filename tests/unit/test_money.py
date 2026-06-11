@@ -22,7 +22,7 @@ from inkfoot.money import (
 
 
 def test_usd_to_nd_haiku_per_token_acceptance() -> None:
-    """ADR-0-4 driving example: $0.0004 (Haiku output per-token) is
+    """Driving example: $0.0004 (Haiku output per-token) is
     400,000 nanodollars."""
     assert usd_to_nd(Decimal("0.0004")) == 400_000
 

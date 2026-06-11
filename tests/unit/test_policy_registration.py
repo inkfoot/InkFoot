@@ -71,7 +71,7 @@ def test_pattern_c_only_policy_on_pattern_a_raises() -> None:
         )
     message = str(exc.value)
     assert "PatternCOnly" in message
-    # The customer-visible bit per §5.8:
+    # The customer-visible bits:
     assert "Pattern A" in message
     assert "inkfoot.dev/docs/policies" in message
 

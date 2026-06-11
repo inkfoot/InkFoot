@@ -59,7 +59,7 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
             # anything on a cheaper model either.
             continue
 
-        # **Premium-clamp guard (Finding #1 in the review review).**
+        # **Premium-clamp guard.**
         # The prefix match catches gpt-4o-mini too because
         # ``"gpt-4o-mini".startswith("gpt-4o")`` is True, but
         # gpt-4o-mini is already cheaper than Haiku — flagging it

@@ -85,8 +85,8 @@ class _FakeLazyToolExposure(Policy):
 class _FakeMixedPatternPolicy(Policy):
     """Hypothetical future policy that supports raw-SDK Pattern B
     + framework adapters (Pattern C) but not the bare SDK shim
-    (Pattern A). The review (Finding #1) flagged that the old
-    fallback would let this through any adapter regardless of the
+    (Pattern A). An older fallback would have let this
+    through any adapter regardless of the
     adapter's ``supported_policies()`` — the tightened predicate
     requires explicit enumeration."""
 
@@ -260,7 +260,7 @@ def test_no_active_adapter_accepts_observation_policy_on_pattern_a() -> None:
 
 
 def test_mixed_pattern_policy_requires_explicit_adapter_enumeration() -> None:
-    """review finding #1: the fallback path is now restricted
+    """The fallback path is restricted
     to the observation-policy shape (``SUPPORTED_PATTERNS == {A, B,
     C}``). A hypothetical future policy with a narrower set like
     ``{B, C}`` MUST be enumerated by the active adapter; the legacy
@@ -284,7 +284,7 @@ def test_mixed_pattern_policy_registers_when_adapter_enumerates_it() -> None:
 
 
 # ----------------------------------------------------------------------
-# review finding #2 — cross-adapter conflict
+# Cross-adapter conflict
 # ----------------------------------------------------------------------
 
 

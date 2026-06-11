@@ -111,6 +111,7 @@ nav:
       - Cost Smells: concepts/cost-smells.md
       - Accuracy & Estimation: concepts/accuracy.md
       - Observation Policies: concepts/observation-policies.md
+      - Modification Policies: concepts/modification-policies.md
       - Token Contracts: concepts/token-contracts.md
       - Tracking Runs: concepts/tracking-runs.md
       - Storage & Configuration: concepts/storage.md

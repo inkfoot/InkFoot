@@ -1,7 +1,7 @@
 """Smell-engine hot-path benchmark.
 
-§9.1 budget: all five built-in smells evaluate against a 50-event
-run in under 10 ms. The smell engine is lazy + off the shim hot
+Budget: all built-in smells evaluate against a 50-event run in
+under 10 ms. The smell engine is lazy + off the shim hot
 path; this benchmark gates the slice CI sees, not the SDK wrapper
 path.
 
@@ -20,7 +20,7 @@ from inkfoot.smells import DEFAULT_SMELLS
 from inkfoot.smells.engine import SmellEngine
 
 
-_SMELLS_MEDIAN_BUDGET_S = 0.010  # 10 ms — §9.1 budget
+_SMELLS_MEDIAN_BUDGET_S = 0.010  # 10 ms
 _SMELLS_P95_BUDGET_S = 0.020  # 20 ms p95 (looser on noisy CI)
 
 
@@ -28,7 +28,7 @@ def _build_fifty_event_run() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Materialise a 50-event run with a representative payload
     mix — enough cache reads to trigger one smell, an oversized
     tool result for a second, and a low-entropy expensive call for
-    a third. Three smells fire; two stay silent."""
+    a third. Three smells fire; the rest stay silent."""
     run = {
         "id": "smell-bench-run",
         "task": "smell-bench",
@@ -83,7 +83,7 @@ def _build_fifty_event_run() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     return run, events
 
 
-def test_all_five_smells_evaluate_under_ten_ms_for_fifty_events(
+def test_all_builtin_smells_evaluate_under_ten_ms_for_fifty_events(
     benchmark,
 ) -> None:
     run, events = _build_fifty_event_run()

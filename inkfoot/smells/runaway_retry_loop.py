@@ -1,7 +1,7 @@
 """``runaway-retry-loop`` smell.
 
 Fires when the same tool is invoked more than 5 times in a single
-run — the canonical "agent stuck in a loop" pattern. The spec ideal
+run — the canonical "agent stuck in a loop" pattern. The ideal detector
 would key on ``(tool_name, args_hash)`` so two *different* invocations
 of the same tool aren't conflated, but the current metadata-mode
 events only carry tool *names* (not args). We match by name alone
@@ -66,7 +66,7 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
     # zero — the smell still fires; the user sees the loop, just
     # without a dollar figure.
     #
-    # Scope note (Finding #5 in the review review): this sums retry
+    # Scope note: this sums retry
     # overhead across *every* tool in the run, not just the breach
     # tool. In the current implementation retry_overhead_tokens is always 0 so the
     # difference is invisible; once retry classification starts populating it the

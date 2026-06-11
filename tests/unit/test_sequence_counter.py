@@ -1,4 +1,4 @@
-"""Tests for the per-run sequence counter — Finding #1 in review.
+"""Tests for the per-run sequence counter race.
 
 The pre-fix dict-check-then-set pattern was racy: two threads could
 each create a separate ``itertools.count`` for the same run_id and
@@ -45,7 +45,7 @@ def test_distinct_runs_have_independent_counters() -> None:
 
 
 def test_concurrent_increments_have_no_duplicates() -> None:
-    """The headline race the reviewer flagged: 8 threads × 250
+    """The headline race: 8 threads × 250
     increments under one run_id. The set of returned values must
     have size 2000 (no duplicates) and cover [1, 2000] exactly.
     """

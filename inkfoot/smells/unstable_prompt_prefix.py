@@ -50,17 +50,16 @@ def _detect(run: Any, events: Iterable[dict[str, Any]]) -> Optional[DetectionRes
     if dynamic_fraction <= _DYNAMIC_FRACTION_THRESHOLD:
         return None
 
-    # Cost impact — spec §5.9 verbatim: total_dynamic × cache_read.
+    # Cost impact: total_dynamic × cache_read.
     #
-    # Worth flagging for the report renderer (Finding #3 in the review
-    # review): this number is neither "what these tokens cost today"
+    # Worth flagging for the report renderer: this number is neither "what these tokens cost today"
     # (× input_rate) nor "what they'd save if fixed"
     # (× (input_rate - cache_read_rate)). It's an optimistic floor —
     # "even if perfectly cached, you'd still pay this much for
     # these tokens" — so the bar-chart label should read as a
     # *lower bound on recoverable cost*, not pure savings. The
-    # decision whether to keep the spec-faithful number or switch
-    # to actual savings sits with the tag API; this smell stays spec-faithful
+    # decision whether to keep this floor or switch to actual
+    # savings sits with the tag API; this smell keeps the floor
     # until that decision lands so the docs and the impl agree.
     #
     # Approximation: use the LAST call's pricing as a proxy.

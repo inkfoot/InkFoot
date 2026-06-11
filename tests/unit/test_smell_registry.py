@@ -34,7 +34,7 @@ def _smell(smell_id: str = "test-smell") -> CostSmell:
 
 @pytest.fixture(autouse=True)
 def restore_registry() -> None:
-    """Each test starts with the default-five registry and restores
+    """Each test starts with the default registry and restores
     it on exit so a test that clears the registry doesn't poison
     subsequent tests."""
     saved = list_smells()
@@ -50,8 +50,8 @@ def restore_registry() -> None:
 # ----------------------------------------------------------------------
 
 
-def test_default_smells_has_exactly_five_entries() -> None:
-    assert len(DEFAULT_SMELLS) == 5
+def test_default_smells_has_exactly_six_entries() -> None:
+    assert len(DEFAULT_SMELLS) == 6
 
 
 def test_default_smells_are_all_unique_ids() -> None:
@@ -108,5 +108,6 @@ def test_default_smell_ids_match_spec() -> None:
         "oversized-tool-result-recycled",
         "expensive-model-low-entropy",
         "recurring-cache-writes",
+        "summariser-quality-regression",
     }
     assert {s.id for s in DEFAULT_SMELLS} == expected

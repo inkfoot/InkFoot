@@ -52,7 +52,7 @@ def neutral_call_to_attrs(
     run_id: Optional[str] = None,
     sequence: Optional[int] = None,
 ) -> AttrMap:
-    """Render ``call`` as the OTel attribute dict §4.2.1 describes.
+    """Render ``call`` as the OTel GenAI attribute dict.
 
     ``operation_name`` defaults to ``"chat"`` — the only flavour
     Inkfoot emits. ``response_id`` ought to be the provider's

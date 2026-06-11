@@ -1,4 +1,4 @@
-"""review finding #5 — parametrized tests for
+"""Parametrized tests for
 :func:`inkfoot.adapters._shared.extract_tool_call`.
 
 Different OpenAI / Anthropic Agent SDK builds dispatch tool calls

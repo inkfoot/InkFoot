@@ -72,7 +72,7 @@ class _AdapterRegistry:
         second call silently wins — both instrumentations stay
         installed on their respective targets, but policy capability
         checks now consult the newest adapter only. A WARNING is
-        logged to flag the switch (review finding #2): a real
+        logged to flag the switch: a real
         process that mixes frameworks probably wants to be aware
         that its ``BudgetCap`` registration will no longer go
         through the same capability surface.

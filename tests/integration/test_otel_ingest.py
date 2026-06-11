@@ -120,8 +120,7 @@ def test_post_traces_persists_an_llm_call_event(storage, receiver):
         _otlp_request("span-int-1", response_id="resp-int-1"),
     )
     assert status == 200
-    # Spec-clean response body — stats ride on a response header
-    # (round-2 review #5).
+    # Spec-clean response body — stats ride on a response header.
     assert body == {"partialSuccess": {}}
     assert "accepted=1" in headers["X-Inkfoot-Stats"]
     # Drain any events under the synthesised run. There's exactly
@@ -159,7 +158,7 @@ def test_post_traces_rejects_protobuf_with_415(storage, receiver):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 415
-    # Round-3 review #2: the 415 body links to the recipe so an
+    # The 415 body links to the recipe so an
     # operator hitting it can jump straight to the fix.
     body = exc.value.read().decode("utf-8", errors="replace")
     assert "inkfoot.dev/recipes/otel-honeycomb" in body

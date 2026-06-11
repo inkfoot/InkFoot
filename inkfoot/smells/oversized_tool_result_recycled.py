@@ -7,14 +7,14 @@ tool output back into context every turn" failure mode — the
 provider doesn't summarise it; the agent doesn't summarise it; the
 bill grows linearly in turn count.
 
-**Current approximation (broader than the spec).** The spec's
-literal wording — *"a tool result of > 2000 tokens appears in
+**Current approximation (broader than the ideal).** The ideal
+rule — *"a tool result of > 2000 tokens appears in
 tool_result_tokens for ≥ 3 turns"* — naturally reads as "the *same*
 oversized result appears across 3 turns". Tracking *which* result
 is which requires args-or-content identity, which only exists in
 ``event_contents`` (replay mode). The current metadata-mode
 events carry per-call token totals but no result identity, so we
-approximate the spec as: "at least one turn has an oversized
+approximate it as: "at least one turn has an oversized
 result AND at least N turns have any tool-result tokens at all."
 
 That broader heuristic false-positives on the shape

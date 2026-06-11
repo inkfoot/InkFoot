@@ -17,8 +17,7 @@ or a single instance.
 The wrapping primitives (``wrap_run_method``, ``wrap_tool_dispatcher``,
 ``install_attr``, ``TOOL_DISPATCH_CANDIDATES``) live in
 :mod:`inkfoot.adapters._shared` so the Anthropic Agent adapter can
-share them without reaching for cross-module private names
-(review finding #3).
+share them without reaching for cross-module private names.
 """
 
 from __future__ import annotations
@@ -56,8 +55,8 @@ class _OpenAIAgentsInstrumentation:
     ``shutdown()`` unwraps the entry-point + tool-dispatch patches
     on the agent instance. The adapter-level active-pointer in
     :data:`~inkfoot.adapters._registry.AdapterRegistry` is handled
-    by the adapter's install-count book-keeping (review
-    Finding #4) — when the last live instrumentation shuts down,
+    by the adapter's install-count book-keeping — when the
+    last live instrumentation shuts down,
     the active pointer clears automatically. Operators who want to
     force an early deactivation can call
     :meth:`OpenAIAgentsAdapter.shutdown` directly.
@@ -162,7 +161,7 @@ class OpenAIAgentsAdapter:
         the install count. When the count reaches zero, the adapter
         auto-clears its active-pointer slot — so a user who only
         calls ``inst.shutdown()`` doesn't leave the registry
-        pointing at a "dead" adapter (review finding #4).
+        pointing at a "dead" adapter.
         """
         if self._install_count > 0:
             self._install_count -= 1
@@ -172,12 +171,13 @@ class OpenAIAgentsAdapter:
                 AdapterRegistry.clear_active()
 
     def supported_policies(self) -> set[type["Policy"]]:
-        """Observation-only — future modification policies
-        (``LazyToolExposure``, ``CheapSummariser``) will enumerate
-        here when they land. Empty set for now means the
-        observation-policy fallback path in :func:`register_policies`
-        accepts the three current observation policies cleanly."""
-        return set()
+        """Modification policies this adapter knows how to wire. The
+        observation policies don't need enumerating — the
+        pattern-fallback path in :func:`register_policies` accepts
+        them regardless because they support every pattern."""
+        from inkfoot.policy import CheapSummariser, LazyToolExposure  # noqa: PLC0415
+
+        return {LazyToolExposure, CheapSummariser}
 
     def shutdown(self) -> None:
         """Force the adapter to deactivate immediately, regardless of

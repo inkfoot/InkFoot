@@ -13,7 +13,7 @@ cover, and how you can verify them yourself.
 | SDK shim wrapper (replay mode) | 5 ms | — | Same as above, plus JSON-serialising the request and response into the `event_contents` table. |
 | Storage event insert | 1 ms | 500 µs | One `INSERT` into `events` plus the dirty-flag update, fsynced via WAL. |
 | Aggregator drain (50 runs) | 50 ms | 50 ms | The background thread that recomputes `runs.total_*` from the event log. |
-| Smell engine (per run) | 20 ms | 10 ms | All five built-in smells evaluated against a 50-event run. |
+| Smell engine (per run) | 20 ms | 10 ms | All built-in smells evaluated against a 50-event run. |
 | Report renderer | 200 ms | 100 ms | `inkfoot report --run <id>` for a 50-event run, end-to-end. |
 
 These numbers describe the **work Inkfoot does** — not the LLM call
@@ -30,7 +30,12 @@ entering the shim and that return:
 1. **Before-call hooks** run for every registered policy
    (`BudgetCap`, `RetryThrottle`, `CacheControlPlacer`, plus any
    custom policies). Each hook is wrapped in exception isolation so a
-   broken policy can never break your agent.
+   broken policy can never break your agent. One documented
+   exception to the hook budgets: when the
+   [`CheapSummariser`](modification-policies.md) modification policy
+   decides to replace an oversized tool result, its hook makes a
+   cheap-model LLM call — a real network round-trip, made at most
+   once per unique result and excluded from the budgets below.
 2. **The original SDK call executes** — this is the LLM round-trip
    itself, which dominates wall-clock time.
 3. **The translator** converts the response into a `NeutralCall` with
@@ -92,7 +97,7 @@ your own that uses `SmellEngine`).
 
 The report renderer's 200 ms p95 budget covers everything from
 opening the database to printing the final newline, on a 50-event run
-with all five smells active. Long-tail runs (hundreds of events) are
+with all built-in smells active. Long-tail runs (hundreds of events) are
 proportionally larger but still complete in well under a second.
 
 ## Verifying the budgets yourself

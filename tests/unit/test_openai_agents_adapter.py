@@ -169,8 +169,13 @@ def test_adapter_activates_on_instrument() -> None:
     assert active.name == "openai_agents"
 
 
-def test_supported_policies_default_is_empty_set() -> None:
-    assert OpenAIAgentsAdapter().supported_policies() == set()
+def test_supported_policies_enumerates_modification_policies() -> None:
+    from inkfoot.policy import CheapSummariser, LazyToolExposure
+
+    assert OpenAIAgentsAdapter().supported_policies() == {
+        LazyToolExposure,
+        CheapSummariser,
+    }
 
 
 def test_shutdown_restores_originals_and_is_idempotent() -> None:
@@ -188,7 +193,7 @@ def test_shutdown_restores_originals_and_is_idempotent() -> None:
 
 
 def test_instrumentation_shutdown_auto_deactivates_when_last_handle_closes() -> None:
-    """review finding #4 — same auto-deactivate semantics as
+    """Same auto-deactivate semantics as
     the LangGraph adapter. ``inst.shutdown()`` on the only live
     handle clears the registry's active pointer."""
     agent = _StubAgent()

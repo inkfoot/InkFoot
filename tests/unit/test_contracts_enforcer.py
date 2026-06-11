@@ -142,6 +142,31 @@ def test_no_contract_allows() -> None:
     assert outcome.action == "allow"
 
 
+def test_record_call_count_call_false_folds_spend_without_counting() -> None:
+    """Policy helper calls fold their real spend but don't advance the
+    call count or the per-task output average."""
+    contract = _contract(max_llm_calls=2, ladder=[(100, DegradeAction.BLOCK)])
+    enforcer = _enforcer(contract)
+    enforcer.register_run("r1", "triage")
+
+    enforcer.record_call(
+        run_id="r1",
+        nanodollars=5_000,
+        output_tokens=None,
+        task="triage",
+        count_call=False,
+    )
+
+    state = enforcer._runs["r1"]
+    assert state.call_count == 0
+    assert state.spent_nanodollars == 5_000
+    assert "triage" not in enforcer._output_avg
+
+    # The next agent call projects 1/2 = 50% — the helper left no trace
+    # on the call-count dimension.
+    assert _call(enforcer).action == "allow"
+
+
 # ----------------------------------------------------------------------
 # Pre-call cost estimate (nanodollar dimension)
 # ----------------------------------------------------------------------

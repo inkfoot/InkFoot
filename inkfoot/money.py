@@ -1,5 +1,5 @@
 """Integer nanodollars (10⁻⁹ USD) — the *only* shape Inkfoot stores
-money in (ADR-0-4).
+money in.
 
 Token costs routinely sit below a cent (e.g. Haiku output at $4/Mtok =
 0.0004 cents/token). Cents lose precision per-token; floats drift
@@ -39,7 +39,7 @@ def _reject_floats(value: object, *, arg_name: str) -> None:
     if isinstance(value, float):
         raise TypeError(
             f"{arg_name} refuses float input ({value!r}); use Decimal or int. "
-            "Nanodollars exist to avoid float drift — see ADR-0-4."
+            "Nanodollars exist to avoid float drift."
         )
 
 
@@ -100,7 +100,7 @@ def nd_to_usd(value: int) -> Decimal:
 def format_usd(value: int, *, decimals: int = 4) -> str:
     """Format integer nanodollars as a USD display string.
 
-    Defaults to 4 decimals (matches per-run display per ADR-0-4).
+    Defaults to 4 decimals (the per-run display precision).
     Aggregate views typically pass ``decimals=2``.
 
     Negative amounts (refunds) display with a leading minus.

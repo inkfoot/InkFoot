@@ -229,17 +229,21 @@ class ContractEnforcer:
         nanodollars: Optional[int],
         output_tokens: Optional[int],
         task: Optional[str] = None,
+        count_call: bool = True,
     ) -> None:
         """Fold a completed call's actuals into the run's accounting.
 
         Called after the SDK returns. Updates the run's running spend
         and the per-task output-token moving average that the next
-        pre-call estimate draws on.
+        pre-call estimate draws on. ``count_call=False`` folds the
+        spend without advancing ``call_count`` — used for policy
+        helper calls that are real money but not agent turns.
         """
         with self._lock:
             state = self._runs.get(run_id)
             if state is not None:
-                state.call_count += 1
+                if count_call:
+                    state.call_count += 1
                 if nanodollars:
                     state.spent_nanodollars += int(nanodollars)
                 resolved_task = task or state.task

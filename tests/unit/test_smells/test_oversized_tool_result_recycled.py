@@ -120,7 +120,7 @@ def test_fires_at_exactly_2000_tokens_boundary() -> None:
     """The implementation uses ``>= 2000`` because we're checking
     ``ledger.tool_result_tokens >= _OVERSIZED_THRESHOLD_TOKENS`` —
     a deliberate inclusive boundary for clarity (2000-tok results
-    are oversized in practice). The spec's "> 2000" wording is
+    are oversized in practice). The smell description's "> 2000" wording is
     informal."""
     events = [
         event_from_neutral_call(

@@ -39,7 +39,9 @@ inkfoot.openai_agents.instrument(agent)   # ← the one Inkfoot line
    and `dispatch_latency_ms`.
 3. Reports the OpenAI Agents SDK's policy capabilities to the
    policy registry, so policy plumbing knows what's safe to
-   register.
+   register — both
+   [modification policies](../concepts/modification-policies.md)
+   are supported.
 
 ## What you get
 

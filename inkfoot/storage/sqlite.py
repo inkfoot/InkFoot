@@ -1,9 +1,9 @@
 """SQLite-backed implementation of the Storage Protocol.
 
-Honours ADR-0-5 (WAL + per-connection pragmas), ADR-0-1 (two-tier
-write semantics with the claim-and-project guarantee against lost
-updates), and replay-mode storage contract (capture-mode column + sibling ``event_contents``
-table).
+Guarantees: WAL journaling + per-connection pragmas; two-tier write
+semantics with the claim-and-project guarantee against lost updates;
+and the replay-mode content contract (capture-mode column + sibling
+``event_contents`` table).
 
 Connections are per-thread via :class:`threading.local` — SQLite
 connections aren't thread-safe and the aggregator runs on its own
@@ -191,7 +191,7 @@ class SQLiteStorage:
         return current_schema_version(self._conn())
 
     # ------------------------------------------------------------------
-    # Run lifecycle (ADR-0-1 — synchronous status writes)
+    # Run lifecycle (synchronous status writes)
     # ------------------------------------------------------------------
 
     def start_run(
@@ -282,7 +282,7 @@ class SQLiteStorage:
     ) -> None:
         """Append an event row + set the parent run's
         ``aggregates_dirty`` flag in a single transaction. Must
-        complete under 1 ms p95 in WAL mode (§9.1 perf budget).
+        complete under 1 ms p95 in WAL mode (the shim perf budget).
 
         Replay-mode content write: when
         ``capture_mode='replay'``, an ``event_contents`` row is
@@ -322,7 +322,7 @@ class SQLiteStorage:
                     "UPDATE runs SET aggregates_dirty = 1 WHERE id = ?",
                     (run_id,),
                 )
-                # Replay-mode content row (Finding #3 in review):
+                # Replay-mode content row:
                 # we only write when there's actual content to record.
                 # The shim's policy-event branch doesn't carry content
                 # — writing a row of all-NULLs would pollute the
@@ -405,7 +405,7 @@ class SQLiteStorage:
         Returns ``False`` if the row was already clean — another
         worker beat us, or there's nothing to do.
 
-        The claim-and-project pattern this enables (ADR-0-1):
+        The claim-and-project pattern this enables:
 
         1. ``claim_clean(run_id)`` — atomic CAS, dirty 1 → 0.
         2. ``iter_events(run_id)`` — read the log.
@@ -473,8 +473,8 @@ class SQLiteStorage:
     ) -> bool:
         """Composite claim-and-project: equivalent to
         :meth:`claim_clean` followed by :meth:`write_totals` in one
-        call. Kept on the Protocol surface because the storage contract
-        spec names it. Returns ``True`` if the row was dirty (and the
+        call. Kept on the Protocol surface as part of
+        the storage contract. Returns ``True`` if the row was dirty (and the
         totals were written), ``False`` otherwise.
 
         Prefer the explicit :meth:`claim_clean` + read events +

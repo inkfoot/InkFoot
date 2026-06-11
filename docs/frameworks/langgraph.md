@@ -49,7 +49,9 @@ inkfoot.langgraph.instrument(compiled)   # ← the one Inkfoot line
    the same tool set.
 
 The call is idempotent — instrumenting the same compiled graph
-twice is a no-op.
+twice is a no-op. With the adapter active, both
+[modification policies](../concepts/modification-policies.md) can be
+registered.
 
 ## What you get
 

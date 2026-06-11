@@ -1,4 +1,4 @@
-"""Hook isolation invariant (ADR-0-3).
+"""Hook isolation invariant.
 
 Inkfoot is a third-party library wrapping a critical path (LLM
 calls). Any uncaught exception in our code would crash the user's
@@ -11,8 +11,8 @@ to ``inkfoot.errors`` and the function returns ``None`` (or the
 The user's LLM call always completes with the unmodified provider
 response.
 
-There's deliberately no "strict mode" yet — ADR-0-3 calls out a
-future ``inkfoot --strict`` env flag for dev that would re-raise.
+There's deliberately no "strict mode" yet — a future
+``inkfoot --strict`` env flag for dev would re-raise.
 The current implementation is trust-establishment, so the default catches everything.
 """
 

@@ -4,7 +4,7 @@ Instrumentation alone is commodity. The first "aha" report is what
 makes Inkfoot useful, and the smells are how a reader looking at a
 bar chart sees *why* their tokens are doing what they're doing.
 
-The current implementation ships five smells. Each is **data, not code** — a frozen
+The current implementation ships six smells. Each is **data, not code** — a frozen
 :class:`CostSmell` carries the id, title, description, severity, a
 ``detect(run, events) -> DetectionResult | None`` callable, the
 recommendation text, the suggested follow-up policy, and an
@@ -15,8 +15,6 @@ The engine itself (:class:`~inkfoot.smells.engine.SmellEngine`) lives
 in a sibling module to keep this file thin. Concrete smells live in
 their own files; this module re-exports them as the
 :data:`DEFAULT_SMELLS` list.
-
-See ``the architecture notes`` §5.9 for the authoritative shape.
 """
 
 from __future__ import annotations
@@ -159,7 +157,7 @@ def iter_llm_calls(
 # ----------------------------------------------------------------------
 
 # Module-level registry of all known smells, keyed by id. The current implementation only
-# registers the five current smells here; future aggregate analysis's community Cost
+# registers the six current smells here; future aggregate analysis's community Cost
 # Smell Library plugs into this same dict.
 _registry: dict[str, CostSmell] = {}
 
@@ -218,14 +216,18 @@ from inkfoot.smells.expensive_model_low_entropy import (  # noqa: E402
     EXPENSIVE_MODEL_LOW_ENTROPY,
 )
 from inkfoot.smells.recurring_cache_writes import RECURRING_CACHE_WRITES  # noqa: E402
+from inkfoot.smells.summariser_quality_regression import (  # noqa: E402
+    SUMMARISER_QUALITY_REGRESSION,
+)
 
-# The five current smells, in canonical reporting order.
+# The six current smells, in canonical reporting order.
 DEFAULT_SMELLS: tuple[CostSmell, ...] = (
     UNSTABLE_PROMPT_PREFIX,
     RUNAWAY_RETRY_LOOP,
     OVERSIZED_TOOL_RESULT_RECYCLED,
     EXPENSIVE_MODEL_LOW_ENTROPY,
     RECURRING_CACHE_WRITES,
+    SUMMARISER_QUALITY_REGRESSION,
 )
 
 # Populate the registry once at module load. Tests can clear and

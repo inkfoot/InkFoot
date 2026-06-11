@@ -91,7 +91,7 @@ def test_markdown_matches_snapshot_fixture():
     # Only write the snapshot when the maintainer explicitly opts in.
     # The old "create if missing" branch silently regenerated the
     # snapshot when the file was deleted (intentionally or in a bad
-    # rebase), defeating the byte-for-byte guarantee from the spec.
+    # rebase), defeating the byte-for-byte snapshot guarantee.
     if "INKFOOT_UPDATE_SNAPSHOTS" in os.environ:
         snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         snapshot_path.write_text(md, encoding="utf-8")

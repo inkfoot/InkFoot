@@ -2,7 +2,7 @@
 SDK.
 
 Wraps ``openai.resources.chat.completions.Completions.create`` and
-``AsyncCompletions.create`` per §5.2. Same lifecycle (install,
+``AsyncCompletions.create``. Same lifecycle (install,
 uninstall, sync+async, hook isolation). The translator is the
 OpenAI one; everything else flows through the shared
 :mod:`inkfoot.shims._emit` pipeline.
@@ -142,8 +142,8 @@ class OpenAIShim:
         # ``kwargs`` before the call is made.
         enforce_before_call(ctx)
         # Provider exceptions propagate; we record a NeutralError
-        # event first so reports don't under-count failures
-        # (Finding #4 in the review). Re-raised exception is
+        # event first so reports don't under-count failures. The
+        # re-raised exception is
         # identical to what the user would have seen without
         # instrumentation.
         try:

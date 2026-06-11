@@ -1,8 +1,8 @@
 """Aggregator worker — drains the dirty queue and recomputes
 projection columns on ``runs`` from the event log.
 
-ADR-0-1: ``runs.total_*`` and ``runs.outcome`` are *projections*, not
-primary facts. The shim hot path writes only events + the dirty flag
+Two-tier write contract: ``runs.total_*`` and ``runs.outcome`` are
+*projections*, not primary facts. The shim hot path writes only events + the dirty flag
 (synchronous, under 1 ms). This worker catches up asynchronously.
 
 **The claim-and-project pattern.** Each row is aggregated by:
@@ -190,7 +190,7 @@ class AggregatorWorker:
         pass so events that arrived just before ``stop`` are
         reflected.
 
-        Resilient to two failure modes the reviewer flagged:
+        Resilient to two failure modes:
 
         * **Never started.** If the worker was never started (e.g. a
           unit test instantiates one and bails), the final drain is

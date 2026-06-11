@@ -89,7 +89,7 @@ def test_all_meta_extra_bundles_every_framework_extra():
 
 
 @toml_required
-def test_langchain_extra_not_declared_in_phase_1():
+def test_langchain_extra_not_declared():
     # `[langchain]` is deferred to a later release; it must not leak
     # into the early-access release.
     extras = _load_toml()["project"]["optional-dependencies"]
