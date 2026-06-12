@@ -55,7 +55,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _LOG = logging.getLogger("inkfoot.run_lifecycle")
 
-_VALID_OUTCOMES = frozenset({"success", "failure", "human_escalated"})
+_VALID_OUTCOMES = frozenset(
+    {"success", "accepted_answer", "failure", "human_escalated"}
+)
 
 
 class NoActiveRun(InkfootError):
@@ -131,11 +133,14 @@ def set_outcome(
     aggregator picks up into ``runs.outcome`` (and
     ``runs.quality_score``).
 
-    ``outcome`` must be one of ``"success"``, ``"failure"``, or
-    ``"human_escalated"``. ``quality_score`` is a float in ``[0, 1]``
-    or ``None``; values outside the range are rejected at the
-    boundary so a report renderer's "0.94/1.00" formatting stays
-    well-defined.
+    ``outcome`` must be one of ``"success"``,
+    ``"accepted_answer"``, ``"failure"``, or ``"human_escalated"``.
+    ``"accepted_answer"`` is the human-accepted tier for review
+    workflows — stronger than plain ``"success"`` — and feeds the
+    aggregate report's ``cost/accepted_answer`` column.
+    ``quality_score`` is a float in ``[0, 1]`` or ``None``; values
+    outside the range are rejected at the boundary so a report
+    renderer's "0.94/1.00" formatting stays well-defined.
 
     Raises :class:`NoActiveRun` if called outside an ``agent_run``
     block — the message names ``@inkfoot.agent_run`` as the fix.

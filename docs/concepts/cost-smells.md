@@ -1,7 +1,7 @@
 # Cost Smells
 
 A *cost smell* is a named pattern in a run's token attribution that is
-almost always wasted money. Inkfoot ships six built-in smells; the
+almost always wasted money. Inkfoot ships eleven built-in smells; the
 engine evaluates them every time you render a report, and each detected
 smell appears in the "Smells detected" section with a recommendation
 and an estimated cost impact.
@@ -19,6 +19,11 @@ about it, and what the suggested policy is.
 | `expensive-model-low-entropy` | info | `output_tokens` | — |
 | `recurring-cache-writes` | warn | `cache_creation_tokens` | `CacheControlPlacer` |
 | `summariser-quality-regression` | critical | `summariser_tokens` | — |
+| `tool-schema-drift` | warn | `tool_schema_tokens` | [`LazyToolExposure`](modification-policies.md) |
+| `cost-skewed-by-outlier` | warn | — (cross-run) | [`BudgetCap`](observation-policies.md) |
+| `unbounded-conversation-history` | warn | `memory_tokens` | — |
+| `over-instrumented-retries` | warn | `retry_overhead_tokens` | [`RetryThrottle`](observation-policies.md) |
+| `summariser-not-firing` | warn | `tool_result_tokens` | [`CheapSummariser`](modification-policies.md) |
 
 Smells are evaluated lazily. They never touch the SDK hot path; they
 only run when you ask for a report.
@@ -171,6 +176,141 @@ the event log to see what the summaries dropped. Raise the
 summariser's `threshold_tokens` or `max_summary_tokens` so more
 context survives, or leave it disabled for the task. Re-enable with
 `enable_summariser_for_task()` once the configuration changes.
+
+## `tool-schema-drift`
+
+**Trigger.** The run's tool-schema fingerprint changes between calls —
+tools were added, removed, or reordered partway through the run.
+
+**Why it costs you.** Tool schemas serialise near the top of the
+request body, so a mid-run change breaks the provider's prompt cache
+for every call from that point on: the schema block (and everything
+after it) re-tokenises at full input rate instead of being served from
+cache. The detector keys on the stable fingerprint adapters stamp per
+call rather than on the per-call tool list, so policies like
+[`LazyToolExposure`](modification-policies.md) that legitimately narrow
+exposure never trip it. Runs whose calls carry no fingerprint (raw SDK
+shims without an adapter) stay silent.
+
+**Evidence in the report.** The distinct fingerprints in first-seen
+order, the sequence of the first change, and the number of calls and
+`tool_schema_tokens` from the change onward.
+
+**Estimated cost impact.** `tool_schema_tokens` after the first change
+× cache-read price — the optimistic floor: even served perfectly from
+cache, those schema tokens would still cost this much.
+
+**Recommendation.** Register every tool up front and keep the ordering
+deterministic for the lifetime of a run. If the agent only needs a
+subset of tools per call, narrow exposure with
+[`LazyToolExposure`](modification-policies.md) instead of mutating the
+registered set.
+
+## `cost-skewed-by-outlier`
+
+**Trigger.** The run cost more than 10× the median of its task's
+recent runs. Needs at least 5 peer runs — a task's second-ever run is
+often 10× its first, and that's not an outlier, that's noise.
+
+**Why it costs you.** One run like this drags the task's average far
+above what a typical run costs, so per-task aggregates stop reflecting
+reality. The usual causes are a retry storm, a runaway loop, or an
+unusually large input that deserves its own task name.
+
+**Cross-run, report-only.** This is the one built-in smell that needs
+context beyond the run itself. `inkfoot report` supplies the peer
+median when it evaluates smells; in-process evaluation without that
+context stays silent rather than guessing.
+
+**Evidence in the report.** The run's cost, the task's peer median,
+the peer count, and the computed ratio.
+
+**Estimated cost impact.** `run_cost − peer_median` — the excess over
+a typical run, in dollars directly.
+
+**Recommendation.** Investigate what made the run exceptional, and
+consider a [`BudgetCap`](observation-policies.md) so a single run
+cannot overshoot the task's typical cost unbounded.
+
+## `unbounded-conversation-history`
+
+**Trigger.** Any single call in the run carries more than 50,000
+tokens of conversation history / agent memory. The threshold applies
+to the largest single call, never the sum — history is recycled
+context, so summing across turns would count the same tokens once per
+turn.
+
+**Why it costs you.** Nothing is trimming the history, so every
+additional turn re-sends the whole transcript and the per-call cost
+grows linearly until the model's context window runs out.
+
+**Evidence in the report.** The largest call's `memory_tokens`, the
+number of breaching calls, and the total excess above the threshold.
+
+**Estimated cost impact.** The per-call excess above the threshold,
+summed over breaching calls, × cache-read price — history is a stable
+prefix, so even served from cache the excess still bills at the
+cache-read rate; trimming recovers at least this much.
+
+**Recommendation.** Add memory compression — fold older turns into a
+running summary — or truncate history beyond a fixed turn window.
+
+## `over-instrumented-retries`
+
+**Trigger.** Failed calls outnumber completed calls by more than 3 to
+1. The event stream has no call-site identity, so "retries per call"
+is approximated as failed ÷ completed `llm_call` events; a run with no
+completed calls at all still fires once it racks up enough failures.
+
+**Why it costs you.** The upstream is failing (rate limits, timeouts,
+overload) and the agent keeps re-sending the same request — each
+attempt re-tokenises the full context, so a persistent failure
+multiplies the run's cost without producing anything.
+
+**Evidence in the report.** Failed and completed call counts, the
+ratio, a tally of error types, and any `retry_throttle` events already
+present (proof the policy is pushing back).
+
+**Estimated cost impact.** Total `retry_overhead_tokens` × input
+price. Until retry classification is enabled this field is usually
+zero — the smell still fires on the run shape alone, just without a
+dollar figure.
+
+**Recommendation.** Tune the SDK's backoff (fewer attempts, longer
+waits) and circuit-break the upstream after repeated failures.
+[`RetryThrottle`](observation-policies.md) enforces a retry budget per
+window at the instrumentation layer.
+
+## `summariser-not-firing`
+
+**Trigger.** Three or more calls each carry over 2000 tokens of raw
+tool results, and no summariser activity appears anywhere in the run —
+no summariser-stamped call, no `summariser_tokens` in any ledger, no
+summariser policy events.
+
+**Why it costs you.** Every oversized result is billed at full input
+rate on every call it stays in context. A summariser folds those
+bodies into a few hundred tokens before they re-enter the
+conversation. A configured summariser whose threshold is set so high
+it never fires is indistinguishable from no summariser — which is
+exactly the situation worth flagging.
+
+**Sibling smell.** `oversized-tool-result-recycled` catches one big
+result being recycled across turns; this smell catches the broader
+pattern of consistently oversized results with no summarisation in
+place.
+
+**Evidence in the report.** The oversized call count, the largest
+result's size, and the total excess above the threshold.
+
+**Estimated cost impact.** The per-call excess above 2000 tokens,
+summed over oversized calls, × input price — the tokens a summariser
+would have removed, at the rate they cost today.
+
+**Recommendation.** Enable
+[`CheapSummariser(threshold_tokens=1500)`](modification-policies.md)
+so oversized tool results are folded into short summaries before they
+recycle through the context.
 
 ## Reading the impact summary
 

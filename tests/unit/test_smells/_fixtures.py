@@ -14,7 +14,7 @@ import json
 from typing import Any, Iterable, Optional, Sequence
 
 from inkfoot.ledger import CausalTokenLedger
-from inkfoot.normalise import NeutralCall
+from inkfoot.normalise import NeutralCall, NeutralError
 
 
 def make_neutral_call(
@@ -29,6 +29,8 @@ def make_neutral_call(
     started_at: int = 0,
     ended_at: int = 1,
     estimated_nanodollars: Optional[int] = 0,
+    metadata: Optional[dict[str, Any]] = None,
+    error: Optional[NeutralError] = None,
 ) -> NeutralCall:
     """Build a :class:`NeutralCall` with explicit ledger overrides.
 
@@ -45,8 +47,10 @@ def make_neutral_call(
         estimated_nanodollars=estimated_nanodollars,
         tools_offered=tuple(tools_offered),
         tools_called=tuple(tools_called),
+        error=error,
         cache_status=cache_status,
         sequence=sequence,
+        metadata=dict(metadata or {}),
     )
 
 

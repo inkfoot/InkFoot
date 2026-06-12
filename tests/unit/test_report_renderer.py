@@ -310,9 +310,9 @@ def test_footnote_absent_when_show_zero_true() -> None:
 # ----------------------------------------------------------------------
 
 
-def test_aggregate_view_header_lists_all_five_columns(tmp_path) -> None:
-    """The the documented aggregate view spells out five columns: runs, avg_$, p95_$,
-    success%, cost/success."""
+def test_aggregate_view_header_lists_all_documented_columns(tmp_path) -> None:
+    """The aggregate view spells out the documented columns: runs,
+    cost/success, cost/accepted_answer, avg_$, p95_$, success%."""
     import time
     from types import SimpleNamespace
 
@@ -346,10 +346,19 @@ def test_aggregate_view_header_lists_all_five_columns(tmp_path) -> None:
     finally:
         s.close()
 
-    # Header carries all five columns the AC names.
+    # Header carries every documented column.
     header_line = [ln for ln in out.splitlines() if "runs" in ln and "avg_$" in ln][0]
-    for col in ("runs", "avg_$", "p95_$", "success%", "cost/success"):
+    for col in (
+        "runs",
+        "cost/success",
+        "cost/accepted_answer",
+        "avg_$",
+        "p95_$",
+        "success%",
+    ):
         assert col in header_line, f"missing column {col!r} in header: {header_line!r}"
+    # cost/success leads the metric columns.
+    assert header_line.index("cost/success") < header_line.index("avg_$")
 
 
 def test_aggregate_view_computes_p95_and_cost_per_success(tmp_path) -> None:
@@ -435,7 +444,7 @@ def test_aggregate_view_shows_em_dash_when_no_successes(tmp_path) -> None:
 def test_aggregate_view_p95_helper_handles_boundary_cases() -> None:
     """``_p95`` of empty list → 0; single value → that value;
     index clamped at n-1 for tiny samples."""
-    from inkfoot.cli.report import _p95
+    from inkfoot.reports.cost_per_success import _p95
 
     assert _p95([]) == 0
     assert _p95([42]) == 42

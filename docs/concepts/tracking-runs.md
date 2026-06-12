@@ -92,21 +92,34 @@ Record the user-visible result of the run.
 
 ```python
 inkfoot.set_outcome("success", quality_score=0.94)
+inkfoot.set_outcome("accepted_answer")
 inkfoot.set_outcome("failure")
 inkfoot.set_outcome("human_escalated")
 ```
 
 | Argument | Allowed values |
 |---|---|
-| `outcome` | `"success"`, `"failure"`, or `"human_escalated"`. |
+| `outcome` | `"success"`, `"accepted_answer"`, `"failure"`, or `"human_escalated"`. |
 | `quality_score` | A float in `[0.0, 1.0]`, or `None`. Out-of-range values raise. |
 
+`accepted_answer` is the human-accepted tier for review workflows —
+stronger than plain `success` (the agent finished *and* a person
+accepted the result). It feeds the aggregate report's
+`cost/accepted_answer` column; see
+[Cost per Success](cost-per-success.md).
+
 The outcome shows up in reports (`success (0.94)`), in the aggregate view's
-`success%` column, and is recorded on the `runs.outcome` and
-`runs.quality_score` columns by the background aggregator.
+`cost/success` and `success%` columns, and is recorded on the
+`runs.outcome` and `runs.quality_score` columns by the background
+aggregator. Runs that never call `set_outcome` aggregate into the
+report's `uninstrumented` row.
 
 `set_outcome` may be called more than once in a run; the last value wins
 during aggregation.
+
+For agents where success is mechanically visible in the framework's
+return value, [`set_outcome_from_heuristic`](cost-per-success.md#inferring-outcomes-from-framework-results)
+saves writing the same mapping boilerplate in every entry point.
 
 ## `inkfoot.tag(key, value)`
 

@@ -17,6 +17,8 @@ stays in lockstep with the runtime contract.
 
 ### ::: inkfoot.set_outcome
 
+### ::: inkfoot.outcomes.set_outcome_from_heuristic
+
 ### ::: inkfoot.tag
 
 ### ::: inkfoot.tag_node

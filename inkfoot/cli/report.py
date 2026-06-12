@@ -27,8 +27,12 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
 
 from inkfoot.ledger import INPUT_CATEGORIES
-from inkfoot.money import format_usd, nd_to_usd
+from inkfoot.money import format_usd
 from inkfoot.pricing import estimate_per_category
+from inkfoot.reports.cost_per_success import (
+    render_aggregate_table,
+    rollup_cost_per_success,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.smells import DetectionResult
@@ -107,6 +111,11 @@ def _short_smell_tag(hit: "DetectionResult") -> str:
         "expensive-model-low-entropy": "expensive-for-task",
         "recurring-cache-writes": "cache-thrash",
         "runaway-retry-loop": "retry-loop",
+        "tool-schema-drift": "schema-drift",
+        "cost-skewed-by-outlier": "outlier",
+        "unbounded-conversation-history": "unbounded-history",
+        "over-instrumented-retries": "retry-overhead",
+        "summariser-not-firing": "no-summariser",
     }
     return short.get(hit.smell.id, hit.smell.id)
 
@@ -300,6 +309,7 @@ def run(args: Any) -> int:
         if getattr(args, "no_smells", False):
             smells = []
         else:
+            row = _attach_outlier_context(storage, dict(row))
             smells = SmellEngine(list(DEFAULT_SMELLS)).evaluate(row, events)
         print(
             render(
@@ -320,15 +330,21 @@ def _group_by_error(group_by: Any, *, aggregate: bool) -> Optional[str]:
     when the value is valid.
 
     Shared by :func:`run` (so both views fail with the same exit
-    code) and :func:`_render_aggregate` — the latter interpolates the
-    value into SQL, so it re-checks even though the CLI path
-    validates first.
+    code) and :func:`_render_aggregate` — the latter re-checks so
+    direct callers (tests, future API surface) get the same
+    validation as the CLI path.
     """
     metadata_key = _metadata_group_key(group_by)
     if metadata_key == "":
         return (
             f"inkfoot report: invalid --group-by value {group_by!r} "
             "(metadata.<key> needs a key, e.g. metadata.agent_name)"
+        )
+    tag_key = _tag_group_key(group_by)
+    if tag_key == "":
+        return (
+            f"inkfoot report: invalid --group-by value {group_by!r} "
+            "(tag.<key> needs a key, e.g. tag.customer_tier)"
         )
     if aggregate:
         if metadata_key is not None:
@@ -338,20 +354,28 @@ def _group_by_error(group_by: Any, *, aggregate: bool) -> Optional[str]:
                 "Per-metadata aggregates across runs are deferred to "
                 "future aggregate analysis."
             )
+        if tag_key is not None:
+            return None
         if (group_by or "task") not in ("task", "agent_kind"):
             return (
                 f"inkfoot report: invalid --group-by value {group_by!r} "
-                "(expected 'task' or 'agent_kind'; 'node' / "
-                "'metadata.<key>' pair with --run)"
+                "(expected 'task', 'agent_kind', or 'tag.<key>'; "
+                "'node' / 'metadata.<key>' pair with --run)"
             )
         return None
     if metadata_key is not None:
         return None
+    if tag_key is not None:
+        return (
+            f"inkfoot report: --group-by {group_by} only applies to "
+            "the aggregate view (pair with --last, not --run) — a "
+            "single run has at most one value per tag."
+        )
     if group_by not in (None, "task", "agent_kind"):
         return (
             f"inkfoot report: invalid --group-by value {group_by!r} "
-            "(expected 'task', 'agent_kind', 'node', or "
-            "'metadata.<key>')"
+            "(expected 'task', 'agent_kind', 'node', "
+            "'metadata.<key>', or 'tag.<key>')"
         )
     return None
 
@@ -368,6 +392,15 @@ def _metadata_group_key(group_by: Any) -> Optional[str]:
         return "node_name"
     if isinstance(group_by, str) and group_by.startswith("metadata."):
         return group_by[len("metadata."):]
+    return None
+
+
+def _tag_group_key(group_by: Any) -> Optional[str]:
+    """Map a ``--group-by`` value onto the user-tag key the
+    aggregate view buckets by (``tag.customer_tier`` →
+    ``customer_tier``). ``None`` means "not a tag group-by"."""
+    if isinstance(group_by, str) and group_by.startswith("tag."):
+        return group_by[len("tag."):]
     return None
 
 
@@ -493,32 +526,27 @@ def _aggregate_ledger_totals(
     return totals
 
 
-def _p95(values: list[int]) -> int:
-    """Approximate 95th percentile from a sorted sample. SQLite has
-    no built-in percentile aggregate (without an extension), so the
-    aggregate view pulls per-bucket totals into Python and computes
-    p95 here. Index = ``int(n × 0.95)``, clamped at ``n - 1``."""
-    if not values:
-        return 0
-    s = sorted(values)
-    idx = min(len(s) - 1, int(len(s) * 0.95))
-    return s[idx]
-
-
 def _render_aggregate(storage: "Storage", args: Any) -> str:
     """Cross-run aggregate view (``--last 7d`` / ``--task name``).
 
-    Current implementation: SELECT recent runs, summarise by
-    bucket (``--group-by task`` | ``agent_kind``), emit a table
-    with the documented five columns:
+    SELECTs the window's run rows once and hands them to
+    :func:`inkfoot.reports.cost_per_success.rollup_cost_per_success`
+    — bucketed by ``--group-by task`` | ``agent_kind`` |
+    ``tag.<key>`` — then renders the documented columns:
 
     * ``runs`` — count of runs in the bucket
-    * ``avg_$`` — average ``total_nanodollars``
-    * ``p95_$`` — 95th-percentile ``total_nanodollars``
-      (computed in Python; SQLite has no native percentile agg)
-    * ``success%`` — outcome="success" rate
-    * ``cost/success`` — ``total_$ / n_success`` (or ``—`` when
-      no successes in the bucket)
+    * ``cost/success`` — bucket spend ÷ successful runs (the
+      headline; ``—`` when the bucket has no successes)
+    * ``cost/accepted_answer`` — bucket spend ÷ accepted-answer
+      runs
+    * ``avg_$`` / ``p95_$`` — distribution shape (p95 in Python;
+      SQLite has no native percentile aggregate)
+    * ``success%`` — outcome="success" rate among the bucket's
+      outcome-bearing runs
+
+    Runs that never called ``set_outcome`` aggregate into the
+    pinned-last ``uninstrumented`` row instead of silently
+    polluting their bucket's outcome math.
     """
     import re  # noqa: PLC0415
 
@@ -549,76 +577,48 @@ def _render_aggregate(storage: "Storage", args: Any) -> str:
         return error
     group_by = getattr(args, "group_by", None) or "task"
 
-    # Per-bucket aggregates SQLite can compute natively. p95 is
-    # computed in Python below from the per-run totals.
-    #
-    # ``NULLS LAST`` requires SQLite 3.30+ (October 2019). Modern
-    # Python ships a newer SQLite; older builder images may need
-    # to upgrade. Falling back to ``ORDER BY total_nd IS NULL,
-    # total_nd DESC`` would work on older SQLite, but the current implementation
-    # 3.10+ Python floor implies a recent SQLite anyway.
     cur = conn.execute(
         f"""
-        SELECT
-            {group_by} AS bucket,
-            COUNT(*) AS n_runs,
-            SUM(total_nanodollars) AS total_nd,
-            AVG(total_nanodollars) AS avg_nd,
-            SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS n_success
+        SELECT id, task, agent_kind, outcome, total_nanodollars
         FROM runs
         WHERE {where}
-        GROUP BY bucket
-        ORDER BY total_nd DESC NULLS LAST
         """,
         params,
     )
-    rows = cur.fetchall()
-    if not rows:
+    run_rows = [dict(row) for row in cur.fetchall()]
+    if not run_rows:
         return f"inkfoot report: no runs in the last {last}."
 
-    # Pull per-run totals once so we can compute p95 per-bucket in
-    # Python. One extra query rather than one-per-bucket keeps the
-    # round-trip count bounded.
-    per_bucket_totals: dict[str, list[int]] = {}
-    detail_cur = conn.execute(
-        f"SELECT {group_by} AS bucket, total_nanodollars FROM runs "
-        f"WHERE {where}",
-        params,
-    )
-    for row in detail_cur.fetchall():
-        bucket = row["bucket"] or "(none)"
-        per_bucket_totals.setdefault(bucket, []).append(
-            int(row["total_nanodollars"] or 0)
+    tag_key = _tag_group_key(group_by)
+    if tag_key is not None:
+        from inkfoot.reports.tag_groupby import (  # noqa: PLC0415
+            UNKNOWN_BUCKET,
+            tag_buckets,
         )
 
+        buckets = tag_buckets(
+            conn,
+            key=tag_key,
+            since_ms=cutoff_ms,
+            task_filter=task_filter,
+        )
+
+        def bucket_of(run: dict[str, Any]) -> str:
+            return buckets.get(run.get("id"), UNKNOWN_BUCKET)
+
+    else:
+        # Validated above: a plain column name (task / agent_kind).
+        column = group_by
+
+        def bucket_of(run: dict[str, Any]) -> str:
+            return run.get(column) or "(none)"
+
+    bucket_rows = rollup_cost_per_success(run_rows, bucket_of=bucket_of)
     lines = [
-        f"Recent runs ({last}, grouped by {group_by}):",
-        "",
-        (
-            f"  {'bucket':<32} {'runs':>6} {'avg_$':>10} "
-            f"{'p95_$':>10} {'success%':>9} {'cost/success':>14}"
-        ),
+        render_aggregate_table(
+            bucket_rows, window_label=last, group_label=group_by
+        )
     ]
-    for row in rows:
-        bucket = (row["bucket"] or "(none)")[:32]
-        n_runs = row["n_runs"] or 0
-        avg_nd = int(row["avg_nd"] or 0)
-        total_nd = int(row["total_nd"] or 0)
-        n_success = row["n_success"] or 0
-        success_pct = (n_success / n_runs * 100) if n_runs else 0.0
-        p95_nd = _p95(per_bucket_totals.get(bucket, []))
-        cost_per_success = (
-            format_usd(total_nd // n_success, decimals=4)
-            if n_success > 0
-            else "—"
-        )
-        lines.append(
-            f"  {bucket:<32} {n_runs:>6} "
-            f"{format_usd(avg_nd, decimals=4):>10} "
-            f"{format_usd(p95_nd, decimals=4):>10} "
-            f"{success_pct:>8.1f}% "
-            f"{cost_per_success:>14}"
-        )
 
     if not getattr(args, "no_smells", False):
         aggregate_stanza = _render_aggregate_smells(
@@ -753,8 +753,70 @@ def _iter_recent_runs_with_events(
         [*params, int(limit)],
     )
     runs = [dict(row) for row in cur.fetchall()]
+    _attach_window_peer_context(runs)
     for run in runs:
         run_id = run.get("id")
         if not run_id:
             continue
         yield run, storage.iter_events(run_id)
+
+
+def _attach_window_peer_context(runs: list[dict[str, Any]]) -> None:
+    """Attach same-task peer-cost context (median + peer count) to
+    each run dict so the ``cost-skewed-by-outlier`` smell — whose
+    detector is a pure function and never queries storage — can
+    fire during the aggregate rollup. Peers are the *other*
+    same-task runs in this window slice; the smell stays silent
+    below its minimum peer count."""
+    from inkfoot.smells.cost_skewed_by_outlier import (  # noqa: PLC0415
+        PEER_COUNT_KEY,
+        PEER_P50_KEY,
+        peer_p50,
+    )
+
+    totals_by_task: dict[Any, list[int]] = {}
+    for run in runs:
+        totals_by_task.setdefault(run.get("task"), []).append(
+            int(run.get("total_nanodollars") or 0)
+        )
+    for run in runs:
+        peers = list(totals_by_task[run.get("task")])
+        peers.remove(int(run.get("total_nanodollars") or 0))
+        run[PEER_P50_KEY] = peer_p50(peers)
+        run[PEER_COUNT_KEY] = len(peers)
+
+
+def _attach_outlier_context(
+    storage: "Storage", run: dict[str, Any]
+) -> dict[str, Any]:
+    """Single-run flavour of :func:`_attach_window_peer_context`:
+    fetch the same-task peers' totals (bounded, most recent first)
+    and attach the median + count the ``cost-skewed-by-outlier``
+    smell reads. Same Storage-Protocol gap as the aggregate view —
+    reaches into the SQLite connection directly."""
+    from inkfoot.smells.cost_skewed_by_outlier import (  # noqa: PLC0415
+        PEER_COUNT_KEY,
+        PEER_P50_KEY,
+        peer_p50,
+    )
+
+    task = run.get("task")
+    run_id = run.get("id")
+    if not task or not run_id:
+        return run
+    conn = storage._conn()  # type: ignore[attr-defined]
+    cur = conn.execute(
+        """
+        SELECT total_nanodollars FROM runs
+        WHERE task = ? AND id != ?
+        ORDER BY started_at DESC
+        LIMIT ?
+        """,
+        [task, run_id, _MAX_AGGREGATE_SMELL_RUNS],
+    )
+    totals = [
+        int(row["total_nanodollars"] or 0) for row in cur.fetchall()
+    ]
+    run[PEER_P50_KEY] = peer_p50(totals)
+    run[PEER_COUNT_KEY] = len(totals)
+    return run

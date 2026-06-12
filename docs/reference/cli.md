@@ -32,6 +32,11 @@ it takes `--dsn` instead.
 Render the attribution bar chart + detected smells for one run, or a
 summary table across many runs.
 
+`report` reads the local SQLite database only (`--db`, default
+`~/.inkfoot/runs.db`). It does not yet honour `INKFOOT_PG_DSN` —
+runs aggregated into a [Postgres backend](../concepts/postgres.md)
+are not visible to it.
+
 ### Single-run view
 
 ```bash
@@ -102,7 +107,7 @@ inkfoot report --last 7d --group-by task
 | Flag | Purpose |
 |---|---|
 | `--last <duration>` | Time window. Format: `<n><unit>` where unit is `s`, `m`, `h`, or `d`. Examples: `24h`, `7d`, `30d`. |
-| `--group-by <field>` | Bucket the table by `task` (default) or `agent_kind`. (`node` / `metadata.<key>` are single-run slices — pair them with `--run`.) |
+| `--group-by <field>` | Bucket the table by `task` (default), `agent_kind`, or `tag.<key>` — a [user tag](../concepts/tracking-runs.md) value, e.g. `tag.customer_tier`. (`node` / `metadata.<key>` are single-run slices — pair them with `--run`.) |
 | `--task <name>` | Filter to runs with this `task` value. |
 | `--no-smells` | Skip the cross-run smell rollup at the bottom of the view. |
 | `--db <path>` | Override the default database path. |
@@ -112,10 +117,11 @@ Output:
 ```
 Recent runs (7d, grouped by task):
 
-  bucket                              runs      avg_$      p95_$  success%   cost/success
-  customer-support-triage              142   $0.0118    $0.0341      94.3%        $0.0125
-  invoice-extraction                    37   $0.0432    $0.0982      89.2%        $0.0484
-  meeting-summariser                    21   $0.0067    $0.0145      95.2%        $0.0070
+  bucket                   runs  cost/success  cost/accepted_answer    avg_$    p95_$  success%
+  customer-support-triage   142       $0.0125                     —  $0.0118  $0.0341     94.3%
+  invoice-extraction         37       $0.0484               $0.0533  $0.0432  $0.0982     89.2%
+  meeting-summariser         21       $0.0070                     —  $0.0067  $0.0145     95.2%
+  uninstrumented             14             —                     —  $0.0102  $0.0239         —
 
 Aggregate smells (last 7d):
   · unstable-prompt-prefix: 56/200 runs (28%)
@@ -132,10 +138,33 @@ population. Pass `--no-smells` to omit the stanza.
 |---|---|
 | `bucket` | The value of the grouping column. `(none)` if null. |
 | `runs` | Run count in this bucket. |
+| `cost/success` | Bucket spend ÷ runs with outcome `success` (or `—` when none). The headline column — see [Cost per Success](../concepts/cost-per-success.md). |
+| `cost/accepted_answer` | Bucket spend ÷ runs with outcome `accepted_answer` (or `—` when none). |
 | `avg_$` | Average `total_nanodollars` per run. |
 | `p95_$` | 95th-percentile per-run cost. |
 | `success%` | Percentage of runs whose `outcome` is `"success"`. |
-| `cost/success` | Total cost ÷ number of successful runs (or `—` when no successes). |
+
+Runs that never call
+[`set_outcome`](../concepts/tracking-runs.md) are diverted into a
+dedicated `uninstrumented` row pinned to the bottom of the table:
+their spend is totalled separately and excluded from every outcome
+rate, so partial outcome coverage can't skew `cost/success` for the
+instrumented buckets. See
+[Cost per Success](../concepts/cost-per-success.md) for the full
+rationale.
+
+#### Grouping by tag
+
+```bash
+inkfoot report --last 7d --group-by tag.customer_tier
+```
+
+`--group-by tag.<key>` buckets the same table by a
+[user tag](../concepts/tracking-runs.md) value instead of by task.
+Runs carrying the tag bucket by its value (last write wins when a
+run was tagged twice); runs without the tag land in an `unknown`
+bucket so a partially-tagged fleet stays visible instead of
+dropping rows.
 
 ## `inkfoot tag`
 

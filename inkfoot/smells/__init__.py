@@ -4,7 +4,7 @@ Instrumentation alone is commodity. The first "aha" report is what
 makes Inkfoot useful, and the smells are how a reader looking at a
 bar chart sees *why* their tokens are doing what they're doing.
 
-The current implementation ships six smells. Each is **data, not code** — a frozen
+The current implementation ships eleven smells. Each is **data, not code** — a frozen
 :class:`CostSmell` carries the id, title, description, severity, a
 ``detect(run, events) -> DetectionResult | None`` callable, the
 recommendation text, the suggested follow-up policy, and an
@@ -157,7 +157,7 @@ def iter_llm_calls(
 # ----------------------------------------------------------------------
 
 # Module-level registry of all known smells, keyed by id. The current implementation only
-# registers the six current smells here; future aggregate analysis's community Cost
+# registers the eleven built-in smells here; future aggregate analysis's community Cost
 # Smell Library plugs into this same dict.
 _registry: dict[str, CostSmell] = {}
 
@@ -219,8 +219,21 @@ from inkfoot.smells.recurring_cache_writes import RECURRING_CACHE_WRITES  # noqa
 from inkfoot.smells.summariser_quality_regression import (  # noqa: E402
     SUMMARISER_QUALITY_REGRESSION,
 )
+from inkfoot.smells.tool_schema_drift import TOOL_SCHEMA_DRIFT  # noqa: E402
+from inkfoot.smells.cost_skewed_by_outlier import (  # noqa: E402
+    COST_SKEWED_BY_OUTLIER,
+)
+from inkfoot.smells.unbounded_conversation_history import (  # noqa: E402
+    UNBOUNDED_CONVERSATION_HISTORY,
+)
+from inkfoot.smells.over_instrumented_retries import (  # noqa: E402
+    OVER_INSTRUMENTED_RETRIES,
+)
+from inkfoot.smells.summariser_not_firing import (  # noqa: E402
+    SUMMARISER_NOT_FIRING,
+)
 
-# The six current smells, in canonical reporting order.
+# The eleven built-in smells, in canonical reporting order.
 DEFAULT_SMELLS: tuple[CostSmell, ...] = (
     UNSTABLE_PROMPT_PREFIX,
     RUNAWAY_RETRY_LOOP,
@@ -228,6 +241,11 @@ DEFAULT_SMELLS: tuple[CostSmell, ...] = (
     EXPENSIVE_MODEL_LOW_ENTROPY,
     RECURRING_CACHE_WRITES,
     SUMMARISER_QUALITY_REGRESSION,
+    TOOL_SCHEMA_DRIFT,
+    COST_SKEWED_BY_OUTLIER,
+    UNBOUNDED_CONVERSATION_HISTORY,
+    OVER_INSTRUMENTED_RETRIES,
+    SUMMARISER_NOT_FIRING,
 )
 
 # Populate the registry once at module load. Tests can clear and
