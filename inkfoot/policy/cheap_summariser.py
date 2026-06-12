@@ -487,7 +487,7 @@ class CheapSummariser(Policy):
             return
 
         question = _last_user_question(ctx.request_kwargs)
-        summary_model = cheap_model_for(ctx.provider)
+        summary_model = cheap_model_for(ctx.provider, ctx.model)
         summary: Optional[str] = None
         if summary_model is not None:
             summary = self._call_cheap_model(
@@ -530,10 +530,19 @@ class CheapSummariser(Policy):
         )
         token = _in_summariser_call.set(True)
         try:
+            # Name-keyed transport selection, deliberately: these
+            # helpers are per-SDK wire adapters (which client to
+            # construct and how to call it), not capability variance
+            # — *which* model to call already came from the
+            # capability declaration. A provider that declares a
+            # cheap model but has no transport here falls back to
+            # truncation.
             if provider == "anthropic":
                 return _anthropic_summary(model, prompt, self._max_summary_tokens)
             if provider == "openai":
                 return _openai_summary(model, prompt, self._max_summary_tokens)
+            if provider == "gemini":
+                return _gemini_summary(model, prompt, self._max_summary_tokens)
             return None
         except Exception:  # pylint: disable=broad-except
             _LOG.warning(
@@ -725,3 +734,45 @@ def _openai_summary(model: str, prompt: str, max_tokens: int) -> Optional[str]:
         text = content.strip()
         return text or None
     return None
+
+
+def _gemini_summary(model: str, prompt: str, max_tokens: int) -> Optional[str]:
+    import google.generativeai as genai  # noqa: PLC0415
+
+    client = genai.GenerativeModel(model)
+    response = client.generate_content(
+        prompt,
+        generation_config={"max_output_tokens": max_tokens},
+    )
+    candidates = (
+        response.get("candidates")
+        if isinstance(response, dict)
+        else getattr(response, "candidates", None)
+    )
+    if not candidates:
+        return None
+    first = candidates[0]
+    content = (
+        first.get("content")
+        if isinstance(first, dict)
+        else getattr(first, "content", None)
+    )
+    raw_parts = (
+        content.get("parts")
+        if isinstance(content, dict)
+        else getattr(content, "parts", None)
+    )
+    parts: list[str] = []
+    for part in raw_parts or []:
+        if isinstance(part, str):
+            parts.append(part)
+        elif isinstance(part, dict):
+            txt = part.get("text")
+            if isinstance(txt, str):
+                parts.append(txt)
+        else:
+            txt = getattr(part, "text", None)
+            if isinstance(txt, str):
+                parts.append(txt)
+    text = "".join(parts).strip()
+    return text or None

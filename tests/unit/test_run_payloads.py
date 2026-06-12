@@ -196,6 +196,12 @@ def test_in_memory_run_state_has_no_storage_helpers() -> None:
         # The run lifecycle added a pre-call token counter for inkfoot.tag_retrieval.
         # Process-local; not persisted.
         "pending_retrieved_context_tokens",
+        # Cache-resource providers (Gemini): set by the cache-resource
+        # arm of CacheControlPlacer right after it creates a provider-
+        # side cache resource; the translator re-attributes that
+        # call's cached count to cache_creation_tokens and resets the
+        # flag. Process-local; not persisted.
+        "pending_cache_resource_creation",
         # the adapter work (framework metadata contract): adapter / tag_node-supplied node name
         # the translator stamps onto NeutralCall.metadata["node_name"].
         # Process-local; not persisted.

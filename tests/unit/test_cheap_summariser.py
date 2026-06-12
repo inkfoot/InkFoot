@@ -599,3 +599,79 @@ def test_fold_does_not_mutate_the_original_call() -> None:
     assert call.ledger.user_input_tokens == 500
     assert call.ledger.summariser_tokens == 0
     assert SUMMARISER_CALL_METADATA_KEY not in call.metadata
+
+
+# ----------------------------------------------------------------------
+# cheap_model_for resolution
+#
+# The capability declaration in the provider registry is the single
+# source of truth; the module-level map is an operator override that
+# wins when set.
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture()
+def clean_registry():
+    from inkfoot.providers import ProviderRegistry
+
+    ProviderRegistry.clear()
+    yield
+    ProviderRegistry.clear()
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("anthropic", "claude-haiku-4-5"),
+        ("openai", "gpt-4o-mini"),
+        ("gemini", "gemini-1.5-flash"),
+    ],
+)
+def test_cheap_model_resolves_from_provider_capabilities(
+    provider: str, expected: str
+) -> None:
+    from inkfoot.policy._cheap_models import cheap_model_for
+
+    assert cheap_model_for(provider) == expected
+
+
+def test_cheap_model_varies_per_bedrock_model_family() -> None:
+    from inkfoot.policy._cheap_models import cheap_model_for
+
+    assert cheap_model_for(
+        "bedrock", "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    ) == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert cheap_model_for("bedrock", "meta.llama3-1-70b-instruct-v1:0") is None
+
+
+def test_cheap_model_none_for_unregistered_provider() -> None:
+    from inkfoot.policy._cheap_models import cheap_model_for
+
+    assert cheap_model_for("never-registered") is None
+
+
+def test_cheap_model_override_map_wins(monkeypatch) -> None:
+    from inkfoot.policy._cheap_models import (
+        CHEAP_MODEL_FOR_SUMMARISER,
+        cheap_model_for,
+    )
+
+    monkeypatch.setitem(CHEAP_MODEL_FOR_SUMMARISER, "anthropic", "my-tiny")
+    assert cheap_model_for("anthropic") == "my-tiny"
+
+
+def test_cheap_model_for_registered_compat_gateway(clean_registry) -> None:
+    # The documented gateway flow: declare the gateway's small model
+    # on the provider instance and the summariser picks it up.
+    from inkfoot.policy._cheap_models import cheap_model_for
+    from inkfoot.providers import OpenAICompatProvider, ProviderRegistry
+
+    ProviderRegistry.register(
+        OpenAICompatProvider(
+            base_url="http://localhost:11434/v1",
+            model="llama3.2",
+            capabilities={"cheap_model_for_summariser": "llama3.2:1b"},
+        )
+    )
+    assert cheap_model_for("openai_compat") == "llama3.2:1b"
+    assert cheap_model_for("openai_compat", "llama3.2") == "llama3.2:1b"

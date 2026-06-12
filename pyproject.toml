@@ -39,6 +39,18 @@ dev = [
     "pyyaml>=6",
 ]
 
+# Provider SDK extras. The shims auto-detect whichever SDKs are
+# importable, so these are pure convenience pins — ``pip install
+# inkfoot[gemini]`` gets a Gemini-instrumented environment in one
+# step. (Anthropic and OpenAI SDKs are ubiquitous enough that we
+# don't ship extras for them.)
+gemini = [
+    "google-generativeai>=0.8",
+]
+bedrock = [
+    "boto3>=1.34",
+]
+
 # Framework adapter extras. Each one pulls in the peer
 # framework as an optional install so ``pip install inkfoot[langgraph]``
 # gets the user a working integration without bloating the default
@@ -69,7 +81,7 @@ crewai = [
 # Action installs in CI, so consumer scenarios can import any of
 # the adapters without a per-extra dance.
 all = [
-    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai]",
+    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai,gemini,bedrock]",
 ]
 
 # Docs site build deps. Installed by `pip install inkfoot[docs]`;
@@ -102,5 +114,8 @@ testpaths = ["tests"]
 markers = [
     "live_anthropic: tests that hit a real Anthropic endpoint (skipped without API key)",
     "live_openai: tests that hit a real OpenAI endpoint (skipped without API key)",
+    "live_gemini: tests that hit a real Gemini endpoint (skipped without API key)",
+    "live_bedrock: tests that hit a real Bedrock endpoint (skipped without AWS credentials)",
+    "live_ollama: tests that hit a local Ollama instance (skipped when unreachable)",
     "slow: tests that take more than a few seconds",
 ]

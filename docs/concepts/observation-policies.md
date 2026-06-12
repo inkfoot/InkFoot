@@ -9,13 +9,16 @@ Inkfoot ships three observation policies:
 
 - `BudgetCap` — warn when a run's cumulative cost crosses a threshold.
 - `RetryThrottle` — warn when a run retries too many times in a window.
-- `CacheControlPlacer` — advise on missing `cache_control` markers
-  (Anthropic only).
+- `CacheControlPlacer` — capability-aware prompt-cache help, from
+  `cache_control` marker advice to managed cache resources.
 
 All three are **observe-only**: they emit events into the database when
-their trigger fires, but they never block or rewrite the underlying SDK
-call. Reports surface the events alongside the bar chart. Policies that
-*do* rewrite the outgoing request are covered separately in
+their trigger fires, but they never block a call or rewrite your
+request. (`CacheControlPlacer`'s one active behaviour — binding Gemini
+calls to a managed cache resource — changes how the stable prefix is
+billed, never what the model reads.) Reports surface the events
+alongside the bar chart. Policies that *do* rewrite the outgoing
+request are covered separately in
 [Modification Policies](modification-policies.md).
 
 ## Registering policies
@@ -97,35 +100,53 @@ RetryThrottle(window_s=60, max=3)   # >3 retries in any 60s window
 
 ## `CacheControlPlacer()`
 
-Anthropic-only. Inspects each Anthropic request and emits a
-`cache_control_advice` event when the system block or tools array is
-large enough to benefit from a `cache_control` marker but doesn't have
-one.
+Capability-aware prompt-cache help. The policy reads the provider's
+declared `prompt_cache_style` from the [provider
+registry](../providers.md) and dispatches on the *style*, never on
+the provider's name:
+
+- **`explicit_marker`** (Anthropic; Claude on Bedrock) — emits a
+  `cache_control_advice` event when the system block or tools array
+  is large enough to benefit from a `cache_control` marker but
+  doesn't have one.
+- **`cache_resource`** (Gemini) — creates (or reuses) a
+  `CachedContent` resource for the stable `system_instruction` +
+  `tools` prefix and binds qualifying calls to it, emitting a
+  `cache_resource_created` event on the creation call. When the
+  resource can't be created the policy degrades to a single
+  `cache_control_advice` event. See [Providers](../providers.md) for
+  the full Gemini flow.
+- **`automatic`** (OpenAI) and **`none`** — silently ignored
+  (automatic caching needs no help; `none` has nothing to place). A
+  provider missing from the registry is treated as `none`.
 
 **Behaviour.**
 
-- OpenAI calls are silently ignored (OpenAI's prompt caching is
-  automatic and doesn't use client markers).
-- Fires at most once per block per run — once the policy has advised on
-  the system block for a given run, it won't repeat the system advice
-  for that run.
-- The minimum block size before advice fires is roughly 4096 characters
-  (Anthropic only caches blocks of at least 1024 tokens; the threshold
-  approximates that bound).
-- This policy is **advice-only** in the current release: it tells you
-  where the markers should go, but it does not rewrite your request.
-  The event metadata includes the proposed marker placement so a future
-  modification policy can act on it automatically.
+- Advice fires at most once per block per run — once the policy has
+  advised on the system block for a given run, it won't repeat the
+  system advice for that run.
+- The minimum block size before marker advice fires is roughly 4096
+  characters (Anthropic only caches blocks of at least 1024 tokens;
+  the threshold approximates that bound). The cache-resource arm
+  uses the provider's own minimum cacheable size instead.
+- Marker advice is **advice-only** in the current release: it tells
+  you where the markers should go, but it does not rewrite your
+  request. The event metadata includes the proposed marker placement
+  so a future modification policy can act on it automatically. The
+  cache-resource arm never mutates your request either — the
+  resource rides alongside the call and the Gemini shim binds to it.
 
 **Event payload includes** `blocks` (list of block names like
 `["system", "tools"]`) and `proposed_markers` (the marker shapes
-suggested for each block).
+suggested for each block) on advice events, and `model` plus
+`resource_name` on `cache_resource_created`.
 
 ## Surface in reports
 
 Policy events show up in the events table with `kind='budget_warning'`,
-`'retry_throttle'`, or `'cache_control_advice'`. Future report views
-will surface them inline; for now, you can query them directly:
+`'retry_throttle'`, `'cache_control_advice'`, or
+`'cache_resource_created'`. Future report views will surface them
+inline; for now, you can query them directly:
 
 ```bash
 sqlite3 ~/.inkfoot/runs.db \

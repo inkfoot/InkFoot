@@ -62,6 +62,11 @@ Inkfoot does four things:
     LangGraph, OpenAI Agents SDK, Anthropic Agent SDK, and the
     raw provider SDKs.
 
+-   :material-cloud-outline: __[Providers](providers.md)__
+
+    The capability matrix: Anthropic, OpenAI, Gemini, Bedrock,
+    and OpenAI-compatible endpoints (vLLM, Ollama, Together, …).
+
 </div>
 
 ## Status

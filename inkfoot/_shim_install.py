@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.shims.anthropic import AnthropicShim
+    from inkfoot.shims.gemini import GeminiShim
     from inkfoot.shims.openai import OpenAIShim
     from inkfoot.storage import Storage
 
@@ -49,18 +50,26 @@ def install_shims(
     ``sdks`` is an explicit allow-list — when ``None``, every
     supported SDK is auto-detected. Passing ``["anthropic"]``
     restricts to just Anthropic even if OpenAI is also importable
-    (useful for tests).
+    (useful for tests). Allow-list keys are provider names
+    (``"anthropic"``, ``"openai"``, ``"gemini"``), not PyPI package
+    names.
     """
     from inkfoot.shims.anthropic import AnthropicShim  # noqa: PLC0415
+    from inkfoot.shims.gemini import GeminiShim  # noqa: PLC0415
     from inkfoot.shims.openai import OpenAIShim  # noqa: PLC0415
 
     allow = set(sdks) if sdks is not None else None
     installed: list[str] = []
 
-    def _want(name: str) -> bool:
+    def _want(name: str, import_name: Optional[str] = None) -> bool:
+        """``name`` is the allow-list key; ``import_name`` is the
+        module to probe when it differs from the provider name
+        (gemini ships as ``google-generativeai`` and imports as
+        ``google.generativeai``)."""
+        module = import_name or name
         if allow is None:
-            return _try_import(name)
-        return name in allow and _try_import(name)
+            return _try_import(module)
+        return name in allow and _try_import(module)
 
     if _want("anthropic"):
         shim = AnthropicShim(storage, capture_mode_getter)
@@ -72,6 +81,11 @@ def install_shims(
         if shim.install():
             _installed.append(shim)
             installed.append("openai")
+    if _want("gemini", import_name="google.generativeai"):
+        shim = GeminiShim(storage, capture_mode_getter)
+        if shim.install():
+            _installed.append(shim)
+            installed.append("gemini")
 
     return installed
 

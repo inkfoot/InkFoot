@@ -88,7 +88,20 @@ def test_each_extra_pins_its_peer_framework():
 
 
 @toml_required
-def test_all_meta_extra_bundles_every_framework_extra():
+def test_provider_extras_declared():
+    extras = _load_toml()["project"]["optional-dependencies"]
+    expected_sdk = {
+        "gemini": "google-generativeai",
+        "bedrock": "boto3",
+    }
+    for extra, sdk in expected_sdk.items():
+        assert extra in extras, f"missing provider extra: {extra}"
+        joined = " ".join(extras[extra])
+        assert sdk in joined, f"extra {extra} should pin {sdk}, got {extras[extra]}"
+
+
+@toml_required
+def test_all_meta_extra_bundles_every_framework_and_provider_extra():
     extras = _load_toml()["project"]["optional-dependencies"]
     assert "all" in extras
     joined = " ".join(extras["all"])
@@ -98,6 +111,8 @@ def test_all_meta_extra_bundles_every_framework_extra():
         "anthropic-agent",
         "pydantic-ai",
         "crewai",
+        "gemini",
+        "bedrock",
     ):
         assert name in joined, f"[all] should pull in {name}"
 
