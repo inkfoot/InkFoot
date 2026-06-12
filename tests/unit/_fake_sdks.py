@@ -41,11 +41,22 @@ def install_fake_anthropic() -> dict:
     messages_mod = types.ModuleType("anthropic.resources.messages")
 
     calls: list[dict[str, Any]] = []
+    # Exceptions queued here are raised (FIFO) by the next ``create``
+    # call — after the attempt is recorded in ``calls`` — so tests can
+    # drive the shim's error path offline.
+    errors: list[BaseException] = []
+
+    # Response ids mimic the real SDK's ``msg_...`` ids and are unique
+    # per call (the emit-path dedup keys on them; a repeated id would
+    # wrongly collapse two distinct calls).
 
     class Messages:
         def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "sync", "args": args, "kwargs": kwargs})
+            if errors:
+                raise errors.pop(0)
             return {
+                "id": f"msg_fake_{len(calls)}",
                 "usage": {
                     "input_tokens": 10,
                     "output_tokens": 5,
@@ -58,7 +69,10 @@ def install_fake_anthropic() -> dict:
     class AsyncMessages:
         async def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "async", "args": args, "kwargs": kwargs})
+            if errors:
+                raise errors.pop(0)
             return {
+                "id": f"msg_fake_{len(calls)}",
                 "usage": {
                     "input_tokens": 11,
                     "output_tokens": 6,
@@ -88,6 +102,7 @@ def install_fake_anthropic() -> dict:
 
     return {
         "calls": calls,
+        "errors": errors,
         "Messages": Messages,
         "AsyncMessages": AsyncMessages,
         "Anthropic": Anthropic,

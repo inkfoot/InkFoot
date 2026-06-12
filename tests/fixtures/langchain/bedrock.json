@@ -1,0 +1,99 @@
+{
+  "description": "ChatBedrockConverse second hop of a tool loop: amazon_bedrock maps onto the bedrock provider, the request replays a tool result turn, and prompt-cache creation arrives in input_token_details.cache_creation.",
+  "request": {
+    "raw_provider": "amazon_bedrock",
+    "model": "anthropic.claude-3-5-haiku-20241022-v1:0",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are a weather assistant. Use tools for live data."
+      },
+      {
+        "type": "human",
+        "content": "What's the weather in Denver?"
+      },
+      {
+        "type": "ai",
+        "content": "Let me check the current conditions in Denver.",
+        "tool_calls": [
+          {
+            "name": "get_weather",
+            "args": { "city": "Denver" },
+            "id": "tooluse_fixture_bedrock",
+            "type": "tool_call"
+          }
+        ]
+      },
+      {
+        "type": "tool",
+        "content": "{\"city\": \"Denver\", \"conditions\": \"sunny\", \"temp_f\": 71}",
+        "tool_call_id": "tooluse_fixture_bedrock"
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" }
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "content": "It's sunny and 71F in Denver right now.",
+            "tool_calls": [],
+            "usage_metadata": {
+              "input_tokens": 260,
+              "output_tokens": 50,
+              "total_tokens": 310,
+              "input_token_details": {
+                "cache_read": 0,
+                "cache_creation": 128
+              }
+            },
+            "response_metadata": {
+              "id": "bedrock-resp-fixture-1",
+              "model_name": "anthropic.claude-3-5-haiku-20241022-v1:0",
+              "model_provider": "amazon_bedrock",
+              "stopReason": "end_turn"
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "bedrock",
+    "model": "anthropic.claude-3-5-haiku-20241022-v1:0",
+    "response_id": "bedrock-resp-fixture-1",
+    "ledger": {
+      "output_tokens": 50,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 128,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "miss",
+    "tools_offered": ["get_weather"],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ],
+    "expect_zero": []
+  }
+}

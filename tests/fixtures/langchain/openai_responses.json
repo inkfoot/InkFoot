@@ -1,0 +1,95 @@
+{
+  "description": "ChatOpenAI on the Responses API: a resp_-prefixed response id, reasoning tokens in output_token_details, flat tool entries, and block-list message content.",
+  "request": {
+    "raw_provider": "openai",
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are a weather planning assistant. Reason carefully before answering."
+      },
+      {
+        "type": "human",
+        "content": "Should I pack an umbrella for Seattle next week?"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" }
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "content": [
+              {
+                "type": "text",
+                "text": "Checking the Seattle forecast before advising."
+              }
+            ],
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "args": { "city": "Seattle" },
+                "id": "call_fixture_responses",
+                "type": "tool_call"
+              }
+            ],
+            "usage_metadata": {
+              "input_tokens": 300,
+              "output_tokens": 120,
+              "total_tokens": 420,
+              "input_token_details": {
+                "cache_read": 0
+              },
+              "output_token_details": {
+                "reasoning": 64
+              }
+            },
+            "response_metadata": {
+              "id": "resp_fixture_openai_responses",
+              "model_name": "gpt-4o",
+              "model_provider": "openai",
+              "status": "completed"
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "response_id": "resp_fixture_openai_responses",
+    "ledger": {
+      "output_tokens": 120,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 64
+    },
+    "cache_status": "n/a",
+    "tools_offered": ["get_weather"],
+    "tools_called": ["get_weather"],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens"
+    ],
+    "expect_zero": ["memory_tokens", "tool_result_tokens"]
+  }
+}

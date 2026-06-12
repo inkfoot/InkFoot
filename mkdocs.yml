@@ -120,6 +120,7 @@ nav:
       - Performance & Overhead: concepts/performance.md
       - OpenTelemetry: concepts/otel.md
   - Frameworks:
+      - LangChain: frameworks/langchain.md
       - LangGraph: frameworks/langgraph.md
       - OpenAI Agents SDK: frameworks/openai-agents.md
       - Anthropic Agent SDK: frameworks/anthropic-agent.md

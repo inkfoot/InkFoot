@@ -24,10 +24,14 @@ from inkfoot.policy import CallContext
 from inkfoot.policy.lazy_tool_exposure import LazyToolExposure
 
 _ROUNDS = 5_000
-# Budget asserted on p95; median asserted at the same constant as an
-# outlier-robust backstop against shared-runner scheduler blips.
-_P95_BUDGET_S = 0.000_100  # 100 µs
-_MEDIAN_BUDGET_S = 0.000_100
+# The median is the regression detector: if a code change makes the
+# hot path materially slower, the median catches it. The p95 is a
+# CI-spike tolerance — scheduler blips on shared runners push the
+# 95th-percentile tail above the typical value, so the budget is
+# set at 2.5× the expected median to avoid false failures without
+# letting a real regression hide in the tail.
+_P95_BUDGET_S = 0.000_250  # 250 µs — CI tail-latency tolerance
+_MEDIAN_BUDGET_S = 0.000_100  # 100 µs — regression detector
 
 _TOOL_NAMES = [
     "search_tickets",

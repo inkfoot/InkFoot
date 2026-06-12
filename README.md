@@ -3,8 +3,8 @@
 > **Find the hidden cost trail in every AI agent run.**
 
 Inkfoot is a causal token economics layer for LLM agents. It instruments
-existing agent frameworks (LangGraph, OpenAI Agents SDK, Anthropic Agent
-SDK, Pydantic AI, CrewAI) without requiring rewrites, attributes every
+existing agent frameworks (LangChain, LangGraph, OpenAI Agents SDK,
+Anthropic Agent SDK, Pydantic AI, CrewAI) without requiring rewrites, attributes every
 billed token to one of 13 causal categories, surfaces named cost smells
 automatically, enforces declarative Token Contracts in runtime and CI,
 and (in Cloud) replays past runs under different policies to prove
@@ -29,7 +29,13 @@ and `inkfoot.instrument(otel_export_endpoint=...)` mirrors every
 logs) to any collector.
 
 The user-facing surface today: `inkfoot.instrument()` to monkey-
-patch the SDKs, `@inkfoot.agent_run(task=...)` decorator + context
+patch the SDKs (and auto-register the LangChain callback handler
+when `langchain-core` is importable — one handler covers
+ChatAnthropic, ChatOpenAI on both the Chat Completions and
+Responses APIs, AzureChatOpenAI, ChatGoogleGenerativeAI, and
+ChatBedrock via LangChain's normalised `usage_metadata`, with
+response-id dedup against the raw-SDK shims),
+`@inkfoot.agent_run(task=...)` decorator + context
 manager for run scoping, `inkfoot.set_outcome / tag / tag_retrieval
 / tag_node / checkpoint / report_cost` for in-run metadata,
 `inkfoot.langgraph.instrument(graph)` /
@@ -109,6 +115,7 @@ inkfoot/                                    # the Python package
     __init__.py                             # NeutralCall + stable-prefix detector
     anthropic.py                            # AnthropicTranslator
     gemini.py                               # GeminiTranslator
+    langchain.py                            # LangChainTranslator (usage_metadata → ledger)
     openai.py                               # OpenAITranslator
   providers/                                # provider capability + usage-mapping layer
     __init__.py                             # public provider re-exports
@@ -140,6 +147,9 @@ inkfoot/                                    # the Python package
     anthropic_agent.py                      # Anthropic Agent SDK adapter
     pydantic_ai.py                          # Pydantic AI adapter (run scoping + registered-tool events)
     crewai.py                               # CrewAI adapter (per-agent / per-task attribution, observation-only)
+  langchain/                                # LangChain callback handler
+    __init__.py                             # global handler registration (instrument/uninstrument)
+    handler.py                              # InkfootCallbackHandler (BaseCallbackHandler)
   langgraph.py                              # Top-level convenience: inkfoot.langgraph.instrument(graph)
   openai_agents.py                          # Top-level convenience: inkfoot.openai_agents.instrument(agent)
   anthropic_agent.py                        # Top-level convenience: inkfoot.anthropic_agent.instrument(agent)
@@ -247,17 +257,20 @@ pipeline is two tag-driven workflows plus a guard script:
    on demand via the workflow's `workflow_dispatch` input.)
 
 Framework and provider extras ship alongside the release —
-`pip install "inkfoot[langgraph]"`, `[openai-agents]`,
-`[anthropic-agent]`, `[pydantic-ai]`, `[crewai]`, the provider
+`pip install "inkfoot[langchain]"`, `[langgraph]`,
+`[openai-agents]`, `[anthropic-agent]`, `[pydantic-ai]`,
+`[crewai]`, the provider
 SDK extras `[gemini]` and `[bedrock]`, the storage extra
-`[postgres]`, or `[all]` for every one of them. (A `[langchain]` extra lands in a later release, not
-here.) A weekly
+`[postgres]`, or `[all]` for every one of them. A weekly
 [live-tests workflow](.github/workflows/live-tests.yml) installs
 each framework extra and provider SDK from PyPI and runs the
 contract + integration suites against the real thing (the Ollama
 leg exercises an OpenAI-compatible endpoint against a real local
-model), so upstream drift surfaces as a red matrix leg instead
-of a user bug report.
+model), and a weekly
+[live-langchain workflow](.github/workflows/live-langchain.yml)
+drives the callback handler against every LangChain partner
+package and real endpoint, so upstream drift surfaces as a red
+matrix leg (and a tracking issue) instead of a user bug report.
 
 ## License
 

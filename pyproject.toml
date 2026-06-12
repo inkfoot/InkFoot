@@ -38,6 +38,12 @@ dev = [
     "pytest-benchmark>=4",
     "pytest-cov>=4",
     "pyyaml>=6",
+    # The LangChain callback handler subclasses
+    # ``langchain_core.callbacks.BaseCallbackHandler``, so unlike the
+    # duck-typed framework adapters its unit tests need the real
+    # package. langchain-core is pure-Python and light enough to sit
+    # in dev so the default CI run covers the handler.
+    "langchain-core>=0.3",
 ]
 
 # Provider SDK extras. The shims auto-detect whichever SDKs are
@@ -84,12 +90,20 @@ crewai = [
     "crewai>=0.100,<2.0",
 ]
 
+# LangChain callback handler. Only langchain-core is required — the
+# handler reads the LangChain-normalised ``usage_metadata``, so the
+# per-provider partner packages (langchain-anthropic, langchain-openai,
+# ...) stay the user's choice.
+langchain = [
+    "langchain-core>=0.3",
+]
+
 # Convenience meta-extra: install every framework adapter at
 # once. This is the shape the ``inkfoot/diff-action`` GitHub
 # Action installs in CI, so consumer scenarios can import any of
 # the adapters without a per-extra dance.
 all = [
-    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai,gemini,bedrock,postgres]",
+    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai,langchain,gemini,bedrock,postgres]",
 ]
 
 # Docs site build deps. Installed by `pip install inkfoot[docs]`;
@@ -122,6 +136,7 @@ testpaths = ["tests"]
 markers = [
     "live_anthropic: tests that hit a real Anthropic endpoint (skipped without API key)",
     "live_openai: tests that hit a real OpenAI endpoint (skipped without API key)",
+    "live_azure: tests that hit a real Azure OpenAI deployment (skipped without endpoint + key)",
     "live_gemini: tests that hit a real Gemini endpoint (skipped without API key)",
     "live_bedrock: tests that hit a real Bedrock endpoint (skipped without AWS credentials)",
     "live_ollama: tests that hit a local Ollama instance (skipped when unreachable)",

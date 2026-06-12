@@ -20,6 +20,7 @@ are auto-detected — Inkfoot patches whichever is importable.
 
     | Extra | Adds |
     |---|---|
+    | `pip install "inkfoot[langchain]"` | LangChain callback handler (auto-registers on `instrument()`) |
     | `pip install "inkfoot[langgraph]"` | LangGraph framework adapter |
     | `pip install "inkfoot[openai-agents]"` | OpenAI Agents SDK adapter |
     | `pip install "inkfoot[anthropic-agent]"` | Anthropic Agent SDK adapter |
@@ -43,6 +44,10 @@ That single call:
 - Monkey-patches `anthropic.Messages.create` (sync + async) and
   `openai.chat.completions.create` (sync + async). Every LLM call
   the SDK makes is recorded.
+- Registers the [LangChain callback handler](frameworks/langchain.md)
+  when `langchain-core` is importable, so calls made through
+  LangChain chat models are captured too (once per call — the
+  handler and the SDK shims deduplicate).
 - Opens a local SQLite database at `~/.inkfoot/runs.db` (override
   with `INKFOOT_HOME=<dir>`).
 - Starts a background thread that keeps run totals up to date.

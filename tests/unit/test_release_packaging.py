@@ -3,10 +3,9 @@
 The early-access release ships three things: the framework-adapter
 extras in ``pyproject.toml``, the tag-triggered publish workflow, and
 the post-publish smoke workflow. These tests assert the static shape of
-all three so a regression — a dropped extra, a leaked ``langchain``
-extra (deferred to a later release), a publish workflow that quietly
-stops using Trusted Publishing — fails CI instead of surfacing at
-release time.
+all three so a regression — a dropped extra, a publish workflow that
+quietly stops using Trusted Publishing — fails CI instead of surfacing
+at release time.
 
 YAML/TOML parsing skips when the parser isn't importable; both ship in
 the dev extra (``pip install -e ".[dev]"``) which CI installs.
@@ -76,6 +75,7 @@ def test_framework_extras_declared():
 def test_each_extra_pins_its_peer_framework():
     extras = _load_toml()["project"]["optional-dependencies"]
     expected_peer = {
+        "langchain": "langchain-core",
         "langgraph": "langgraph",
         "openai-agents": "openai-agents",
         "anthropic-agent": "anthropic-agent",
@@ -106,6 +106,7 @@ def test_all_meta_extra_bundles_every_framework_and_provider_extra():
     assert "all" in extras
     joined = " ".join(extras["all"])
     for name in (
+        "langchain",
         "langgraph",
         "openai-agents",
         "anthropic-agent",
@@ -118,11 +119,23 @@ def test_all_meta_extra_bundles_every_framework_and_provider_extra():
 
 
 @toml_required
-def test_langchain_extra_not_declared():
-    # `[langchain]` is deferred to a later release; it must not leak
-    # into the early-access release.
+def test_langchain_extra_pins_only_langchain_core():
+    # The callback handler needs langchain-core (BaseCallbackHandler +
+    # the normalised usage shapes) and nothing else — the per-provider
+    # partner packages are the user's to choose.
     extras = _load_toml()["project"]["optional-dependencies"]
-    assert "langchain" not in extras
+    assert "langchain" in extras
+    joined = " ".join(extras["langchain"])
+    assert "langchain-core" in joined
+    for partner in (
+        "langchain-anthropic",
+        "langchain-openai",
+        "langchain-google-genai",
+        "langchain-aws",
+    ):
+        assert partner not in joined, (
+            f"[langchain] must not pull the {partner} partner package"
+        )
 
 
 @toml_required

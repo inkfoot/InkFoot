@@ -39,12 +39,15 @@ from inkfoot.storage.postgres_aggregator import PostgresAggregator  # noqa: E402
 _DIRTY_RUNS_PER_SWEEP = 50
 _EVENTS_PER_RUN = 2
 _ROUNDS = 10
-# Budget asserted on p95; median asserted at the same constant as an
-# outlier-robust backstop. With ten rounds the p95 sample is the
-# slowest sweep, so the gate is effectively "every sweep under
-# budget".
-_P95_BUDGET_S = 0.200  # 200 ms
-_MEDIAN_BUDGET_S = 0.200
+# With ten rounds, int(10 * 0.95) == 9, so the p95 sample is the
+# single maximum measurement. The p95 budget is therefore a
+# CI-spike tolerance, not a percentile in the statistical sense —
+# one slow CI machine must not fail the build when the typical
+# sweep runs at ~100 ms. The *median* at 200 ms is the real
+# regression signal: if a code change makes the average sweep
+# twice as slow, that's the gate that catches it.
+_P95_BUDGET_S = 0.400  # 400 ms — CI spike tolerance (2× expected median)
+_MEDIAN_BUDGET_S = 0.200  # 200 ms — regression detector
 
 _PAYLOAD = json.dumps({"input_tokens": 42, "output_tokens": 7})
 
