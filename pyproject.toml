@@ -51,6 +51,13 @@ bedrock = [
     "boto3>=1.34",
 ]
 
+# Storage backend extras. The default SQLite backend has no extra
+# dependencies; the Postgres backend needs the psycopg3 stack.
+postgres = [
+    "psycopg[binary]>=3.1",
+    "psycopg-pool>=3.2",
+]
+
 # Framework adapter extras. Each one pulls in the peer
 # framework as an optional install so ``pip install inkfoot[langgraph]``
 # gets the user a working integration without bloating the default
@@ -81,7 +88,7 @@ crewai = [
 # Action installs in CI, so consumer scenarios can import any of
 # the adapters without a per-extra dance.
 all = [
-    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai,gemini,bedrock]",
+    "inkfoot[langgraph,openai-agents,anthropic-agent,pydantic-ai,crewai,gemini,bedrock,postgres]",
 ]
 
 # Docs site build deps. Installed by `pip install inkfoot[docs]`;
@@ -117,5 +124,6 @@ markers = [
     "live_gemini: tests that hit a real Gemini endpoint (skipped without API key)",
     "live_bedrock: tests that hit a real Bedrock endpoint (skipped without AWS credentials)",
     "live_ollama: tests that hit a local Ollama instance (skipped when unreachable)",
+    "postgres: tests that need a real Postgres server (skipped without INKFOOT_TEST_PG_DSN)",
     "slow: tests that take more than a few seconds",
 ]

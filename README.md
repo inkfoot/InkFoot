@@ -50,8 +50,10 @@ runner emitting the benchmark JSON artefact), and `diff`
 (structured comparison between two artefacts with `ok/warn/fail`
 verdicts and `0/1/2` exit codes for CI).
 Under it: nanodollar money type, SQLite storage with WAL + two-tier
-writes, claim-and-project aggregator, the 14-field Causal Token
-Ledger, per-provider Anthropic + OpenAI + Gemini translators with
+writes, claim-and-project aggregator, an optional Postgres backend
+(`inkfoot[postgres]`) with an advisory-lock aggregation worker and
+a resumable `inkfoot migrate --to postgres` cutover, the 14-field
+Causal Token Ledger, per-provider Anthropic + OpenAI + Gemini translators with
 stable-prefix detection, the capability-declaring provider layer
 (Anthropic, OpenAI, Gemini, Bedrock, OpenAI-compatible),
 `tiktoken`-based tokenisers with estimation flags, the pricing
@@ -83,7 +85,9 @@ inkfoot rebuild-aggregates
 ```
 
 CI (`.github/workflows/ci.yml`) runs unit tests on Python 3.10 / 3.11
-/ 3.12 and uploads the storage benchmark JSON as an artefact per PR.
+/ 3.12, runs the Postgres-backed integration suite against a
+`postgres:16` service container, and uploads the storage benchmark
+JSON as an artefact per PR.
 
 ## Repository layout
 
@@ -150,16 +154,21 @@ inkfoot/                                    # the Python package
     expensive_model_low_entropy.py
     recurring_cache_writes.py
   storage/
-    __init__.py                             # Storage Protocol (lazy SQLiteStorage)
+    __init__.py                             # Storage Protocol (lazy SQLiteStorage / PostgresStorage)
     sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
     migrations.py                           # forward-only DDL (schema v1)
     aggregator.py                           # claim-and-project AggregatorWorker
+    postgres.py                             # PostgresStorage — psycopg pool ([postgres] extra)
+    postgres_migrations.py                  # forward-only Postgres DDL (advisory-lock guarded)
+    postgres_aggregator.py                  # per-sweep advisory lock + heartbeat for the worker
   _run_lifecycle.py                         # @agent_run + set_outcome/tag/tag_retrieval/report_cost
   cli/
     main.py                                 # `inkfoot` entry point (report / rebuild-aggregates / tag)
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
     report.py                               # `inkfoot report` — bar chart + smells (renderer is pure)
     tag.py                                  # `inkfoot tag <run-id> <key> <value>` — late tagging
+    aggregator_worker.py                    # `inkfoot aggregator-worker` — Postgres aggregation daemon
+    migrate.py                              # `inkfoot migrate --to postgres` — resumable SQLite copy
 scripts/
   validate_attribution.py                   # validation harness — fails CI when per-category mean error > 10%
   extract_run_fixtures.py                   # extractor for the validation corpus
@@ -170,7 +179,7 @@ tests/
   fixtures/
     validation/                             # hand-labelled corpus consumed by validate_attribution.py
     internal-smells/                        # per-smell fixture preservation
-.github/workflows/ci.yml                    # unit + benchmark + attribution-validation on every PR
+.github/workflows/ci.yml                    # unit + Postgres integration + benchmark + attribution-validation on every PR
 ```
 
 ## Operator notes
@@ -189,6 +198,14 @@ tests/
 - **Aggregator poll interval:** defaults to 500 ms; override with
   `INKFOOT_AGGREGATOR_INTERVAL_MS=<int>`. Values under 10 ms are
   clamped to the 10 ms floor with a warning.
+- **Postgres backend:** install `inkfoot[postgres]`, set
+  `INKFOOT_PG_DSN` (pool sizing via `INKFOOT_PG_POOL_MIN` /
+  `INKFOOT_PG_POOL_MAX`), and pass a `PostgresStorage` instance to
+  `inkfoot.instrument(storage=...)`. Aggregation runs out of
+  process — keep one or more `inkfoot aggregator-worker` daemons
+  running. `inkfoot migrate --to postgres` copies an existing
+  SQLite history over (resumable; renames the source to
+  `.migrated`, never deletes it).
 
 ## Releasing (early access)
 
@@ -220,8 +237,8 @@ pipeline is two tag-driven workflows plus a guard script:
 Framework and provider extras ship alongside the release —
 `pip install "inkfoot[langgraph]"`, `[openai-agents]`,
 `[anthropic-agent]`, `[pydantic-ai]`, `[crewai]`, the provider
-SDK extras `[gemini]` and `[bedrock]`, or `[all]` for every one
-of them. (A `[langchain]` extra lands in a later release, not
+SDK extras `[gemini]` and `[bedrock]`, the storage extra
+`[postgres]`, or `[all]` for every one of them. (A `[langchain]` extra lands in a later release, not
 here.) A weekly
 [live-tests workflow](.github/workflows/live-tests.yml) installs
 each framework extra and provider SDK from PyPI and runs the

@@ -90,6 +90,18 @@ adapter — register them via
 
 ### ::: inkfoot.policy.register_policies
 
+## Storage backends
+
+The default SQLite backend needs no configuration. For
+multi-process deployments writing to a shared server, import
+`PostgresStorage` from `inkfoot.storage` and pass an instance to
+`inkfoot.instrument(storage=...)` — see the
+[Postgres Backend](../concepts/postgres.md) concept page for the
+operational picture (aggregation worker, migration, environment
+variables).
+
+### ::: inkfoot.storage.postgres.PostgresStorage
+
 ## Exceptions
 
 ### ::: inkfoot.errors.InkfootError

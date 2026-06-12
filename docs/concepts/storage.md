@@ -1,9 +1,11 @@
 # Storage & Configuration
 
-Inkfoot stores everything in a local SQLite database. This page covers
-where the data lives, how to point Inkfoot at a different location,
-which environment variables it honours, and what the bundled pricing
-snapshot tells you.
+Inkfoot stores everything in a local SQLite database by default.
+This page covers where the data lives, how to point Inkfoot at a
+different location, which environment variables it honours, and what
+the bundled pricing snapshot tells you. For multi-process
+deployments writing to a shared server, see the
+[Postgres backend](postgres.md).
 
 ## Where data lives
 
@@ -138,5 +140,10 @@ Inkfoot is designed to survive abrupt termination:
 The default storage is intended for a single instrumented process per
 database. Multiple writers to the same SQLite file *can* work via
 WAL's reader-writer concurrency, but a multi-process production
-deployment is better served by a single instrumented entry point (e.g.
-your worker process) writing to its own per-process database.
+deployment is better served by either a single instrumented entry
+point (e.g. your worker process) writing to its own per-process
+database, or — when the fleet needs one shared event log — the
+[Postgres backend](postgres.md), which is built for concurrent
+writers and comes with an out-of-process aggregation worker and a
+[migration command](../reference/cli.md#inkfoot-migrate) for moving
+an existing SQLite history over.

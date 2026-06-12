@@ -1,27 +1,52 @@
 """Storage layer Protocol + lazy default-backend factory.
 
-The Protocol is the contract every storage backend honours (SQLite now,
-Postgres in a future release). The contract is *narrow* — just the
-methods the shim hot path and aggregator need.
+The Protocol is the contract every storage backend honours (SQLite
+and Postgres). The contract is *narrow* — just the methods the shim
+hot path and aggregator need.
 
-``SQLiteStorage`` is intentionally **not** imported at module load:
-the Protocol module shouldn't pull in SQLite-specific symbols when a
-test only wants the type. The lazy ``__getattr__`` below keeps
-``from inkfoot.storage import SQLiteStorage`` working for callers
-that do need it, while decoupling import cost.
+The concrete backends are intentionally **not** imported at module
+load: the Protocol module shouldn't pull in backend-specific symbols
+when a test only wants the type. The lazy ``__getattr__`` below keeps
+``from inkfoot.storage import SQLiteStorage`` (and
+``PostgresStorage``) working for callers that do need them, while
+decoupling import cost.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable, Optional, Protocol, runtime_checkable
 
-__all__ = ["Storage", "SQLiteStorage", "default_storage", "RunRow", "DirtyRun"]
+__all__ = [
+    "Storage",
+    "SQLiteStorage",
+    "PostgresStorage",
+    "default_storage",
+    "RunRow",
+    "DirtyRun",
+    "PROJECTION_COLUMNS",
+]
 
 
 # Type aliases used by the Protocol surface. These are loose by
 # design; the SQLite implementation tightens them.
 RunRow = dict[str, Any]
 DirtyRun = dict[str, Any]
+
+
+# Subset of ``runs.*`` columns the projection layer is allowed to
+# set. Shared by every backend's ``write_totals`` /
+# ``update_aggregates`` so the allow-list can't drift between them.
+PROJECTION_COLUMNS = frozenset(
+    {
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_cache_read_tokens",
+        "total_cache_creation_tokens",
+        "total_nanodollars",
+        "outcome",
+        "quality_score",
+    }
+)
 
 
 @runtime_checkable
@@ -136,6 +161,11 @@ class Storage(Protocol):
         """Stream a run's events in sequence order — what the
         aggregator projects from."""
 
+    def find_runs_with_status(self, status: str) -> list[str]:
+        """Return the IDs of every run currently in ``status``. The
+        shutdown hook uses this to flip abandoned ``'running'`` rows
+        to ``'error'`` without reaching into backend internals."""
+
 
 def default_storage(path: Optional[Any] = None) -> "SQLiteStorage":
     """Return the default backend (:class:`SQLiteStorage`).
@@ -149,10 +179,16 @@ def default_storage(path: Optional[Any] = None) -> "SQLiteStorage":
 
 
 def __getattr__(name: str) -> Any:
-    """Lazy attribute access — re-exports :class:`SQLiteStorage`
+    """Lazy attribute access — re-exports the concrete backends
     without paying the import cost at module-load time."""
     if name == "SQLiteStorage":
         from inkfoot.storage.sqlite import SQLiteStorage as _SQLiteStorage
 
         return _SQLiteStorage
+    if name == "PostgresStorage":
+        from inkfoot.storage.postgres import (
+            PostgresStorage as _PostgresStorage,
+        )
+
+        return _PostgresStorage
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
