@@ -323,6 +323,25 @@ def test_set_outcome_emits_outcome_event(instrumented) -> None:
     assert payload == {"outcome": "success", "quality_score": 0.94}
 
 
+@pytest.mark.parametrize(
+    "outcome",
+    ["success", "accepted_answer", "failure", "human_escalated"],
+)
+def test_set_outcome_accepts_every_documented_outcome(
+    instrumented, outcome
+) -> None:
+    storage = instrumented
+    with inkfoot.agent_run(task="t") as handle:
+        inkfoot.set_outcome(outcome)
+    events = _events(storage, handle.id)
+    payloads = [
+        json.loads(e["payload_json"])
+        for e in events
+        if e["kind"] == "outcome"
+    ]
+    assert [p["outcome"] for p in payloads] == [outcome]
+
+
 def test_set_outcome_outside_a_run_raises_clear_error(instrumented) -> None:
     with pytest.raises(NoActiveRun, match="agent_run"):
         inkfoot.set_outcome("success")

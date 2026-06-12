@@ -157,7 +157,7 @@ You've got a working baseline. Pick the next thread:
     in the worker bootstrap, not the parent process.
 
 ??? failure "Report shows `(no outcome)` even though my agent finished"
-    `inkfoot.set_outcome("success" | "failure" | "human_escalated")`
+    `inkfoot.set_outcome("success" | "accepted_answer" | "failure" | "human_escalated")`
     has to fire before the run scope exits. Decorators wrap the
     function call exactly, so any `return` after `set_outcome`
     counts — but a swallowed exception path that skips both

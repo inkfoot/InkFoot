@@ -114,9 +114,9 @@ OVERSIZED_TOOL_RESULT_RECYCLED = CostSmell(
     detect=_detect,
     recommendation=(
         "Summarise large tool results before recycling them across "
-        "turns. Enable CheapSummariser(threshold_tokens=1500) once "
-        "A future release ships; until then, prune the messages array "
-        "manually after each tool invocation."
+        "turns. Enable CheapSummariser(threshold_tokens=1500), or "
+        "prune the messages array manually after each tool "
+        "invocation."
     ),
     suggested_policy="CheapSummariser",
     evidence_query=(

@@ -50,8 +50,8 @@ def restore_registry() -> None:
 # ----------------------------------------------------------------------
 
 
-def test_default_smells_has_exactly_six_entries() -> None:
-    assert len(DEFAULT_SMELLS) == 6
+def test_default_smells_has_exactly_eleven_entries() -> None:
+    assert len(DEFAULT_SMELLS) == 11
 
 
 def test_default_smells_are_all_unique_ids() -> None:
@@ -109,5 +109,10 @@ def test_default_smell_ids_match_spec() -> None:
         "expensive-model-low-entropy",
         "recurring-cache-writes",
         "summariser-quality-regression",
+        "tool-schema-drift",
+        "cost-skewed-by-outlier",
+        "unbounded-conversation-history",
+        "over-instrumented-retries",
+        "summariser-not-firing",
     }
     assert {s.id for s in DEFAULT_SMELLS} == expected

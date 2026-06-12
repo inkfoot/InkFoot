@@ -29,7 +29,7 @@ class ABObservation:
     run_id: str
     task: str
     branch: str  # "A" (control/raw) | "B" (treatment/summarised)
-    outcome: Optional[str]  # "success" | "failure" | "human_escalated"
+    outcome: Optional[str]  # success | accepted_answer | failure | human_escalated
     quality_score: Optional[float] = None
 
 

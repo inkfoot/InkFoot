@@ -17,15 +17,16 @@ in to the worst offender. Target: under ten minutes.
 inkfoot report --last 7d --group-by task
 ```
 
-The output is a sorted table — most expensive bucket first:
+The output is a sorted table — biggest bucket spend first:
 
 ```
 Recent runs (7d, grouped by task):
 
-  bucket                              runs      avg_$      p95_$  success%   cost/success
-  invoice-extraction                    37   $0.0432    $0.0982      89.2%        $0.0484
-  customer-support-triage              142   $0.0118    $0.0341      94.3%        $0.0125
-  meeting-summariser                    21   $0.0067    $0.0145      95.2%        $0.0070
+  bucket                   runs  cost/success  cost/accepted_answer    avg_$    p95_$  success%
+  customer-support-triage   142       $0.0125                     —  $0.0118  $0.0341     94.3%
+  invoice-extraction         37       $0.0484               $0.0533  $0.0432  $0.0982     89.2%
+  meeting-summariser         21       $0.0070                     —  $0.0067  $0.0145     95.2%
+  uninstrumented             14             —                     —  $0.0102  $0.0239         —
 
 Aggregate smells (last 7d):
   · unstable-prompt-prefix: 18/200 runs (9%)
@@ -35,14 +36,25 @@ Aggregate smells (last 7d):
 Read the table left-to-right:
 
 - **`runs`** — call volume in the window.
+- **`cost/success`** — the headline: bucket spend ÷ successful
+  runs, so the money burned on failures is priced in. Usually the
+  right north-star for "what does it cost me to actually solve a
+  ticket?" — here `invoice-extraction` is the worst offender even
+  though `customer-support-triage` spends more in total.
+- **`cost/accepted_answer`** — the same ratio for the
+  human-accepted outcome tier (review workflows). `—` when no run
+  in the bucket reported it.
 - **`avg_$` / `p95_$`** — typical and tail per-run cost. A
   big gap between the two flags a long-tail problem (most runs
   cheap, some explosively expensive).
 - **`success%`** — outcome rate. Cheap runs that fail aren't a
   bargain.
-- **`cost/success`** — the only number that bakes the success
-  rate into the cost — usually the right north-star for
-  "what does it cost me to actually solve a ticket?".
+
+The `uninstrumented` row pinned at the bottom collects runs that
+never reported an outcome — totalled separately and excluded from
+every rate, so partial coverage can't skew the instrumented
+buckets. See [Cost per Success](../concepts/cost-per-success.md)
+for the reasoning behind these columns.
 
 The bottom `Aggregate smells` stanza tells you which named
 patterns are firing across the window, and on what fraction of

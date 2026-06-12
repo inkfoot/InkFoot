@@ -67,7 +67,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "report",
         help="Render a run's attribution bar chart + detected smells.",
     )
-    rep.add_argument("--db", default=None, help="Override the default DB path.")
+    rep.add_argument(
+        "--db",
+        default=None,
+        help=(
+            "Override the default SQLite DB path (~/.inkfoot/runs.db). "
+            "report reads local SQLite only — it does not honour "
+            "INKFOOT_PG_DSN yet, so a Postgres-backed fleet's runs "
+            "are not visible to it."
+        ),
+    )
     rep.add_argument(
         "--run",
         default=None,
@@ -90,13 +99,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--group-by",
         default="task",
         help=(
-            "Bucket the report. 'task' / 'agent_kind' apply to the "
-            "aggregate view (--last). 'node' or 'metadata.<key>' "
-            "apply to the single-run view (--run) and slice the "
-            "ledger by that adapter-stamped metadata value — 'node' "
-            "is an alias for metadata.node_name (LangGraph / "
-            "tag_node); 'metadata.agent_name' / 'metadata.task_name' "
-            "slice a multi-agent crew per agent / per task."
+            "Bucket the report. 'task' / 'agent_kind' / 'tag.<key>' "
+            "apply to the aggregate view (--last) — 'tag.<key>' "
+            "buckets by a user_tag value (runs without the tag land "
+            "in 'unknown'). 'node' or 'metadata.<key>' apply to the "
+            "single-run view (--run) and slice the ledger by that "
+            "adapter-stamped metadata value — 'node' is an alias "
+            "for metadata.node_name (LangGraph / tag_node); "
+            "'metadata.agent_name' / 'metadata.task_name' slice a "
+            "multi-agent crew per agent / per task."
         ),
     )
     rep.add_argument(

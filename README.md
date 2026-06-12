@@ -39,10 +39,11 @@ manager for run scoping, `inkfoot.set_outcome / tag / tag_retrieval
 `inkfoot.crewai.instrument(crew)` for framework
 adapters (per-node attribution, tool-dispatch events, per-agent /
 per-task crew attribution),
-the rule-based smell engine with five built-in cost smells, and
+the rule-based smell engine with eleven built-in cost smells, and
 the `inkfoot` CLI with `report` (single-run attribution bar chart +
-smells, or aggregate `--last 7d --group-by task` with runs / avg_$
-/ p95_$ / success% / cost-per-success, or single-run
+smells, or aggregate `--last 7d --group-by task` /
+`--group-by tag.<key>` with cost-per-success /
+cost-per-accepted-answer / avg_$ / p95_$ / success%, or single-run
 `--group-by node` / `--group-by metadata.<key>` for per-node and
 per-agent ledger totals), `tag`
 (late tagging), `rebuild-aggregates`, `benchmark` (scenario
@@ -153,6 +154,12 @@ inkfoot/                                    # the Python package
     oversized_tool_result_recycled.py
     expensive_model_low_entropy.py
     recurring_cache_writes.py
+    summariser_quality_regression.py
+    tool_schema_drift.py
+    cost_skewed_by_outlier.py
+    unbounded_conversation_history.py
+    over_instrumented_retries.py
+    summariser_not_firing.py
   storage/
     __init__.py                             # Storage Protocol (lazy SQLiteStorage / PostgresStorage)
     sqlite.py                               # SQLiteStorage + WAL pragmas + replay-mode write
@@ -162,6 +169,11 @@ inkfoot/                                    # the Python package
     postgres_migrations.py                  # forward-only Postgres DDL (advisory-lock guarded)
     postgres_aggregator.py                  # per-sweep advisory lock + heartbeat for the worker
   _run_lifecycle.py                         # @agent_run + set_outcome/tag/tag_retrieval/report_cost
+  outcomes/
+    _heuristics.py                          # set_outcome_from_heuristic — outcome inference from framework results
+  reports/
+    cost_per_success.py                     # cost-per-success / cost-per-accepted-answer rollup + uninstrumented bucket
+    tag_groupby.py                          # tag-value bucketing for `--group-by tag.<key>`
   cli/
     main.py                                 # `inkfoot` entry point (report / rebuild-aggregates / tag)
     rebuild_aggregates.py                   # `inkfoot rebuild-aggregates`
