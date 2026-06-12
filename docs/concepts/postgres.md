@@ -8,15 +8,21 @@ Postgres server instead.
 
 What changes when you switch:
 
-- All processes write to one database over the network; the CLI and
-  reports see every run in one place.
+- All processes write to one database over the network, so the
+  whole fleet's runs land in one event log.
 - Aggregation moves out of process: instead of the background thread
   each process runs against SQLite, a single
   [`inkfoot aggregator-worker`](../reference/cli.md#inkfoot-aggregator-worker)
   daemon projects run totals for the whole fleet.
-- Everything else — the event log, the ledger, replay capture, the
-  report CLI — behaves identically. The schema mirrors the SQLite
-  one table for table.
+- Everything else — the event log, the ledger, replay capture —
+  behaves identically. The schema mirrors the SQLite one table for
+  table.
+
+One caveat to plan around: the local CLI commands (`inkfoot
+report`, `tag`, `tail`, `rebuild-aggregates`, `contract draft`)
+read a SQLite file only — they do not honour `INKFOOT_PG_DSN` yet,
+so they can't see runs recorded in Postgres. Query the database
+directly for fleet-wide questions.
 
 ## Installing
 
@@ -155,6 +161,10 @@ Batch sizes are tunable (`--runs-batch`, default 1000;
 `--events-batch`, default 10000) but the defaults are sized so that
 event logs in the hundred-thousand range migrate in well under a
 minute.
+
+For the day-of checklist — provisioning, backups, verification,
+service supervision for the worker, and the rollback path — follow
+the [Postgres migration runbook](../operations/postgres-migration.md).
 
 ## Tables you'll see
 

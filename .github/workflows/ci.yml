@@ -75,7 +75,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Run all six §9.1 benchmark gates
+      - name: Run the benchmark gate suite
+        # Postgres-marked benchmarks skip here (no DSN); they run with
+        # their budgets asserted in the postgres-integration job.
         run: |
           pytest tests/benchmarks --benchmark-only \
             --benchmark-json=benchmark.json
@@ -86,6 +88,78 @@ jobs:
           name: inkfoot-benchmarks-${{ github.sha }}
           path: benchmark.json
           retention-days: 30
+
+  contract-check:
+    name: Token Contract gate
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Produce a benchmark artefact from the self-check scenario
+        # The scenario emits fixed synthetic costs (no live LLM calls),
+        # so the artefact is deterministic and the verdict below can
+        # only flip if the benchmark → artefact → check pipeline
+        # itself breaks.
+        run: |
+          inkfoot benchmark tests/fixtures/ci_gate/scenarios \
+            --output contract-gate-benchmark.json --quiet
+      - name: Check Token Contracts against the artefact
+        run: |
+          inkfoot contract check tests/fixtures/ci_gate/contracts \
+            --against contract-gate-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contract-gate-${{ github.sha }}
+          path: contract-gate-benchmark.json
+          retention-days: 30
+
+  coverage:
+    name: Coverage floors (aggregate + per-package >= 80%)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install package + dev + postgres deps
+        # The postgres extra makes the psycopg-backed modules
+        # importable so their definitions are measured the same way
+        # they are in a full dev checkout; the server-gated tests
+        # still skip without a DSN.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,postgres]"
+      - name: Run unit, contract, and integration tests under the coverage floor
+        # Postgres- and live-marked tests skip here (no DSN, no API
+        # keys); their behaviour is enforced by the postgres-integration
+        # and weekly live jobs. The integration directory includes the
+        # release-readiness suite, so a dropped gate or regressed
+        # headline capability turns this job red.
+        run: |
+          pytest tests/unit tests/contract tests/integration \
+            --cov=inkfoot --cov-report=term-missing --cov-fail-under=80
+      - name: Enforce per-package coverage floors
+        # An aggregate floor can hide a thin package behind a
+        # well-covered one, so the governance and integration surfaces
+        # are also gated individually. The storage package is exempt:
+        # its server-gated paths skip in this serverless run and are
+        # exercised by the postgres-integration job instead.
+        run: |
+          coverage report --include="inkfoot/contracts/*" --fail-under=80
+          coverage report --include="inkfoot/policy/*" --fail-under=80
+          coverage report --include="inkfoot/providers/*" --fail-under=80
+          coverage report --include="inkfoot/adapters/*" --fail-under=80
 
   attribution-validation:
     name: Attribution accuracy (§5.3 invariant, < 10% per-cat)

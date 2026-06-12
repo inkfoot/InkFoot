@@ -20,6 +20,7 @@ before it blows the ceiling.
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
@@ -27,7 +28,7 @@ from typing import Any, Mapping, Optional
 from inkfoot.contracts.schema import Contract, DegradeAction, DegradeStep
 from inkfoot.ledger import CausalTokenLedger
 from inkfoot.pricing import estimate_nanodollars
-from inkfoot.tokenisers import tokenise, tokenise_tools
+from inkfoot.tokenisers import serialise_tools_for_tokenisation, tokenise
 
 # Output-token count assumed for a task with no observed history. The
 # moving average replaces this once real calls have completed.
@@ -37,6 +38,13 @@ DEFAULT_OUTPUT_TOKENS = 500
 # moving average. A light alpha keeps the estimate stable across a
 # noisy run while still tracking a genuine shift in output size.
 _OUTPUT_EWMA_ALPHA = 0.3
+
+# Cap on the per-enforcer token-count memo. 4096 entries comfortably
+# holds every distinct message of all concurrently active
+# conversations; when full the memo is cleared wholesale rather than
+# evicted piecemeal — the live conversations re-warm it within one
+# call each.
+_TOKEN_CACHE_MAX_ENTRIES = 4096
 
 
 @dataclass(frozen=True)
@@ -113,6 +121,15 @@ class ContractEnforcer:
         self._runs: dict[str, _RunState] = {}
         self._output_avg: dict[str, float] = {}
         self._lock = threading.Lock()
+        # Memo for _cached_token_count. Accessed without self._lock:
+        # estimation runs outside the lock, and single dict reads and
+        # writes are atomic under the GIL — a race costs at worst one
+        # redundant tokenise, and the size-check/clear pair at worst a
+        # double clear. Hash-keying admits an astronomically unlikely
+        # collision returning a wrong count — acceptable inside the
+        # estimator's accuracy band. Revisit the no-lock choice on
+        # free-threaded (no-GIL) builds.
+        self._token_cache: dict[tuple[str, int, int], int] = {}
 
     # ------------------------------------------------------------------
     # Run registration
@@ -326,29 +343,66 @@ class ContractEnforcer:
         nd = estimate_nanodollars(provider, model, ledger)
         return int(nd) if nd is not None else 0
 
-    @staticmethod
-    def _count_input_tokens(request_kwargs: Mapping[str, Any], model: str) -> int:
-        import json
+    def _cached_token_count(self, text: str, model: str) -> int:
+        """Token count for ``text`` under ``model``, memoised.
 
-        parts: list[str] = []
+        The estimator re-tokenises the conversation on every governed
+        call, but a conversation's history prefix is identical call
+        over call — only the newest messages are unseen. Memoising
+        per-part counts turns the steady-state estimate from BPE work
+        linear in the history into dict lookups, which is what keeps
+        ``before_call`` inside its microsecond budget. Keyed on
+        ``(model, hash, len)`` rather than the text itself so the memo
+        doesn't pin large message bodies in memory.
+        """
+        key = (model, hash(text), len(text))
+        cached = self._token_cache.get(key)
+        if cached is not None:
+            return cached
+        count = tokenise(text, model).value
+        if len(self._token_cache) >= _TOKEN_CACHE_MAX_ENTRIES:
+            self._token_cache.clear()
+        self._token_cache[key] = count
+        return count
+
+    def _count_input_tokens(
+        self, request_kwargs: Mapping[str, Any], model: str
+    ) -> int:
+        # Counted part-by-part (system, then each message) so stable
+        # parts hit the memo. The sum drifts a few tokens from
+        # tokenising one concatenated string — noise next to the
+        # estimator's documented accuracy band.
+        total = 0
         system = request_kwargs.get("system")
         if isinstance(system, str):
-            parts.append(system)
+            total += self._cached_token_count(system, model)
         elif system is not None:
-            parts.append(json.dumps(system, default=str, sort_keys=True))
+            total += self._cached_token_count(
+                json.dumps(system, default=str, sort_keys=True), model
+            )
         messages = request_kwargs.get("messages")
-        if messages is not None:
-            parts.append(json.dumps(messages, default=str, sort_keys=True))
-        if not parts:
-            return 0
-        return tokenise("\n".join(parts), model).value
+        if isinstance(messages, (list, tuple)):
+            for message in messages:
+                total += self._cached_token_count(
+                    json.dumps(message, default=str, sort_keys=True), model
+                )
+        elif messages is not None:
+            total += self._cached_token_count(
+                json.dumps(messages, default=str, sort_keys=True), model
+            )
+        return total
 
-    @staticmethod
-    def _count_tool_tokens(request_kwargs: Mapping[str, Any], model: str) -> int:
+    def _count_tool_tokens(
+        self, request_kwargs: Mapping[str, Any], model: str
+    ) -> int:
         tools = request_kwargs.get("tools")
         if not isinstance(tools, (list, tuple)) or not tools:
             return 0
-        return tokenise_tools(list(tools), model).value
+        # Shared canonical serialisation: a memo-miss count is
+        # byte-identical to what tokenise_tools would produce.
+        return self._cached_token_count(
+            serialise_tools_for_tokenisation(tools), model
+        )
 
     # ------------------------------------------------------------------
     # Ladder maths

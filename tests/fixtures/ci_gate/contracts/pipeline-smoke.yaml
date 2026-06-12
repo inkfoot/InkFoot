@@ -1,0 +1,17 @@
+# Token Contract for the contract-check CI job's self-check scenario.
+#
+# The scenario (../scenarios/pipeline_smoke.py) emits exactly two
+# synthetic calls totalling 3,000,000 nanodollars per run, so these
+# ceilings sit far enough above the constants that only a broken
+# pipeline — not measurement noise — can trip the gate, while staying
+# close enough that a runaway artefact (duplicated events, double
+# counting) lands in violation rather than slipping through.
+schema_version: 1
+task: pipeline-smoke
+budget:
+  max_nanodollars: 10_000_000
+  max_llm_calls: 4
+outcome:
+  # Advisory by design: outcome clauses never gate CI.
+  required_success_rate: 0.9
+  measure_window_runs: 10

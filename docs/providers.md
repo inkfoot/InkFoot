@@ -44,6 +44,10 @@ Gemini, and stays silent on a provider that declares
 `prompt_cache_style="none"` — same policy object, no
 provider-specific configuration.
 
+The declared value of every flag for every shipped provider is
+tabulated in the
+[provider capability matrix](reference/provider-matrix.md).
+
 ## Anthropic and OpenAI
 
 The original integrations: `inkfoot.instrument()` auto-detects the

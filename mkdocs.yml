@@ -135,7 +135,10 @@ nav:
       - CI on GitLab: recipes/ci-gitlab.md
       - CI on Bitbucket: recipes/ci-bitbucket.md
       - Extract replay fixtures: recipes/extract-fixtures.md
+  - Operations:
+      - Postgres migration runbook: operations/postgres-migration.md
   - Reference:
       - CLI: reference/cli.md
       - Python API: reference/api.md
+      - Provider capability matrix: reference/provider-matrix.md
       - Token Contract schema changelog: reference/contract-schema-changelog.md
