@@ -124,6 +124,7 @@ nav:
       - Pydantic AI: frameworks/pydantic-ai.md
       - CrewAI: frameworks/crewai.md
       - Raw Provider SDK: frameworks/raw-sdk.md
+  - Providers: providers.md
   - Recipes:
       - Find your most expensive agent: recipes/find-expensive-agent.md
       - Spot cache-miss patterns: recipes/spot-cache-misses.md

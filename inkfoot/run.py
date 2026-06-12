@@ -124,6 +124,13 @@ class InMemoryRunState:
       ledger's ``retrieved_context_tokens`` field and resets it to
       zero. Lives on in-memory state (not events) because it's a
       pure pre-call marker — only the *next* call sees it.
+    * ``pending_cache_resource_creation`` — set by the
+      cache-resource arm of ``CacheControlPlacer`` when it created a
+      provider-side cache resource (Gemini ``CachedContent``) for
+      the upcoming call. The provider's translator re-attributes
+      that call's cached-content count from ``cache_read_tokens`` to
+      ``cache_creation_tokens`` (a one-time write) and resets the
+      flag. Same lifetime semantics as the retrieval marker.
 
     There's no save/load helper on this class on purpose: the
     instrumented process owns its lifetime, full stop. A test that
@@ -134,6 +141,7 @@ class InMemoryRunState:
     recent_calls: list = field(default_factory=list)
     retry_counts: dict[str, int] = field(default_factory=dict)
     pending_retrieved_context_tokens: int = 0
+    pending_cache_resource_creation: bool = False
     # the framework adapter (LangGraph) or Pattern
     # B's :func:`inkfoot.tag_node` sets this before an LLM call so the
     # translator can attach it to ``NeutralCall.metadata["node_name"]``.

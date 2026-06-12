@@ -1,9 +1,9 @@
-# Raw Provider SDK (Anthropic / OpenAI)
+# Raw Provider SDK (Anthropic / OpenAI / Gemini)
 
 The simplest integration. You're already calling
-`anthropic.Anthropic().messages.create(...)` (or the OpenAI
-equivalent), and you want Inkfoot to attribute the cost without
-adopting a framework. This page covers:
+`anthropic.Anthropic().messages.create(...)` (or the OpenAI or
+Gemini equivalent), and you want Inkfoot to attribute the cost
+without adopting a framework. This page covers:
 
 - The single-line install (`inkfoot.instrument()`).
 - The decorator that scopes a run (`@inkfoot.agent_run(task=...)`).
@@ -27,6 +27,12 @@ your process and patches its client methods. Today's coverage:
 |---|---|
 | `anthropic` | `Anthropic().messages.create`, `AsyncAnthropic().messages.create` |
 | `openai` | `OpenAI().chat.completions.create`, `AsyncOpenAI().chat.completions.create` |
+| `google-generativeai` | `GenerativeModel().generate_content`, `GenerativeModel().generate_content_async` |
+
+Bedrock and OpenAI-compatible endpoints are integrated at the
+provider level rather than through a shim — see
+[Providers](../providers.md) for those, the capability matrix,
+and the per-provider usage-mapping notes.
 
 Calls flowing through any patched method emit an `llm_call` event
 into Inkfoot's storage. Nothing else changes — your code
@@ -156,6 +162,9 @@ Default to Pattern B unless your agent is genuinely one call long.
 
 ## Where to next
 
+- [Providers](../providers.md) — the full provider matrix:
+  capability flags, Gemini cache resources, Bedrock, and
+  OpenAI-compatible endpoints.
 - [LangGraph](langgraph.md) — if you'll adopt LangGraph later,
   the adapter gives you per-node attribution for free.
 - [Cost Smells](../concepts/cost-smells.md) — the patterns the

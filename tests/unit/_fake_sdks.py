@@ -1,4 +1,4 @@
-"""Fake Anthropic + OpenAI SDK modules for shim tests.
+"""Fake Anthropic + OpenAI + Gemini SDK modules for shim tests.
 
 We don't want to depend on the real SDKs in unit tests — they're
 heavy, network-coupled, and version-sensitive. The shims monkey-patch
@@ -9,10 +9,15 @@ hierarchy:
 * ``anthropic.resources.messages.AsyncMessages.create`` (async)
 * ``openai.resources.chat.completions.Completions.create``
 * ``openai.resources.chat.completions.AsyncCompletions.create``
+* ``google.generativeai.generative_models.GenerativeModel
+  .generate_content`` (+ ``generate_content_async``)
 
-Each fake ``.create`` records its invocation in ``shim_calls`` and
+Each fake entry point records its invocation in a call log and
 returns a dict that mimics the real provider's usage shape so the
-translator can build a ledger.
+translator can build a ledger. The fake Gemini model also implements
+``from_cached_content`` and a ``caching.CachedContent.create``
+factory so cache-resource flows can run end to end offline; a
+cache-bound model reports 256 cached tokens in its usage.
 """
 
 from __future__ import annotations
@@ -165,9 +170,168 @@ def install_fake_openai() -> dict:
     }
 
 
+def install_fake_gemini() -> dict:
+    """Install a fake ``google.generativeai`` module hierarchy and
+    return its call log.
+
+    The fake mirrors the SDK surfaces the shim and policies touch:
+
+    * ``GenerativeModel`` with the private construction-time attrs
+      the shim reads (``_system_instruction``, ``_tools``,
+      ``_generation_config``, ``_safety_settings``), the
+      ``model_name`` property (``models/``-prefixed, like the real
+      SDK), and both ``generate_content`` variants.
+    * ``GenerativeModel.from_cached_content`` — returns a new model
+      bound to the cache resource; bound models report 256 cached
+      tokens so cache-read/creation attribution is observable.
+    * ``caching.CachedContent.create`` — records each creation in
+      ``cache_creations`` and returns a uniquely named resource.
+    """
+    for key in list(sys.modules):
+        if key == "google" or key.startswith("google."):
+            del sys.modules[key]
+
+    google_mod = types.ModuleType("google")
+    genai_mod = types.ModuleType("google.generativeai")
+    generative_models_mod = types.ModuleType(
+        "google.generativeai.generative_models"
+    )
+    caching_mod = types.ModuleType("google.generativeai.caching")
+
+    calls: list[dict[str, Any]] = []
+    cache_creations: list[dict[str, Any]] = []
+
+    class CachedContent:
+        _counter = 0
+
+        def __init__(self, name: str, model: Any) -> None:
+            self.name = name
+            self.model = model
+
+        @classmethod
+        def create(cls, model: Any = None, **kwargs: Any) -> "CachedContent":
+            cls._counter += 1
+            cache_creations.append({"model": model, "kwargs": kwargs})
+            return cls(f"cachedContents/fake-{cls._counter}", model)
+
+    class GenerativeModel:
+        def __init__(
+            self,
+            model_name: str = "gemini-1.5-pro",
+            *,
+            system_instruction: Any = None,
+            tools: Any = None,
+            generation_config: Any = None,
+            safety_settings: Any = None,
+            **kwargs: Any,
+        ) -> None:
+            name = str(model_name)
+            if not name.startswith("models/"):
+                name = f"models/{name}"
+            self._model_name = name
+            self._system_instruction = system_instruction
+            self._tools = tools
+            self._generation_config = generation_config
+            self._safety_settings = safety_settings
+            self.cached_content: Any = None
+
+        @property
+        def model_name(self) -> str:
+            return self._model_name
+
+        @classmethod
+        def from_cached_content(
+            cls, cached_content: Any, **kwargs: Any
+        ) -> "GenerativeModel":
+            model = (
+                getattr(cached_content, "model", None) or "gemini-1.5-pro"
+            )
+            instance = cls(str(model), **kwargs)
+            instance.cached_content = cached_content
+            return instance
+
+        def _usage(self, base_input: int, base_output: int) -> dict:
+            cached = 256 if self.cached_content is not None else 0
+            return {
+                "prompt_token_count": base_input + cached,
+                "candidates_token_count": base_output,
+                "cached_content_token_count": cached,
+            }
+
+        def generate_content(
+            self, contents: Any = None, **kwargs: Any
+        ) -> Any:
+            calls.append(
+                {
+                    "variant": "sync",
+                    "model": self,
+                    "contents": contents,
+                    "kwargs": kwargs,
+                    "cached": self.cached_content is not None,
+                }
+            )
+            return {
+                "usage_metadata": self._usage(10, 5),
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [{"text": "ack"}],
+                        }
+                    }
+                ],
+            }
+
+        async def generate_content_async(
+            self, contents: Any = None, **kwargs: Any
+        ) -> Any:
+            calls.append(
+                {
+                    "variant": "async",
+                    "model": self,
+                    "contents": contents,
+                    "kwargs": kwargs,
+                    "cached": self.cached_content is not None,
+                }
+            )
+            return {
+                "usage_metadata": self._usage(11, 6),
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [{"text": "ack-async"}],
+                        }
+                    }
+                ],
+            }
+
+    generative_models_mod.GenerativeModel = GenerativeModel
+    caching_mod.CachedContent = CachedContent
+    genai_mod.GenerativeModel = GenerativeModel
+    genai_mod.generative_models = generative_models_mod
+    genai_mod.caching = caching_mod
+    google_mod.generativeai = genai_mod
+
+    sys.modules["google"] = google_mod
+    sys.modules["google.generativeai"] = genai_mod
+    sys.modules["google.generativeai.generative_models"] = (
+        generative_models_mod
+    )
+    sys.modules["google.generativeai.caching"] = caching_mod
+
+    return {
+        "calls": calls,
+        "cache_creations": cache_creations,
+        "GenerativeModel": GenerativeModel,
+        "CachedContent": CachedContent,
+        "module": genai_mod,
+    }
+
+
 def uninstall_fake_sdks() -> None:
-    """Drop both fakes from ``sys.modules``."""
-    for prefix in ("anthropic", "openai"):
+    """Drop all fakes from ``sys.modules``."""
+    for prefix in ("anthropic", "openai", "google"):
         for key in list(sys.modules):
             if key == prefix or key.startswith(f"{prefix}."):
                 del sys.modules[key]

@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Iterator, Optional
 
 from inkfoot.ledger import CausalTokenLedger
-from inkfoot.pricing import PRICING_ND_PER_TOKEN, PriceRow
+from inkfoot.pricing import PRICING_ND_PER_TOKEN, PriceRow, _lookup_row
 
 
 def ledger_from_payload(payload: dict[str, Any]) -> CausalTokenLedger:
@@ -53,15 +53,16 @@ def ledger_from_payload(payload: dict[str, Any]) -> CausalTokenLedger:
 
 
 def price_row_for(payload: dict[str, Any]) -> Optional[PriceRow]:
-    """Look up the pricing row for the call's (provider, model).
-    Returns ``None`` when the model isn't in the table — smell
-    detectors then report ``estimated_cost_impact_nd=0`` rather
-    than guessing."""
+    """Look up the pricing row for the call's (provider, model) —
+    the exact row first, then the provider's ``"*"`` wildcard row
+    (how OpenAI-compat models price at $0). Returns ``None`` when
+    neither is in the table — smell detectors then report
+    ``estimated_cost_impact_nd=0`` rather than guessing."""
     provider = payload.get("provider")
     model = payload.get("model")
     if not isinstance(provider, str) or not isinstance(model, str):
         return None
-    return PRICING_ND_PER_TOKEN.get((provider, model))
+    return _lookup_row(provider, model)
 
 
 def cache_write_premium(price: PriceRow) -> int:

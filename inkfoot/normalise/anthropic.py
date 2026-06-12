@@ -1,7 +1,8 @@
 """Anthropic attribution recipe — translate one ``messages.create``
 request + response pair into a :class:`NeutralCall`.
 
-Direct-from-response fields (no tokeniser needed):
+Direct-from-response fields (no tokeniser needed) come from
+:meth:`inkfoot.providers.anthropic.AnthropicProvider.map_usage`:
 
 * ``output_tokens`` — ``response.usage.output_tokens``
 * ``cache_read_tokens`` — ``response.usage.cache_read_input_tokens``
@@ -51,10 +52,12 @@ from inkfoot.normalise import (
     update_stable_prefix,
 )
 from inkfoot.pricing import estimate_nanodollars
+from inkfoot.providers.anthropic import AnthropicProvider, response_content
 from inkfoot.run import InMemoryRunState
 from inkfoot.tokenisers import tokenise_tools, tokenise_with_flags
 
-_PROVIDER = "anthropic"
+_PROVIDER = AnthropicProvider.PROVIDER_TYPE
+_PROVIDER_IMPL = AnthropicProvider()
 
 
 def _extract_system_block(request: dict[str, Any]) -> str:
@@ -198,78 +201,6 @@ def _memory_text(request: dict[str, Any]) -> str:
     return "".join(parts)
 
 
-def _reasoning_token_count(response: Any) -> int:
-    """Sum of token counts on ``thinking`` content blocks from the
-    assistant response — Anthropic's extended-thinking models surface
-    these alongside text blocks. Zero on models without thinking."""
-    if response is None:
-        return 0
-    usage = _usage(response)
-    # Some Anthropic SDKs surface a top-level usage.thinking_tokens.
-    thinking = usage.get("thinking_tokens") if isinstance(usage, dict) else None
-    if isinstance(thinking, int) and thinking >= 0:
-        return thinking
-    # Otherwise sum token counts across ``thinking`` content blocks.
-    content = _response_content(response)
-    if not isinstance(content, list):
-        return 0
-    total = 0
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "thinking":
-            tokens = block.get("tokens")
-            if isinstance(tokens, int) and tokens >= 0:
-                total += tokens
-    return total
-
-
-def _usage(response: Any) -> dict[str, Any]:
-    """Accept both attribute-access (real SDK) and dict-access (test
-    fixtures) shapes."""
-    if response is None:
-        return {}
-    if isinstance(response, dict):
-        usage = response.get("usage", {})
-    else:
-        usage = getattr(response, "usage", {})
-    if usage is None:
-        return {}
-    if isinstance(usage, dict):
-        return usage
-    # SDK object — read fields via getattr with defaults.
-    return {
-        "input_tokens": getattr(usage, "input_tokens", 0),
-        "output_tokens": getattr(usage, "output_tokens", 0),
-        "cache_read_input_tokens": getattr(
-            usage, "cache_read_input_tokens", 0
-        ),
-        "cache_creation_input_tokens": getattr(
-            usage, "cache_creation_input_tokens", 0
-        ),
-        "thinking_tokens": getattr(usage, "thinking_tokens", None),
-    }
-
-
-def _response_content(response: Any) -> Any:
-    if isinstance(response, dict):
-        return response.get("content")
-    return getattr(response, "content", None)
-
-
-def _cache_status(usage: dict[str, Any]) -> str:
-    """Coarse cache classification from usage. ``hit`` when any
-    cache_read, ``partial`` when both read + write, ``miss`` when
-    only write, ``n/a`` when neither."""
-    read = int(usage.get("cache_read_input_tokens") or 0)
-    write = int(usage.get("cache_creation_input_tokens") or 0)
-    if read > 0 and write > 0:
-        return "partial"
-    if read > 0:
-        return "hit"
-    if write > 0:
-        return "miss"
-    return "n/a"
-
-
 class AnthropicTranslator:
     """Stateless translator. Pass the same instance across calls for
     a single run so the stable-prefix detector tracks history via
@@ -306,7 +237,7 @@ class AnthropicTranslator:
         if not isinstance(model, str) or not model:
             raise ValueError("AnthropicTranslator.translate: model is required")
 
-        usage = _usage(response)
+        usage = _PROVIDER_IMPL.map_usage(response)
         system_text = _extract_system_block(request)
         run_state.stable_system_prefix = update_stable_prefix(
             run_state.stable_system_prefix, system_text
@@ -321,10 +252,10 @@ class AnthropicTranslator:
         tool_result = tokenise_with_flags(_tool_results_text(request), model)
         memory = tokenise_with_flags(_memory_text(request), model)
 
-        output_tokens = int(usage.get("output_tokens") or 0)
-        cache_read = int(usage.get("cache_read_input_tokens") or 0)
-        cache_create = int(usage.get("cache_creation_input_tokens") or 0)
-        reasoning = _reasoning_token_count(response)
+        output_tokens = usage.output_tokens
+        cache_read = usage.cache_read_tokens
+        cache_create = usage.cache_creation_tokens
+        reasoning = usage.reasoning_tokens
 
         # Run lifecycle: consume any pending tag_retrieval marker. The user
         # called ``inkfoot.tag_retrieval(text)`` before this LLM
@@ -392,7 +323,7 @@ class AnthropicTranslator:
             tools_offered=tools_offered,
             tools_called=_tool_calls_in_response(response),
             error=error,
-            cache_status=_cache_status(usage),
+            cache_status=usage.cache_status,
             parent_run_id=parent_run_id,
             sequence=sequence,
             estimation_flags=tuple(flags),
@@ -403,7 +334,7 @@ class AnthropicTranslator:
 def _tool_calls_in_response(response: Any) -> tuple[str, ...]:
     """Names of tools the assistant invoked in this response. Each
     ``tool_use`` content block carries a ``name``."""
-    content = _response_content(response)
+    content = response_content(response)
     if not isinstance(content, list):
         return ()
     names: list[str] = []

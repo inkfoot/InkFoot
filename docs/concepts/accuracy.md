@@ -152,6 +152,22 @@ single coordinated PR — pricing rows always land together so an
 intermediate state never claims "Sonnet got cheaper but Haiku
 didn't yet."
 
+Two kinds of rows deviate from the exact `(provider, model)`
+shape:
+
+- **Wildcard rows.** `("openai_compat", "*")` prices every model
+  under the OpenAI-compatible provider type at exactly $0 —
+  self-hosted is free at the provider boundary, and an explicit
+  zero is more honest than "unknown". An exact
+  `(provider, model)` row always wins over the wildcard, which is
+  how a paid compat endpoint gets real prices. See
+  [Providers](../providers.md).
+- **Unpriced models.** A model with no row (and no wildcard)
+  estimates as `None` — tokens are still attributed, dollars are
+  simply not claimed. Bedrock's non-Anthropic families ship this
+  way because their list prices vary by region and purchasing
+  model.
+
 ## What this isn't
 
 <div class="not-this" markdown>

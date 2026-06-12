@@ -51,11 +51,13 @@ runner emitting the benchmark JSON artefact), and `diff`
 verdicts and `0/1/2` exit codes for CI).
 Under it: nanodollar money type, SQLite storage with WAL + two-tier
 writes, claim-and-project aggregator, the 14-field Causal Token
-Ledger, per-provider Anthropic + OpenAI translators with
-stable-prefix detection, `tiktoken`-based tokenisers with
-estimation flags, the pricing module, and the three observation
-policies (`BudgetCap`, `RetryThrottle`,
-`CacheControlPlacer`). Six perf gates run on every PR.
+Ledger, per-provider Anthropic + OpenAI + Gemini translators with
+stable-prefix detection, the capability-declaring provider layer
+(Anthropic, OpenAI, Gemini, Bedrock, OpenAI-compatible),
+`tiktoken`-based tokenisers with estimation flags, the pricing
+module, and the three observation policies (`BudgetCap`,
+`RetryThrottle`, `CacheControlPlacer`). Six perf gates run on
+every PR.
 
 ## Quickstart (development)
 
@@ -101,7 +103,17 @@ inkfoot/                                    # the Python package
   normalise/
     __init__.py                             # NeutralCall + stable-prefix detector
     anthropic.py                            # AnthropicTranslator
+    gemini.py                               # GeminiTranslator
     openai.py                               # OpenAITranslator
+  providers/                                # provider capability + usage-mapping layer
+    __init__.py                             # public provider re-exports
+    base.py                                 # LLMProvider + Capabilities + TokenUsage
+    _registry.py                            # ProviderRegistry singleton (auto-seeds the shim-backed providers)
+    anthropic.py                            # AnthropicProvider
+    openai.py                               # OpenAIProvider
+    gemini.py                               # GeminiProvider (cache-resource aware)
+    bedrock.py                              # BedrockProvider (per-model-family capabilities)
+    openai_compat.py                        # OpenAICompatProvider (instance-configured compat endpoints)
   policy/
     __init__.py                             # Policy ABC + IntegrationPattern + register_policies
     registry.py                             # PolicyRegistry singleton
@@ -112,6 +124,7 @@ inkfoot/                                    # the Python package
     _isolation.py                           # @isolated_hook / safely_run
     _emit.py                                # shared event-emit pipeline
     anthropic.py                            # AnthropicShim (sync + async)
+    gemini.py                               # GeminiShim (generate_content sync + async)
     openai.py                               # OpenAIShim (sync + async)
   adapters/                                 # framework adapters
     __init__.py                             # FrameworkAdapter Protocol re-export
@@ -204,14 +217,18 @@ pipeline is two tag-driven workflows plus a guard script:
    quickstart end-to-end. (You can also smoke an arbitrary version
    on demand via the workflow's `workflow_dispatch` input.)
 
-Framework extras ship alongside the release —
+Framework and provider extras ship alongside the release —
 `pip install "inkfoot[langgraph]"`, `[openai-agents]`,
-`[anthropic-agent]`, `[pydantic-ai]`, `[crewai]`, or `[all]`.
-(A `[langchain]` extra lands in a later release, not here.) A
-weekly [live-tests workflow](.github/workflows/live-tests.yml)
-installs each extra from PyPI and runs the adapter contract +
-integration suites against the real SDKs, so upstream drift
-surfaces as a red matrix leg instead of a user bug report.
+`[anthropic-agent]`, `[pydantic-ai]`, `[crewai]`, the provider
+SDK extras `[gemini]` and `[bedrock]`, or `[all]` for every one
+of them. (A `[langchain]` extra lands in a later release, not
+here.) A weekly
+[live-tests workflow](.github/workflows/live-tests.yml) installs
+each framework extra and provider SDK from PyPI and runs the
+contract + integration suites against the real thing (the Ollama
+leg exercises an OpenAI-compatible endpoint against a real local
+model), so upstream drift surfaces as a red matrix leg instead
+of a user bug report.
 
 ## License
 

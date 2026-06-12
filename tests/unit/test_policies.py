@@ -13,6 +13,11 @@ from inkfoot.policy import (
     PolicyDecision,
     RetryThrottle,
 )
+from inkfoot.providers import (
+    Capabilities,
+    LLMProvider,
+    ProviderRegistry,
+)
 
 
 # ----------------------------------------------------------------------
@@ -245,3 +250,131 @@ def test_cache_control_placer_advises_on_tools_too() -> None:
     decision = policy.before_call(ctx)
     assert decision.action == "warn"
     assert "tools" in decision.metadata["blocks"]
+
+
+# ----------------------------------------------------------------------
+# CacheControlPlacer — capability dispatch
+#
+# The policy routes on the prompt_cache_style the provider declares
+# in the registry, not on the provider's name; a custom provider
+# that declares a style gets the same treatment as the built-in
+# that pioneered it.
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture()
+def clean_registry():
+    ProviderRegistry.clear()
+    yield
+    ProviderRegistry.clear()
+
+
+def _custom_caps(style: str) -> Capabilities:
+    caching = style != "none"
+    return Capabilities(
+        supports_tool_use=True,
+        supports_image_input=False,
+        supports_document_block=False,
+        supports_prompt_cache=caching,
+        prompt_cache_style=style,
+        cache_read_price_ratio=0.1 if caching else 1.0,
+        cache_write_price_ratio=1.25 if caching else 1.0,
+        supports_response_format_json=False,
+        cheap_model_for_summariser=None,
+    )
+
+
+def _register_custom_provider(provider_type: str, style: str) -> None:
+    class _CustomProvider(LLMProvider):
+        PROVIDER_TYPE = provider_type
+        DEFAULT_MODEL = f"{provider_type}-1"
+        CAPABILITIES = _custom_caps(style)
+
+        def map_usage(self, response):  # pragma: no cover — not used
+            raise NotImplementedError
+
+    ProviderRegistry.register(_CustomProvider())
+
+
+def test_cache_control_placer_advises_custom_explicit_marker_provider(
+    clean_registry,
+) -> None:
+    _register_custom_provider("marker-cloud", "explicit_marker")
+    policy = CacheControlPlacer()
+    ctx = _ctx(
+        provider="marker-cloud",
+        model="marker-cloud-1",
+        request_kwargs={"system": "x" * 8000},
+    )
+    decision = policy.before_call(ctx)
+    assert decision.action == "warn"
+    assert decision.emit_event_kind == "cache_control_advice"
+    assert "system" in decision.metadata["blocks"]
+
+
+def test_cache_control_placer_silent_on_custom_no_cache_provider(
+    clean_registry,
+) -> None:
+    _register_custom_provider("plain-cloud", "none")
+    policy = CacheControlPlacer()
+    ctx = _ctx(
+        provider="plain-cloud",
+        model="plain-cloud-1",
+        request_kwargs={"system": "x" * 10_000},
+    )
+    assert policy.before_call(ctx).action == "allow"
+
+
+def test_cache_control_placer_silent_on_unregistered_provider() -> None:
+    policy = CacheControlPlacer()
+    ctx = _ctx(
+        provider="never-registered",
+        request_kwargs={"system": "x" * 10_000},
+    )
+    assert policy.before_call(ctx).action == "allow"
+
+
+def test_cache_control_placer_dispatches_per_model_on_bedrock() -> None:
+    # Bedrock's capabilities vary per model family: the Anthropic
+    # family declares explicit markers, the Llama family no caching.
+    policy = CacheControlPlacer()
+    request = {"system": "x" * 8000}
+
+    claude = policy.before_call(
+        _ctx(
+            provider="bedrock",
+            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            request_kwargs=request,
+        )
+    )
+    assert claude.action == "warn"
+    assert "system" in claude.metadata["blocks"]
+
+    llama = policy.before_call(
+        _ctx(
+            provider="bedrock",
+            model="meta.llama3-1-70b-instruct-v1:0",
+            run_id="r2",
+            request_kwargs=request,
+        )
+    )
+    assert llama.action == "allow"
+
+
+def test_cache_control_placer_custom_cache_resource_degrades_to_advice(
+    clean_registry,
+) -> None:
+    # A custom cache_resource provider routes into the resource flow;
+    # with no resource creatable for it, the policy degrades to the
+    # documented advice-only event instead of staying silent.
+    _register_custom_provider("resource-cloud", "cache_resource")
+    policy = CacheControlPlacer()
+    ctx = _ctx(
+        provider="resource-cloud",
+        model="resource-cloud-1",
+        request_kwargs={"system_instruction": "x" * 140_000},
+    )
+    decision = policy.before_call(ctx)
+    assert decision.action == "warn"
+    assert decision.emit_event_kind == "cache_control_advice"
+    assert decision.metadata["blocks"] == ["cache_resource"]

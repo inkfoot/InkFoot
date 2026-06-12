@@ -43,6 +43,28 @@ namespace and call `.instrument(target)` once you've called
 
 ### ::: inkfoot.crewai.instrument
 
+## Providers
+
+The provider abstraction under `inkfoot.providers` — capability
+declarations, usage mapping, and the registry. The
+Anthropic, OpenAI, and Gemini providers are auto-seeded into the
+registry; you instantiate a provider yourself for Bedrock, for
+OpenAI-compatible endpoints, or when bringing your own. See
+[Providers](../providers.md) for the capability matrix and
+per-provider walkthroughs.
+
+### ::: inkfoot.providers.LLMProvider
+
+### ::: inkfoot.providers.Capabilities
+
+### ::: inkfoot.providers.TokenUsage
+
+### ::: inkfoot.providers.ProviderRegistry
+
+### ::: inkfoot.providers.BedrockProvider
+
+### ::: inkfoot.providers.OpenAICompatProvider
+
 ## Observation policies
 
 Policy classes you pass into

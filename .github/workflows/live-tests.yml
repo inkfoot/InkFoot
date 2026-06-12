@@ -1,10 +1,15 @@
-name: Live framework tests
+name: Live framework & provider tests
 
-# Weekly drift check against the real framework SDKs. The unit suite
-# runs on duck-typed stubs, so upstream surface changes (a renamed
-# entry point, a moved tool registry, a new pydantic guard) only show
-# up here — each leg installs one framework extra from PyPI and runs
-# the adapter contract + integration tests against it.
+# Weekly drift check against the real framework and provider SDKs.
+# The unit suite runs on duck-typed stubs, so upstream surface
+# changes (a renamed entry point, a moved tool registry, a new
+# pydantic guard) only show up here — each framework leg installs
+# one framework extra from PyPI and runs the adapter contract +
+# integration tests against it; each provider leg installs one
+# provider SDK and runs the provider contract + integration tests
+# (live-marked tests skip cleanly when no credentials are
+# configured; the Ollama leg needs none and runs a real local
+# model).
 #
 # Every leg reports its outcome to the run's step summary and uploads
 # a results artifact, so the latest scheduled run doubles as the
@@ -106,4 +111,107 @@ jobs:
 
       - name: Fail leg if any step failed
         if: steps.install.outcome != 'success' || steps.contract.outcome != 'success' || steps.integration.outcome != 'success'
+        run: exit 1
+
+  provider:
+    name: provider ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'inkfoot/inkfoot'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: gemini
+            extras: "dev,gemini"
+            tests: tests/integration/test_gemini_e2e.py
+          - provider: bedrock
+            extras: "dev,bedrock"
+            tests: tests/integration/test_bedrock_e2e.py
+          - provider: ollama
+            extras: "dev"
+            # The compat endpoints are reached through the OpenAI
+            # SDK; it isn't part of any extra.
+            extra-packages: "openai"
+            tests: tests/integration/test_openai_compat_ollama.py
+    env:
+      # Live-marked tests skip cleanly when these are unset;
+      # supplying them (when configured) upgrades the weekly run to
+      # true end-to-end coverage. The Ollama leg needs no secrets.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      # The 1b tag keeps the pull small enough for a hosted runner.
+      INKFOOT_LIVE_OLLAMA_MODEL: "llama3.2:1b"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + provider SDK
+        id: install
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[${{ matrix.extras }}]" ${{ matrix.extra-packages }}
+
+      - name: Start Ollama and pull the test model
+        id: backend
+        if: matrix.provider == 'ollama' && steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          # The installer starts a systemd service on hosted
+          # runners; fall back to a background server if it didn't.
+          if ! curl -fsS http://localhost:11434/api/version > /dev/null 2>&1; then
+            (ollama serve > /tmp/ollama.log 2>&1 &)
+            sleep 5
+          fi
+          ollama pull "$INKFOOT_LIVE_OLLAMA_MODEL"
+
+      - name: Run provider contract tests
+        id: contract
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: pytest tests/unit/test_provider_abstraction.py -v --tb=short -rs
+
+      - name: Run provider integration tests
+        id: integration
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: pytest "${{ matrix.tests }}" -v --tb=short -rs
+
+      - name: Write status row
+        if: always()
+        run: |
+          {
+            echo "## provider ${{ matrix.provider }}"
+            echo ""
+            echo "| step | outcome |"
+            echo "| --- | --- |"
+            echo "| install | ${{ steps.install.outcome }} |"
+            echo "| backend | ${{ steps.backend.outcome }} |"
+            echo "| contract | ${{ steps.contract.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p live-test-results
+          {
+            echo "provider=${{ matrix.provider }}"
+            echo "install=${{ steps.install.outcome }}"
+            echo "backend=${{ steps.backend.outcome }}"
+            echo "contract=${{ steps.contract.outcome }}"
+            echo "integration=${{ steps.integration.outcome }}"
+          } > "live-test-results/provider-${{ matrix.provider }}.txt"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-test-results-provider-${{ matrix.provider }}
+          path: live-test-results/
+
+      - name: Fail leg if any step failed
+        if: steps.install.outcome != 'success' || steps.backend.outcome == 'failure' || steps.contract.outcome != 'success' || steps.integration.outcome != 'success'
         run: exit 1

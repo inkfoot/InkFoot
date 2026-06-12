@@ -3,15 +3,11 @@ for ``chat.completions.create``.
 
 Key differences from Anthropic:
 
-* ``usage.prompt_tokens`` aggregates *fresh + cached* input tokens
-  (no separate ``cache_read`` line item like Anthropic). Cached
-  input lives inside ``usage.prompt_tokens_details.cached_tokens``;
-  we lift that into ``cache_read_tokens``.
-* OpenAI doesn't bill cache *writes* — ``cache_creation_tokens`` is
-  always 0 here. The pricing module has ``cache_write=0`` for
-  OpenAI rows to match.
-* Reasoning tokens (o-series) live in
-  ``usage.completion_tokens_details.reasoning_tokens``.
+* Usage counters (output, cache reads, reasoning) come from
+  :meth:`inkfoot.providers.openai.OpenAIProvider.map_usage` — see
+  that module for the billing-shape notes (inclusive
+  ``prompt_tokens``, no billed cache writes, o-series reasoning
+  details).
 * Tools live in the request as ``tools`` (each ``{"type":
   "function", "function": {"name": ..., ...}}``). We unwrap the
   inner ``function`` dict for tokenisation so the shape we hash
@@ -33,38 +29,12 @@ from inkfoot.normalise import (
     update_stable_prefix,
 )
 from inkfoot.pricing import estimate_nanodollars
+from inkfoot.providers.openai import OpenAIProvider
 from inkfoot.run import InMemoryRunState
 from inkfoot.tokenisers import tokenise_tools, tokenise_with_flags
 
-_PROVIDER = "openai"
-
-
-def _usage(response: Any) -> dict[str, Any]:
-    if response is None:
-        return {}
-    if isinstance(response, dict):
-        return response.get("usage") or {}
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return {}
-    if isinstance(usage, dict):
-        return usage
-    out: dict[str, Any] = {
-        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
-        "completion_tokens": getattr(usage, "completion_tokens", 0),
-        "total_tokens": getattr(usage, "total_tokens", 0),
-    }
-    pt_details = getattr(usage, "prompt_tokens_details", None)
-    if pt_details is not None:
-        out["prompt_tokens_details"] = {
-            "cached_tokens": getattr(pt_details, "cached_tokens", 0),
-        }
-    ct_details = getattr(usage, "completion_tokens_details", None)
-    if ct_details is not None:
-        out["completion_tokens_details"] = {
-            "reasoning_tokens": getattr(ct_details, "reasoning_tokens", 0),
-        }
-    return out
+_PROVIDER = OpenAIProvider.PROVIDER_TYPE
+_PROVIDER_IMPL = OpenAIProvider()
 
 
 def _extract_system_text(request: dict[str, Any]) -> str:
@@ -214,14 +184,6 @@ def _tool_calls_in_response(response: Any) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _cache_status(usage: dict[str, Any]) -> str:
-    details = usage.get("prompt_tokens_details") or {}
-    cached = int(details.get("cached_tokens") or 0)
-    if cached > 0:
-        return "hit"
-    return "n/a"
-
-
 class OpenAITranslator:
     """Stateless OpenAI translator; usage shape per
     ``chat.completions``. Reasoning/tool-call extraction handles
@@ -245,7 +207,7 @@ class OpenAITranslator:
         if not isinstance(model, str) or not model:
             raise ValueError("OpenAITranslator.translate: model is required")
 
-        usage = _usage(response)
+        usage = _PROVIDER_IMPL.map_usage(response)
         system_text = _extract_system_text(request)
         run_state.stable_system_prefix = update_stable_prefix(
             run_state.stable_system_prefix, system_text
@@ -263,17 +225,9 @@ class OpenAITranslator:
         tool_result = tokenise_with_flags(_tool_results_text(request), model)
         memory = tokenise_with_flags(_memory_text(request), model)
 
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        reasoning = int(
-            (usage.get("completion_tokens_details") or {}).get(
-                "reasoning_tokens"
-            )
-            or 0
-        )
-        cache_read = int(
-            (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
-            or 0
-        )
+        completion_tokens = usage.output_tokens
+        reasoning = usage.reasoning_tokens
+        cache_read = usage.cache_read_tokens
 
         # Run lifecycle: consume any pending tag_retrieval marker — see
         # AnthropicTranslator.translate for the full rationale.
@@ -325,7 +279,7 @@ class OpenAITranslator:
             tools_offered=_tool_names(request.get("tools")),
             tools_called=_tool_calls_in_response(response),
             error=error,
-            cache_status=_cache_status(usage),
+            cache_status=usage.cache_status,
             parent_run_id=parent_run_id,
             sequence=sequence,
             estimation_flags=tuple(flags),

@@ -1,10 +1,10 @@
-"""Static-shape gate for the weekly live framework-tests workflow.
+"""Static-shape gate for the weekly live-tests workflow.
 
 The weekly run is the only place adapter/SDK drift surfaces (unit
 tests run on stubs), so its shape is pinned the same way the release
-workflows are: a dropped framework leg, a lost cron trigger, or a
-silently-removed status artifact should fail CI, not go unnoticed
-until the adapters rot.
+workflows are: a dropped framework or provider leg, a lost cron
+trigger, or a silently-removed status artifact should fail CI, not
+go unnoticed until the integrations rot.
 """
 
 from __future__ import annotations
@@ -23,6 +23,12 @@ FRAMEWORKS = (
     "anthropic-agent",
     "pydantic-ai",
     "crewai",
+)
+
+PROVIDERS = (
+    "gemini",
+    "bedrock",
+    "ollama",
 )
 
 yaml_required = pytest.mark.skipif(
@@ -68,6 +74,17 @@ def test_live_workflow_matrixes_every_framework_extra() -> None:
 
 
 @yaml_required
+def test_live_workflow_matrixes_every_provider_leg() -> None:
+    wf = _load()
+    strategy = wf["jobs"]["provider"]["strategy"]
+    legs = {
+        entry["provider"] for entry in strategy["matrix"]["include"]
+    }
+    assert legs == set(PROVIDERS)
+    assert strategy["fail-fast"] is False
+
+
+@yaml_required
 def test_live_workflow_installs_the_matrix_extra() -> None:
     wf = _load()
     runs = " ".join(
@@ -75,6 +92,17 @@ def test_live_workflow_installs_the_matrix_extra() -> None:
         for step in wf["jobs"]["framework"]["steps"]
     )
     assert "matrix.framework" in runs
+    assert "pip install" in runs
+
+
+@yaml_required
+def test_live_workflow_installs_the_provider_sdk() -> None:
+    wf = _load()
+    runs = " ".join(
+        step.get("run", "")
+        for step in wf["jobs"]["provider"]["steps"]
+    )
+    assert "matrix.extras" in runs
     assert "pip install" in runs
 
 
@@ -90,9 +118,23 @@ def test_live_workflow_runs_contract_and_integration_suites() -> None:
 
 
 @yaml_required
-def test_live_workflow_publishes_status_summary_and_artifact() -> None:
+def test_live_workflow_runs_provider_contract_and_integration() -> None:
     wf = _load()
-    steps = wf["jobs"]["framework"]["steps"]
+    runs = " ".join(
+        step.get("run", "")
+        for step in wf["jobs"]["provider"]["steps"]
+    )
+    assert "tests/unit/test_provider_abstraction.py" in runs
+    assert "matrix.tests" in runs
+
+
+@yaml_required
+@pytest.mark.parametrize("job", ["framework", "provider"])
+def test_live_workflow_publishes_status_summary_and_artifact(
+    job: str,
+) -> None:
+    wf = _load()
+    steps = wf["jobs"][job]["steps"]
     runs = " ".join(step.get("run", "") for step in steps)
     assert "GITHUB_STEP_SUMMARY" in runs
     upload_steps = [

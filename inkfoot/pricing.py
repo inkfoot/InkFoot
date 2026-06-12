@@ -40,9 +40,10 @@ class PriceRow:
     * ``output`` — model-generated output tokens.
     * ``cache_read`` — tokens served from the provider's prompt
       cache. Cheaper than ``input``.
-    * ``cache_write`` — tokens written *into* the cache as a
-      side-effect of the call (Anthropic only — OpenAI doesn't bill
-      writes, so we leave ``cache_write=0`` for OpenAI rows).
+    * ``cache_write`` — tokens written *into* the cache. Anthropic
+      bills marker-driven writes per call; Gemini bills cache-
+      resource creation at the full input rate; OpenAI doesn't bill
+      writes at all, so OpenAI rows keep ``cache_write=0``.
     """
 
     input: int
@@ -77,7 +78,50 @@ PRICING_ND_PER_TOKEN: dict[tuple[str, str], PriceRow] = {
     ("openai", "o1"): PriceRow(
         input=15_000, output=60_000, cache_read=7_500, cache_write=0
     ),
+    # Gemini — 1.5 family, ≤128k-prompt tier. Cached-content reads
+    # bill at 25% of input; creating the cache resource bills its
+    # tokens at the full input rate (the per-hour storage fee on a
+    # live resource is resource-level, not per-call, so it has no
+    # row here). cache_read is int-truncated from the 0.25 ratio.
+    ("gemini", "gemini-1.5-pro"): PriceRow(
+        input=1_250, output=5_000, cache_read=312, cache_write=1_250
+    ),
+    ("gemini", "gemini-1.5-flash"): PriceRow(
+        input=75, output=300, cache_read=18, cache_write=75
+    ),
+    # Bedrock — only the Anthropic family is priced: AWS lists
+    # Claude on Bedrock at parity with Anthropic direct (same
+    # 0.1× cache-read / 1.25× cache-write ratios). The other
+    # families (Llama, Titan, Mistral, Cohere) vary by region and
+    # purchasing model (on-demand vs provisioned throughput), so
+    # they stay unpriced — estimate_nanodollars returns None and
+    # callers fall back to tokens-only reporting.
+    ("bedrock", "anthropic.claude-3-5-sonnet-20241022-v2:0"): PriceRow(
+        input=3_000, output=15_000, cache_read=300, cache_write=3_750
+    ),
+    ("bedrock", "anthropic.claude-3-5-haiku-20241022-v1:0"): PriceRow(
+        input=800, output=4_000, cache_read=80, cache_write=1_000
+    ),
+    # OpenAI-compatible endpoints (vLLM, Ollama, Together, …). The
+    # "*" wildcard matches any model under the provider type —
+    # self-hosted is free at the provider boundary, so the default
+    # is all zeros. Operators on a paid compat endpoint add exact
+    # ("openai_compat", "<model>") rows, which win over the
+    # wildcard.
+    ("openai_compat", "*"): PriceRow(
+        input=0, output=0, cache_read=0, cache_write=0
+    ),
 }
+
+
+def _lookup_row(provider: str, model: str) -> Optional[PriceRow]:
+    """Exact ``(provider, model)`` row first, then the provider's
+    ``"*"`` wildcard row (how OpenAI-compat endpoints price every
+    model identically)."""
+    row = PRICING_ND_PER_TOKEN.get((provider, model))
+    if row is None:
+        row = PRICING_ND_PER_TOKEN.get((provider, "*"))
+    return row
 
 
 def estimate_nanodollars(
@@ -109,9 +153,10 @@ def estimate_nanodollars(
     ``input_total - cache_read - cache_creation`` recovers the
     fresh portion that the provider billed at the full input rate.
 
-    Returns ``None`` when ``(provider, model)`` isn't in the table —
-    the caller (typically the report renderer) shows tokens but
-    omits the dollar column. **Never raises** for unknown models.
+    Returns ``None`` when neither ``(provider, model)`` nor the
+    provider's ``(provider, "*")`` wildcard is in the table — the
+    caller (typically the report renderer) shows tokens but omits
+    the dollar column. **Never raises** for unknown models.
 
     Pathological inputs:
 
@@ -126,7 +171,7 @@ def estimate_nanodollars(
       estimate never goes negative; the validation invariant
       catches the underlying bug separately.
     """
-    row = PRICING_ND_PER_TOKEN.get((provider, model))
+    row = _lookup_row(provider, model)
     if row is None:
         return None
 
@@ -193,7 +238,7 @@ def estimate_per_category(
     """
     from inkfoot.ledger import INPUT_CATEGORIES  # noqa: PLC0415
 
-    row = PRICING_ND_PER_TOKEN.get((provider, model))
+    row = _lookup_row(provider, model)
     if row is None:
         return {
             name: Nanodollar(0)
