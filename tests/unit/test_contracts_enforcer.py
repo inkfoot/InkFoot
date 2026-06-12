@@ -261,6 +261,123 @@ def test_precall_estimate_within_30pct_of_actual() -> None:
 
 
 # ----------------------------------------------------------------------
+# Token-count memo inside the estimator
+# ----------------------------------------------------------------------
+
+
+def test_cached_token_counts_match_uncached_counts() -> None:
+    model = "claude-sonnet-4-6"
+    warm = _enforcer(_contract(max_nanodollars=1))
+    cold = _enforcer(_contract(max_nanodollars=1))
+
+    first = warm._count_input_tokens(_FOUR_TURN_REQUEST, model)  # noqa: SLF001
+    second = warm._count_input_tokens(_FOUR_TURN_REQUEST, model)  # noqa: SLF001
+    fresh = cold._count_input_tokens(_FOUR_TURN_REQUEST, model)  # noqa: SLF001
+
+    assert first > 0
+    assert second == first  # memo hit returns the stored count
+    assert fresh == first  # a cold memo computes the same number
+
+
+def test_repeat_estimate_skips_the_tokeniser(monkeypatch) -> None:
+    import inkfoot.contracts.enforcer as enforcer_mod
+
+    calls = {"n": 0}
+    real_tokenise = enforcer_mod.tokenise
+
+    def counting_tokenise(text: str, model: str):
+        calls["n"] += 1
+        return real_tokenise(text, model)
+
+    monkeypatch.setattr(enforcer_mod, "tokenise", counting_tokenise)
+
+    enforcer = _enforcer(_contract(max_nanodollars=1))
+    estimate_kwargs = dict(
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        request_kwargs=_FOUR_TURN_REQUEST,
+        task="triage",
+    )
+
+    first = enforcer._estimate_call_nanodollars(**estimate_kwargs)  # noqa: SLF001
+    after_first = calls["n"]
+    # No system prompt and no tools — one tokenise per message.
+    assert after_first == len(_FOUR_TURN_REQUEST["messages"])
+
+    second = enforcer._estimate_call_nanodollars(**estimate_kwargs)  # noqa: SLF001
+    assert calls["n"] == after_first  # every part served from the memo
+    assert second == first
+
+    # Extending the conversation re-tokenises only the unseen message.
+    extended = {
+        "messages": list(_FOUR_TURN_REQUEST["messages"])
+        + [{"role": "assistant", "content": "Here is the draft reply."}]
+    }
+    enforcer._estimate_call_nanodollars(  # noqa: SLF001
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        request_kwargs=extended,
+        task="triage",
+    )
+    assert calls["n"] == after_first + 1
+
+
+def test_token_memo_is_bounded(monkeypatch) -> None:
+    import inkfoot.contracts.enforcer as enforcer_mod
+
+    monkeypatch.setattr(enforcer_mod, "_TOKEN_CACHE_MAX_ENTRIES", 8)
+    enforcer = _enforcer(_contract(max_nanodollars=1))
+    for i in range(50):
+        enforcer._cached_token_count(  # noqa: SLF001
+            f"distinct text {i}", "claude-sonnet-4-6"
+        )
+    assert len(enforcer._token_cache) <= 8  # noqa: SLF001
+
+
+def test_token_memo_distinguishes_models() -> None:
+    enforcer = _enforcer(_contract(max_nanodollars=1))
+    text = "the same words counted under two tokenisers"
+    a = enforcer._cached_token_count(text, "claude-sonnet-4-6")  # noqa: SLF001
+    b = enforcer._cached_token_count(text, "gpt-4o")  # noqa: SLF001
+    assert len(enforcer._token_cache) == 2  # noqa: SLF001
+    assert a > 0 and b > 0
+
+
+def test_tool_token_count_matches_tokenise_tools() -> None:
+    # Both counters go through the shared canonical serialisation; a
+    # divergence would skew the pre-call estimate against the real
+    # post-call accounting, and the estimator's wide accuracy band
+    # would never notice.
+    from inkfoot.tokenisers import tokenise_tools
+
+    tools = [
+        {
+            "name": "search",
+            "description": "Search the corpus for a query string.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "fetch",
+            "description": "Fetch a document by id.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"doc_id": {"type": "string"}},
+                "required": ["doc_id"],
+            },
+        },
+    ]
+    enforcer = _enforcer(_contract(max_nanodollars=1))
+    counted = enforcer._count_tool_tokens(  # noqa: SLF001
+        {"tools": tools}, "claude-sonnet-4-6"
+    )
+    assert counted == tokenise_tools(tools, "claude-sonnet-4-6").value
+
+
+# ----------------------------------------------------------------------
 # Outcome window — advisory only
 # ----------------------------------------------------------------------
 

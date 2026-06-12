@@ -161,6 +161,23 @@ def tokenise_with_flags(text: str, model: str) -> TokenCount:
     return tokenise(text, model)
 
 
+def serialise_tools_for_tokenisation(
+    tools: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> str:
+    """Canonical JSON form a tools array is token-counted under.
+
+    Every counter of tool-schema tokens must serialise identically,
+    or pre-call estimates drift from post-call accounting — keep this
+    the single source of that byte format.
+    """
+    return json.dumps(
+        list(tools),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 def tokenise_tools(
     tools: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     model: str,
@@ -191,10 +208,4 @@ def tokenise_tools(
     if len(tools) == 0:
         return TokenCount(0, False)
 
-    serialised = json.dumps(
-        list(tools),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return tokenise(serialised, model)
+    return tokenise(serialise_tools_for_tokenisation(tools), model)

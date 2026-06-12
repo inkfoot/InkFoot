@@ -12,11 +12,13 @@ the following subcommands:
 | [`inkfoot migrate`](#inkfoot-migrate) | Copy a SQLite database into Postgres (resumable). |
 | [`inkfoot benchmark`](#inkfoot-benchmark) | Run scenario suites and emit a benchmark JSON artefact. |
 | [`inkfoot diff`](#inkfoot-diff) | Compare two benchmark JSONs and emit a Markdown or JSON report. |
+| [`inkfoot contract`](#inkfoot-contract) | Draft a Token Contract from run history, or check contracts against a benchmark artefact. |
 | [`inkfoot tail`](#inkfoot-tail) | Stream events live as the agent runs. |
 
 The `--db <path>` flag is accepted on commands that read or write
 the SQLite event log: `report`, `tag`, `tail`,
-`rebuild-aggregates`, and `migrate` (where it names the migration
+`rebuild-aggregates`, `contract draft` (where it names the history
+to learn from), and `migrate` (where it names the migration
 *source*). The default location is
 `~/.inkfoot/runs.db`; alternatively set `INKFOOT_HOME=<dir>` to
 relocate the parent directory (both the agent and the CLI must
@@ -291,7 +293,10 @@ committed batch. Re-running after a completed migration is a no-op
 that exits `0`. Quiesce writers to the SQLite file before migrating —
 the copy doesn't pick up rows written mid-flight. The full cutover
 flow lives in
-[Migrating from SQLite](../concepts/postgres.md#migrating-from-sqlite).
+[Migrating from SQLite](../concepts/postgres.md#migrating-from-sqlite),
+and the step-by-step operational checklist — provisioning, backups,
+verification, service supervision, rollback — in the
+[Postgres migration runbook](../operations/postgres-migration.md).
 
 Exit codes: `0` success (or nothing to do), `1` migration error
 (message on stderr), `2` usage error, `130` interrupted (completed
