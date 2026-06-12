@@ -115,6 +115,7 @@ nav:
       - Token Contracts: concepts/token-contracts.md
       - Tracking Runs: concepts/tracking-runs.md
       - Storage & Configuration: concepts/storage.md
+      - Postgres Backend: concepts/postgres.md
       - Performance & Overhead: concepts/performance.md
       - OpenTelemetry: concepts/otel.md
   - Frameworks:

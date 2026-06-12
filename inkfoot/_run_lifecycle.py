@@ -641,20 +641,16 @@ def _mark_abandoned_runs() -> None:
     storage = _STORAGE
     if storage is None:
         return
-    # TODO(future/postgres): the Storage Protocol has no
-    # ``find_runs_with_status(status)`` method yet. Reaching into
-    # SQLiteStorage._conn() works today but a future Postgres
-    # backend will need a Protocol method.
-    try:
-        conn = storage._conn()  # type: ignore[attr-defined]
-    except Exception:  # pragma: no cover — defensive
+    # getattr-guard: third-party Storage implementations written
+    # against the older, narrower Protocol may not have this method;
+    # for them abandonment cleanup is silently skipped rather than
+    # crashing the atexit hook.
+    finder = getattr(storage, "find_runs_with_status", None)
+    if finder is None:
         return
     try:
-        cur = conn.execute(
-            "SELECT id FROM runs WHERE status = 'running'"
-        )
-        abandoned = [row[0] for row in cur.fetchall()]
-    except Exception:  # pragma: no cover
+        abandoned = finder("running")
+    except Exception:  # pragma: no cover — defensive
         return
     for run_id in abandoned:
         try:

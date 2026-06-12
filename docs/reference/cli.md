@@ -8,20 +8,24 @@ the following subcommands:
 | [`inkfoot report`](#inkfoot-report) | Render a single-run attribution + smells, or aggregate across recent runs. |
 | [`inkfoot tag`](#inkfoot-tag) | Attach a tag to a run after it has finished. |
 | [`inkfoot rebuild-aggregates`](#inkfoot-rebuild-aggregates) | Recompute run totals from the event log. |
+| [`inkfoot aggregator-worker`](#inkfoot-aggregator-worker) | Out-of-process aggregation daemon for the Postgres backend. |
+| [`inkfoot migrate`](#inkfoot-migrate) | Copy a SQLite database into Postgres (resumable). |
 | [`inkfoot benchmark`](#inkfoot-benchmark) | Run scenario suites and emit a benchmark JSON artefact. |
 | [`inkfoot diff`](#inkfoot-diff) | Compare two benchmark JSONs and emit a Markdown or JSON report. |
 | [`inkfoot tail`](#inkfoot-tail) | Stream events live as the agent runs. |
 
 The `--db <path>` flag is accepted on commands that read or write
-the SQLite event log: `report`, `tag`, `tail`, and
-`rebuild-aggregates`. The default location is
+the SQLite event log: `report`, `tag`, `tail`,
+`rebuild-aggregates`, and `migrate` (where it names the migration
+*source*). The default location is
 `~/.inkfoot/runs.db`; alternatively set `INKFOOT_HOME=<dir>` to
 relocate the parent directory (both the agent and the CLI must
 see the same value).
 
 `benchmark` runs against an ephemeral, tempdir-scoped database
 created per invocation, and `diff` reads JSON artefacts only, so
-neither accepts `--db`.
+neither accepts `--db`. `aggregator-worker` talks to Postgres, so
+it takes `--dsn` instead.
 
 ## `inkfoot report`
 
@@ -191,6 +195,78 @@ rebuild-aggregates: marked 4271 runs dirty; drained 4271 runs.
 
 The event log is the source of truth — the projection is always
 recomputable from it, so `rebuild-aggregates` is always safe to run.
+
+## `inkfoot aggregator-worker`
+
+Run the out-of-process aggregation daemon for the
+[Postgres backend](../concepts/postgres.md). With Postgres, the
+instrumented processes don't start an in-process aggregator — this
+worker projects `runs.total_*` columns for the whole fleet instead.
+
+```bash
+inkfoot aggregator-worker --dsn postgresql://app@db.internal/inkfoot
+```
+
+| Flag | Purpose |
+|---|---|
+| `--dsn <conninfo>` | Postgres connection string. Defaults to `INKFOOT_PG_DSN`. |
+| `--interval-ms <n>` | Sweep cadence in milliseconds. Defaults to `INKFOOT_AGGREGATOR_INTERVAL_MS` or `500`. |
+| `--once` | Acquire the lock, run a single sweep, and exit. |
+| `--health` | Report the last sweep heartbeat and exit `0` when it is recent (liveness probe). Mutually exclusive with `--once`. |
+| `--max-age-s <n>` | With `--health`: maximum heartbeat age in seconds before the worker is reported stale. Default `60`. |
+
+Each sweep is wrapped in a Postgres advisory lock, so it is safe —
+and useful for availability — to run several workers: one sweeps at
+a time, the rest wait. A worker that dies releases the lock with its
+database session and a standby takes over within about a second.
+
+`--health` reads the heartbeat the worker writes after every sweep:
+
+```
+aggregator-worker: last sweep at 2026-06-12T09:14:03.512Z (2.1s ago), 17 runs swept
+```
+
+Exit codes: `0` healthy, `1` no heartbeat yet or heartbeat older
+than `--max-age-s`, `2` for usage errors (e.g. no DSN provided).
+The daemon itself exits `0` on SIGTERM / SIGINT after finishing the
+in-flight sweep.
+
+## `inkfoot migrate`
+
+Copy a SQLite event log into Postgres — the cutover command for
+moving to the [Postgres backend](../concepts/postgres.md). Progress
+goes to stderr; a summary is printed at the end.
+
+```bash
+inkfoot migrate --to postgres --db ~/.inkfoot/runs.db \
+  --dsn postgresql://app@db.internal/inkfoot
+```
+
+| Flag | Purpose |
+|---|---|
+| `--to postgres` | Migration target. Required; only `postgres` is supported. |
+| `--db <path>` | Source SQLite database. Default `~/.inkfoot/runs.db`. |
+| `--dsn <conninfo>` | Postgres connection string. Defaults to `INKFOOT_PG_DSN`. |
+| `--runs-batch <n>` | Rows per `runs` batch. Default `1000`. |
+| `--events-batch <n>` | Rows per `events` / `event_contents` batch. Default `10000`. |
+
+What it does, in order: applies the Postgres schema, copies `runs`,
+`events`, and `event_contents` in batches, verifies row counts,
+runs `VACUUM ANALYZE`, and renames the source file (plus any
+`-wal` / `-shm` sidecars) to `<name>.migrated`. The source is never
+deleted, and the rename only happens after verification passes.
+
+The copy is **resumable**: batches commit independently, so after an
+interrupt you re-run the same command and it continues from the last
+committed batch. Re-running after a completed migration is a no-op
+that exits `0`. Quiesce writers to the SQLite file before migrating —
+the copy doesn't pick up rows written mid-flight. The full cutover
+flow lives in
+[Migrating from SQLite](../concepts/postgres.md#migrating-from-sqlite).
+
+Exit codes: `0` success (or nothing to do), `1` migration error
+(message on stderr), `2` usage error, `130` interrupted (completed
+batches are kept).
 
 ## `inkfoot benchmark`
 

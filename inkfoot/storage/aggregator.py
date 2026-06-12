@@ -37,7 +37,7 @@ import time
 from typing import TYPE_CHECKING, Any, Mapping
 
 if TYPE_CHECKING:  # pragma: no cover
-    from inkfoot.storage.sqlite import SQLiteStorage
+    from inkfoot.storage import Storage
 
 
 _LOG = logging.getLogger("inkfoot.aggregator")
@@ -152,7 +152,7 @@ class AggregatorWorker:
 
     def __init__(
         self,
-        storage: "SQLiteStorage",
+        storage: "Storage",
         *,
         interval_seconds: float | None = None,
         batch_size: int = _DEFAULT_BATCH,
@@ -211,7 +211,7 @@ class AggregatorWorker:
             self.drain_once()
         except Exception:
             # The most likely cause is the storage having been closed
-            # already (RuntimeError from SQLiteStorage._conn). Log
+            # already (backends raise RuntimeError once closed). Log
             # once at WARNING and proceed — the daemon thread is
             # already joined so there's nothing to clean up.
             _LOG.warning(

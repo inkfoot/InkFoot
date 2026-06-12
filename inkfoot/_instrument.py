@@ -190,12 +190,24 @@ def instrument(
             sdks=sdks,
         )
 
-        # Start the aggregator.
-        from inkfoot.storage.aggregator import AggregatorWorker  # noqa: PLC0415
+        # Start the aggregator — unless the backend declares that an
+        # external process owns aggregation (the Postgres backend
+        # does: its sweeps are coordinated across processes with an
+        # advisory lock by the ``inkfoot aggregator-worker`` CLI).
+        if getattr(raw_storage, "external_aggregator", False):
+            _LOG.info(
+                "storage backend uses an external aggregator; "
+                "in-process worker not started — run "
+                "'inkfoot aggregator-worker' to project totals"
+            )
+        else:
+            from inkfoot.storage.aggregator import (  # noqa: PLC0415
+                AggregatorWorker,
+            )
 
-        worker = AggregatorWorker(storage)
-        worker.start()
-        _WORKER = worker
+            worker = AggregatorWorker(storage)
+            worker.start()
+            _WORKER = worker
 
         # OTel ingest receiver: bound to the *unwrapped*
         # storage so spans dropped in by external collectors don't

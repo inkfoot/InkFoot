@@ -12,6 +12,10 @@ Currently shipping subcommands:
   artefact comparison for the CI cost-review workflow.
 * ``inkfoot tail`` — live event stream for debugging an agent
   while it runs.
+* ``inkfoot aggregator-worker`` — out-of-process aggregation daemon
+  for the Postgres backend.
+* ``inkfoot migrate`` — copy a SQLite database into Postgres
+  (resumable; renames the source when done).
 """
 
 from __future__ import annotations
@@ -22,9 +26,11 @@ from typing import Sequence
 
 from inkfoot._version import __version__
 from inkfoot.cli import (
+    aggregator_worker,
     benchmark,
     contract,
     diff,
+    migrate,
     rebuild_aggregates,
     report,
     tag,
@@ -233,6 +239,105 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     tl.set_defaults(func=tail.run)
+
+    agg = subparsers.add_parser(
+        "aggregator-worker",
+        help=(
+            "Run the out-of-process aggregation worker for the "
+            "Postgres backend (advisory-lock coordinated)."
+        ),
+    )
+    agg.add_argument(
+        "--dsn",
+        default=None,
+        help=(
+            "Postgres connection string. Defaults to the "
+            "INKFOOT_PG_DSN environment variable."
+        ),
+    )
+    agg.add_argument(
+        "--interval-ms",
+        type=int,
+        default=None,
+        help=(
+            "Sweep interval in milliseconds. Defaults to "
+            "INKFOOT_AGGREGATOR_INTERVAL_MS or 500."
+        ),
+    )
+    agg_mode = agg.add_mutually_exclusive_group()
+    agg_mode.add_argument(
+        "--once",
+        action="store_true",
+        help="Acquire the lock, run a single sweep, and exit.",
+    )
+    agg_mode.add_argument(
+        "--health",
+        action="store_true",
+        help=(
+            "Report the last sweep heartbeat and exit 0 when it is "
+            "recent (liveness probe)."
+        ),
+    )
+    agg.add_argument(
+        "--max-age-s",
+        type=float,
+        default=aggregator_worker.DEFAULT_HEALTH_MAX_AGE_S,
+        help=(
+            "With --health: maximum heartbeat age in seconds before "
+            "the worker is reported stale (default: "
+            f"{aggregator_worker.DEFAULT_HEALTH_MAX_AGE_S:.0f})."
+        ),
+    )
+    agg.set_defaults(func=aggregator_worker.run)
+
+    mig = subparsers.add_parser(
+        "migrate",
+        help=(
+            "Copy a SQLite inkfoot database into Postgres. Resumable; "
+            "renames the source file to <name>.migrated when done."
+        ),
+    )
+    mig.add_argument(
+        "--to",
+        required=True,
+        choices=["postgres"],
+        help="Migration target. Only 'postgres' is supported.",
+    )
+    mig.add_argument(
+        "--db",
+        default=None,
+        help=(
+            "Path to the source SQLite DB. Defaults to "
+            "~/.inkfoot/runs.db."
+        ),
+    )
+    mig.add_argument(
+        "--dsn",
+        default=None,
+        help=(
+            "Postgres connection string. Defaults to the "
+            "INKFOOT_PG_DSN environment variable."
+        ),
+    )
+    mig.add_argument(
+        "--runs-batch",
+        type=int,
+        default=migrate.DEFAULT_RUNS_BATCH,
+        help=(
+            "Rows per runs batch (default: "
+            f"{migrate.DEFAULT_RUNS_BATCH})."
+        ),
+    )
+    mig.add_argument(
+        "--events-batch",
+        type=int,
+        default=migrate.DEFAULT_EVENTS_BATCH,
+        help=(
+            "Rows per events/event_contents batch (default: "
+            f"{migrate.DEFAULT_EVENTS_BATCH})."
+        ),
+    )
+    mig.set_defaults(func=migrate.run)
 
     ct = subparsers.add_parser(
         "contract",

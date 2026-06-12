@@ -27,6 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
+from inkfoot.storage import PROJECTION_COLUMNS
 from inkfoot.storage.migrations import apply_migrations, current_schema_version
 
 
@@ -41,19 +42,8 @@ _PRAGMAS = (
 
 
 # Subset of ``runs.*`` columns the projection layer is allowed to set.
-# Centralised so :meth:`write_totals` and the legacy
-# :meth:`update_aggregates` share one allow-list.
-_PROJECTION_COLUMNS = frozenset(
-    {
-        "total_input_tokens",
-        "total_output_tokens",
-        "total_cache_read_tokens",
-        "total_cache_creation_tokens",
-        "total_nanodollars",
-        "outcome",
-        "quality_score",
-    }
-)
+# Shared with the Postgres backend so the allow-list can't drift.
+_PROJECTION_COLUMNS = PROJECTION_COLUMNS
 
 
 def _default_db_path() -> Path:
@@ -503,3 +493,10 @@ class SQLiteStorage:
             rows = cur.fetchall()
         for row in rows:
             yield dict(row)
+
+    def find_runs_with_status(self, status: str) -> list[str]:
+        with self._locked_conn() as conn:
+            cur = conn.execute(
+                "SELECT id FROM runs WHERE status = ?", (status,)
+            )
+            return [row[0] for row in cur.fetchall()]
