@@ -1,0 +1,103 @@
+{
+  "description": "ChatOpenAI (Chat Completions) multi-turn follow-up: usage_metadata is present alongside the legacy response_metadata.token_usage block (usage_metadata wins), tools use the nested function shape, and prior turns land in memory.",
+  "request": {
+    "raw_provider": "openai",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are a travel weather assistant. Answer briefly."
+      },
+      {
+        "type": "human",
+        "content": "What's the weather like in Lisbon in May?"
+      },
+      {
+        "type": "ai",
+        "content": "Lisbon in May is warm and dry, around 22C with light Atlantic breezes."
+      },
+      {
+        "type": "human",
+        "content": "And in Tokyo over the same period?"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a city.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string" }
+            },
+            "required": ["city"]
+          }
+        }
+      }
+    ]
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "content": "Tokyo in May is mild, around 20C, with occasional light rain.",
+            "tool_calls": [],
+            "usage_metadata": {
+              "input_tokens": 220,
+              "output_tokens": 40,
+              "total_tokens": 260,
+              "input_token_details": {
+                "audio": 0,
+                "cache_read": 0
+              },
+              "output_token_details": {
+                "audio": 0,
+                "reasoning": 0
+              }
+            },
+            "response_metadata": {
+              "token_usage": {
+                "prompt_tokens": 220,
+                "completion_tokens": 40,
+                "total_tokens": 260
+              },
+              "model_name": "gpt-4o-mini",
+              "model_provider": "openai",
+              "system_fingerprint": "fp_fixture",
+              "id": "chatcmpl-fixture-openai-chat",
+              "finish_reason": "stop",
+              "logprobs": null
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "response_id": "chatcmpl-fixture-openai-chat",
+    "ledger": {
+      "output_tokens": 40,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": ["get_weather"],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens",
+      "memory_tokens"
+    ],
+    "expect_zero": ["tool_result_tokens"]
+  }
+}

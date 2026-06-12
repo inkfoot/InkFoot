@@ -1,0 +1,158 @@
+name: Live LangChain integrations
+
+# Weekly drift check for the LangChain callback handler against the
+# real partner packages and provider endpoints. The unit suite runs
+# on golden fixtures of each integration's normalised response
+# shape; this is where we learn when an upstream release changes
+# that shape. Each leg installs one partner package from PyPI and
+# runs the matching live-marked tests (they skip cleanly when the
+# leg's credentials aren't configured).
+#
+# Every leg reports its outcome to the run's step summary and
+# uploads a results artifact; a failed scheduled run opens (or
+# comments on) a tracking issue so drift doesn't rot silently.
+
+on:
+  schedule:
+    # Mondays 06:47 UTC — off the top of the hour to dodge the
+    # scheduled-job thundering herd, offset from live-tests.yml so
+    # the two suites don't compete for runners.
+    - cron: "47 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-langchain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: ${{ matrix.integration }}
+    runs-on: ubuntu-latest
+    # Scheduled runs only make sense on the canonical repo; forks can
+    # still trigger manually via workflow_dispatch.
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'inkfoot/inkfoot'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - integration: anthropic
+            packages: "langchain-anthropic"
+            marker: live_anthropic
+          - integration: openai
+            packages: "langchain-openai"
+            marker: live_openai
+          - integration: azure
+            packages: "langchain-openai"
+            marker: live_azure
+          - integration: gemini
+            packages: "langchain-google-genai"
+            marker: live_gemini
+          - integration: bedrock
+            packages: "langchain-aws"
+            marker: live_bedrock
+    env:
+      # Live-marked tests skip cleanly when these are unset; supplying
+      # them (when configured) upgrades the weekly run to true
+      # end-to-end coverage.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + partner package
+        id: install
+        # An unresolvable partner package is exactly the drift this
+        # workflow exists to catch — keep going so the status row
+        # still gets written.
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,langchain]" ${{ matrix.packages }}
+
+      - name: Run handler unit + dedup suites
+        id: unit
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          pytest tests/unit/test_langchain_handler_skeleton.py \
+            tests/unit/test_langchain_normalise.py \
+            tests/integration/test_handler_shim_dedup.py \
+            -v --tb=short -rs
+
+      - name: Run live integration tests
+        id: live
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          pytest tests/integration/test_langchain_e2e.py \
+            -m ${{ matrix.marker }} -v --tb=short -rs
+
+      - name: Write status row
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.integration }}"
+            echo ""
+            echo "| step | outcome |"
+            echo "| --- | --- |"
+            echo "| install | ${{ steps.install.outcome }} |"
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| live | ${{ steps.live.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p live-test-results
+          {
+            echo "integration=${{ matrix.integration }}"
+            echo "install=${{ steps.install.outcome }}"
+            echo "unit=${{ steps.unit.outcome }}"
+            echo "live=${{ steps.live.outcome }}"
+          } > "live-test-results/langchain-${{ matrix.integration }}.txt"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-langchain-results-${{ matrix.integration }}
+          path: live-test-results/
+
+      - name: Fail leg if any step failed
+        if: steps.install.outcome != 'success' || steps.unit.outcome != 'success' || steps.live.outcome != 'success'
+        run: exit 1
+
+  report-failure:
+    name: Open tracking issue on failure
+    runs-on: ubuntu-latest
+    needs: integration
+    # Only scheduled failures open an issue — a red manual run is
+    # already in front of whoever dispatched it.
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      issues: write
+    steps:
+      - name: Open (or comment on) the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Weekly live LangChain run failed"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          BODY="The scheduled live LangChain integration run failed. Per-integration status: $RUN_URL"
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$TITLE\" in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

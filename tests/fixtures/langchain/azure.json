@@ -1,0 +1,63 @@
+{
+  "description": "AzureChatOpenAI on an integration version that predates usage_metadata: counters arrive as response_metadata.token_usage with prompt/completion naming, and the azure_openai provider identifier maps onto openai pricing.",
+  "request": {
+    "raw_provider": "azure_openai",
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are an internal helpdesk assistant for weather queries."
+      },
+      {
+        "type": "human",
+        "content": "Will it snow in Oslo tomorrow?"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "content": "Light snow is expected in Oslo tomorrow morning.",
+            "tool_calls": [],
+            "response_metadata": {
+              "token_usage": {
+                "prompt_tokens": 150,
+                "completion_tokens": 30,
+                "total_tokens": 180
+              },
+              "model_name": "gpt-4o",
+              "id": "chatcmpl-fixture-azure",
+              "finish_reason": "stop"
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "response_id": "chatcmpl-fixture-azure",
+    "ledger": {
+      "output_tokens": 30,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": [],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": ["system_static_tokens", "user_input_tokens"],
+    "expect_zero": [
+      "memory_tokens",
+      "tool_result_tokens",
+      "tool_schema_tokens"
+    ]
+  }
+}

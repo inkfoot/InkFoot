@@ -57,10 +57,10 @@ Inkfoot does four things:
     Task-oriented walkthroughs: find your most expensive agent,
     spot cache-miss patterns, set up CI cost review.
 
--   :material-application-cog-outline: __[Framework guides](frameworks/langgraph.md)__
+-   :material-application-cog-outline: __[Framework guides](frameworks/langchain.md)__
 
-    LangGraph, OpenAI Agents SDK, Anthropic Agent SDK, and the
-    raw provider SDKs.
+    LangChain, LangGraph, OpenAI Agents SDK, Anthropic Agent
+    SDK, and the raw provider SDKs.
 
 -   :material-cloud-outline: __[Providers](providers.md)__
 

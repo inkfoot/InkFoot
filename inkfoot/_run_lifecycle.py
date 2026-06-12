@@ -36,7 +36,9 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import threading
 import time
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ulid import ULID
@@ -591,6 +593,90 @@ def agent_run(
 
 
 # ----------------------------------------------------------------------
+# Cross-layer emit dedup
+# ----------------------------------------------------------------------
+
+# One LLM call can be observed twice: once by a raw-SDK shim and once
+# by the LangChain callback handler (LangChain's provider packages
+# call the same SDKs the shims patch). Both observations carry the
+# same provider response id, so the emit path records
+# ``(run_id, response_id)`` here before writing and skips the second
+# sighting. Per-run sets are LRU-bounded and released with the rest
+# of the run state.
+_dedup_lock = threading.Lock()
+_emitted_response_ids: dict[str, OrderedDict[str, None]] = {}
+_EMITTED_RESPONSE_IDS_PER_RUN = 1000
+
+
+def _record_emitted_response_id(run_id: str, response_id: str) -> bool:
+    """Atomically record that ``response_id`` was emitted for
+    ``run_id``. Returns ``True`` on first sighting (caller should
+    emit) and ``False`` when the id was already recorded (caller
+    should skip — another layer got there first)."""
+    with _dedup_lock:
+        seen = _emitted_response_ids.setdefault(run_id, OrderedDict())
+        if response_id in seen:
+            seen.move_to_end(response_id)
+            return False
+        seen[response_id] = None
+        while len(seen) > _EMITTED_RESPONSE_IDS_PER_RUN:
+            seen.popitem(last=False)
+        return True
+
+
+def _drop_emitted_response_ids(run_id: str) -> None:
+    """Release the dedup set for ``run_id``. Idempotent."""
+    with _dedup_lock:
+        _emitted_response_ids.pop(run_id, None)
+
+
+# Failed calls carry no provider response id, so the error-path dedup
+# keys on the exception *object* instead: the raw-SDK shim records the
+# exception it caught, and the handler's later sighting of the same
+# propagating exception — or of a partner-package wrapper around it —
+# is matched through the ``__cause__``/``__context__`` chain. ``id()``
+# alone could collide once a collected exception's address is reused,
+# so keys pair the id with the type's qualname. A failure raised above
+# the SDK never reaches the shim, records nothing here, and the
+# handler's event passes through.
+_emitted_error_keys: dict[str, OrderedDict[tuple[int, str], None]] = {}
+_EMITTED_ERRORS_PER_RUN = 200
+_ERROR_CHAIN_MAX_DEPTH = 16
+
+
+def _record_emitted_error(run_id: str, exc: BaseException) -> bool:
+    """Atomically record that ``exc`` was emitted as a failure event
+    for ``run_id``. Returns ``True`` on first sighting (caller should
+    emit) and ``False`` when this exception — or one in its
+    cause/context chain — was already recorded (caller should skip)."""
+    chain: list[tuple[int, str]] = []
+    seen_ids: set[int] = set()
+    node: Optional[BaseException] = exc
+    while (
+        node is not None
+        and id(node) not in seen_ids
+        and len(chain) < _ERROR_CHAIN_MAX_DEPTH
+    ):
+        seen_ids.add(id(node))
+        chain.append((id(node), type(node).__qualname__))
+        node = node.__cause__ or node.__context__
+    with _dedup_lock:
+        seen = _emitted_error_keys.setdefault(run_id, OrderedDict())
+        if any(key in seen for key in chain):
+            return False
+        seen[chain[0]] = None
+        while len(seen) > _EMITTED_ERRORS_PER_RUN:
+            seen.popitem(last=False)
+        return True
+
+
+def _drop_emitted_errors(run_id: str) -> None:
+    """Release the error-dedup set for ``run_id``. Idempotent."""
+    with _dedup_lock:
+        _emitted_error_keys.pop(run_id, None)
+
+
+# ----------------------------------------------------------------------
 # Per-run state cleanup
 # ----------------------------------------------------------------------
 
@@ -626,6 +712,8 @@ def _release_run_state(run_id: str) -> None:
         _LOG.warning(
             "_drop_run_state failed for %s", run_id, exc_info=True
         )
+    _drop_emitted_response_ids(run_id)
+    _drop_emitted_errors(run_id)
 
 
 # ----------------------------------------------------------------------

@@ -33,7 +33,13 @@ stays in lockstep with the runtime contract.
 
 Per-framework adapters live under their own modules. Import the
 namespace and call `.instrument(target)` once you've called
-`inkfoot.instrument()` at startup.
+`inkfoot.instrument()` at startup. (The LangChain callback
+handler needs no per-target call — `inkfoot.instrument()`
+registers it globally when `langchain-core` is importable.)
+
+### ::: inkfoot.langchain.instrument
+
+### ::: inkfoot.langchain.InkfootCallbackHandler
 
 ### ::: inkfoot.langgraph.instrument
 

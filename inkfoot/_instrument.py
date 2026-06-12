@@ -5,12 +5,14 @@ Contract:
 1. Detect installed SDKs (or use the explicit list).
 2. For each detected SDK, install its shim (monkey-patch).
    Already-installed shims are a no-op.
-3. Resolve storage (default: ``SQLiteStorage`` at ``~/.inkfoot/runs.db``).
-4. Validate every policy against the active integration pattern's
+3. Register the LangChain callback handler when ``langchain_core``
+   is importable (``langchain="auto"``).
+4. Resolve storage (default: ``SQLiteStorage`` at ``~/.inkfoot/runs.db``).
+5. Validate every policy against the active integration pattern's
    capability matrix; raise ``PolicyNotSupported`` on mismatch.
-5. Register policies in the global ``PolicyRegistry``.
-6. Start the ``AggregatorWorker`` thread.
-7. Install ``atexit`` hook to flush the aggregator + close the DB.
+6. Register policies in the global ``PolicyRegistry``.
+7. Start the ``AggregatorWorker`` thread.
+8. Install ``atexit`` hook to flush the aggregator + close the DB.
 
 **Idempotent**: calling ``instrument()`` twice in the same process
 is a no-op on the second call — the module-level
@@ -24,9 +26,11 @@ with a remediation hint pointing at the docs URL (observe-only policy contract).
 from __future__ import annotations
 
 import atexit
+import importlib.util
 import logging
+import sys
 import threading
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.otel.export import OTLPExporter
@@ -72,6 +76,7 @@ def instrument(
     otel_export_endpoint: Optional[str] = None,
     otel_ingest_port: Optional[int] = None,
     otel_ingest_host: str = "127.0.0.1",
+    langchain: Union[bool, Literal["auto"]] = "auto",
 ) -> None:
     """Install Pattern A monkey-patches for the detected SDKs, start
     the aggregator, and register the supplied policies.
@@ -97,6 +102,11 @@ def instrument(
       receiver listens on ``otel_ingest_host:port`` and translates
       GenAI spans into ``llm_call`` events. Default: off (no port
       opened).
+
+    ``langchain`` controls the LangChain callback handler. The
+    default ``"auto"`` registers it whenever ``langchain_core`` is
+    importable; ``True`` requires it (``ImportError`` with an
+    install hint when missing); ``False`` skips registration.
     """
     global _INSTRUMENTED, _CAPTURE_MODE, _STORAGE, _WORKER
     global _OTEL_INGEST, _OTEL_EXPORTER
@@ -104,6 +114,17 @@ def instrument(
     if capture_mode not in {"metadata", "replay"}:
         raise ValueError(
             f"capture_mode must be 'metadata' or 'replay', not {capture_mode!r}"
+        )
+    # Identity checks: ``1 == True`` would otherwise sneak through a
+    # membership test.
+    if langchain is not True and langchain is not False and langchain != "auto":
+        raise ValueError(
+            f"langchain must be True, False, or 'auto', not {langchain!r}"
+        )
+    if langchain is True and importlib.util.find_spec("langchain_core") is None:
+        raise ImportError(
+            "instrument(langchain=True) requires the langchain-core "
+            "package; install it with: pip install 'inkfoot[langchain]'"
         )
 
     with _INSTRUMENT_LOCK:
@@ -189,6 +210,21 @@ def instrument(
             capture_mode_getter=_capture_mode_getter,
             sdks=sdks,
         )
+
+        # Register the LangChain callback handler so chat-model calls
+        # made through LangChain are captured even where no raw-SDK
+        # shim applies (Bedrock, Vertex, community integrations).
+        # Calls seen by both layers are deduplicated on the provider
+        # response id at emit time.
+        if langchain is True or (
+            langchain == "auto"
+            and importlib.util.find_spec("langchain_core") is not None
+        ):
+            from inkfoot.langchain import (  # noqa: PLC0415
+                instrument as _instrument_langchain,
+            )
+
+            _instrument_langchain()
 
         # Start the aggregator — unless the backend declares that an
         # external process owns aggregation (the Postgres backend
@@ -282,6 +318,18 @@ def shutdown() -> None:
             except Exception:  # pylint: disable=broad-except
                 _LOG.warning("aggregator stop raised", exc_info=True)
             _WORKER = None
+
+        # Deactivate the LangChain handler before storage goes away.
+        # sys.modules guard: never *import* the integration during
+        # teardown — if it was never used there's nothing to undo.
+        lc_mod = sys.modules.get("inkfoot.langchain")
+        if lc_mod is not None:
+            try:
+                lc_mod.uninstrument()
+            except Exception:  # pylint: disable=broad-except
+                _LOG.warning(
+                    "langchain handler deactivate raised", exc_info=True
+                )
 
         try:
             from inkfoot._shim_install import uninstall_shims  # noqa: PLC0415

@@ -105,10 +105,30 @@ def emit_llm_call(
     capture_mode: str,
     translator: Any,
     before_decisions: list["PolicyDecision"],
+    response_id: Optional[str] = None,
 ) -> None:
     """Build the neutral payload and write the event(s) for one
     LLM call. Honors :data:`capture_mode` — replay mode writes the
     sibling ``event_contents`` row.
+
+    One call can be observed by more than one capture layer (a
+    raw-SDK shim *and* the LangChain callback handler). The provider
+    response id — passed as ``response_id`` or read off the response
+    object — is recorded per run before anything is written; a
+    second sighting of the same id skips the emit entirely, so the
+    layer that observed the call first (the shim, which fires inside
+    the SDK call) keeps its richer event. Calls with no extractable
+    id are never deduplicated — fail open, double-count rather than
+    drop.
+
+    Invariant: the gate is first-emit-wins, not directional. "The
+    shim's richer event survives" holds only because the shim emits
+    synchronously inside the SDK call, before the handler's
+    ``on_llm_end``. Any new capture path that emits *later* — for
+    example, recording a streamed call at stream-close — must either
+    preserve shim-before-handler ordering for the same response id
+    or make this gate directional; otherwise the thinner handler
+    event silently wins.
 
     Side-effects:
 
@@ -118,6 +138,28 @@ def emit_llm_call(
     * Optional ``event_contents`` row when ``capture_mode='replay'``.
     """
     from dataclasses import asdict
+
+    dedup_id = response_id or _response_dedup_id(response)
+    if dedup_id:
+        from inkfoot._run_lifecycle import (  # noqa: PLC0415
+            _record_emitted_response_id,
+        )
+
+        first_sighting = safely_run(
+            _record_emitted_response_id,
+            ctx.run_id,
+            dedup_id,
+            fallback=True,
+            hook_label="_record_emitted_response_id",
+        )
+        if not first_sighting:
+            _LOG.debug(
+                "response %s already recorded for run %s; "
+                "skipping duplicate emit",
+                dedup_id,
+                ctx.run_id,
+            )
+            return
 
     state = get_or_create_run_state(ctx.run_id)
     neutral_call = safely_run(
@@ -190,6 +232,25 @@ def emit_llm_call(
     _record_contract_call(ctx, neutral_call)
 
 
+def _response_dedup_id(response: Any) -> Optional[str]:
+    """Best-effort provider response id off a raw SDK response.
+
+    Anthropic ``Message.id`` and OpenAI ``ChatCompletion.id`` (attr
+    or dict key) are the shapes this needs to catch; anything
+    without an id simply opts out of cross-layer dedup."""
+    if response is None:
+        return None
+    if isinstance(response, dict):
+        candidate = response.get("id") or response.get("response_id")
+    else:
+        candidate = getattr(response, "id", None) or getattr(
+            response, "response_id", None
+        )
+    if isinstance(candidate, str) and candidate:
+        return candidate
+    return None
+
+
 def _fold_into_summariser_tokens(neutral_call: Any) -> Any:
     """Re-attribute a summariser helper call's structural input to the
     ledger's ``summariser_tokens`` category.
@@ -244,13 +305,39 @@ def emit_llm_call_error(
     instead of a missing event. The ledger is left at the
     all-zeros default — there's no usage data on a failure.
 
+    Failures carry no provider response id, so the cross-layer
+    dedup here keys on the exception's *identity* instead: the
+    first layer to emit records the exception object per run, and a
+    later sighting of the same exception — or of a wrapper whose
+    ``__cause__``/``__context__`` chain contains it — is skipped.
+    An SDK failure is observed by the shim first (it wraps the SDK
+    call), so its event wins; a failure raised above the SDK never
+    reaches the shim, and the handler's event passes through.
+
     Without this, the runaway-retry-loop smell would under-count
     by exactly the failure rate.
     """
     from dataclasses import asdict
 
+    from inkfoot._run_lifecycle import _record_emitted_error  # noqa: PLC0415
     from inkfoot.ledger import CausalTokenLedger
     from inkfoot.normalise import NeutralCall, NeutralError
+
+    first_sighting = safely_run(
+        _record_emitted_error,
+        ctx.run_id,
+        exc,
+        fallback=True,
+        hook_label="_record_emitted_error",
+    )
+    if not first_sighting:
+        _LOG.debug(
+            "error %s already recorded for run %s; "
+            "skipping duplicate error emit",
+            type(exc).__name__,
+            ctx.run_id,
+        )
+        return
 
     message = ""
     try:

@@ -1,0 +1,91 @@
+{
+  "description": "ChatAnthropic tool call answered from a warm prompt cache: usage_metadata carries input_token_details.cache_read, the response message carries a tool call, and the provider response id sits in response_metadata.",
+  "request": {
+    "raw_provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are a weather assistant. Use the get_weather tool for any forecast question. Keep answers under two sentences."
+      },
+      {
+        "type": "human",
+        "content": "What's the weather in Paris right now?"
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name, e.g. Paris"
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "args": { "city": "Paris" },
+                "id": "toolu_01FixtureAnthropic",
+                "type": "tool_call"
+              }
+            ],
+            "usage_metadata": {
+              "input_tokens": 480,
+              "output_tokens": 60,
+              "total_tokens": 540,
+              "input_token_details": {
+                "cache_read": 320,
+                "cache_creation": 0
+              }
+            },
+            "response_metadata": {
+              "id": "msg_01FixtureAnthropic",
+              "model_name": "claude-haiku-4-5",
+              "model_provider": "anthropic",
+              "stop_reason": "tool_use",
+              "stop_sequence": null
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "response_id": "msg_01FixtureAnthropic",
+    "ledger": {
+      "output_tokens": 60,
+      "cache_read_tokens": 320,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "hit",
+    "tools_offered": ["get_weather"],
+    "tools_called": ["get_weather"],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens"
+    ],
+    "expect_zero": ["memory_tokens", "tool_result_tokens"]
+  }
+}

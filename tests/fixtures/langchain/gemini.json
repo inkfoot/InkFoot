@@ -1,0 +1,80 @@
+{
+  "description": "ChatGoogleGenerativeAI with context caching: google_genai maps onto the gemini provider, cache_read arrives in input_token_details, and the response id rides on the message (no id in response_metadata).",
+  "request": {
+    "raw_provider": "google_genai",
+    "model": "gemini-1.5-flash",
+    "messages": [
+      {
+        "type": "system",
+        "content": "You are a weather assistant grounded in the cached almanac corpus."
+      },
+      {
+        "type": "human",
+        "content": "Summarise the monsoon outlook for Mumbai."
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" }
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "generations": [
+      [
+        {
+          "message": {
+            "type": "ai",
+            "id": "gemini-resp-fixture-1",
+            "content": "The monsoon reaches Mumbai in early June with above-average rainfall expected.",
+            "tool_calls": [],
+            "usage_metadata": {
+              "input_tokens": 180,
+              "output_tokens": 45,
+              "total_tokens": 225,
+              "input_token_details": {
+                "cache_read": 100
+              }
+            },
+            "response_metadata": {
+              "model_name": "gemini-1.5-flash",
+              "model_provider": "google_genai",
+              "finish_reason": "STOP",
+              "safety_ratings": []
+            }
+          }
+        }
+      ]
+    ],
+    "llm_output": {}
+  },
+  "expected": {
+    "provider": "gemini",
+    "model": "gemini-1.5-flash",
+    "response_id": "gemini-resp-fixture-1",
+    "ledger": {
+      "output_tokens": 45,
+      "cache_read_tokens": 100,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "hit",
+    "tools_offered": ["get_weather"],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens"
+    ],
+    "expect_zero": ["memory_tokens", "tool_result_tokens"]
+  }
+}
