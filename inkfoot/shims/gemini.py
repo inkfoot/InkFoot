@@ -92,6 +92,8 @@ class GeminiShim:
     via :meth:`uninstall`. The shim holds references to the original
     method pointers so uninstall is precise."""
 
+    provider = _PROVIDER
+
     def __init__(self, storage: Any, capture_mode_getter: Callable[[], str]) -> None:
         self._storage = storage
         self._capture_mode_getter = capture_mode_getter

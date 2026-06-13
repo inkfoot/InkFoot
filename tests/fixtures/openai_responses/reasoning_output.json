@@ -1,0 +1,61 @@
+{
+  "description": "Reasoning model output: a reasoning item ahead of the message in output[], with the billed thinking tokens reported under output_tokens_details.reasoning_tokens.",
+  "request": {
+    "model": "o1",
+    "instructions": "Reason carefully before answering.",
+    "input": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?"
+  },
+  "response": {
+    "id": "resp_fixture_reasoning",
+    "object": "response",
+    "status": "completed",
+    "model": "o1-2024-12-17",
+    "reasoning": { "effort": "medium", "summary": null },
+    "output": [
+      {
+        "type": "reasoning",
+        "id": "rs_fixture_reasoning",
+        "summary": []
+      },
+      {
+        "type": "message",
+        "id": "msg_fixture_reasoning",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "The ball costs $0.05.",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 52,
+      "input_tokens_details": { "cached_tokens": 0 },
+      "output_tokens": 312,
+      "output_tokens_details": { "reasoning_tokens": 256 },
+      "total_tokens": 364
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "o1",
+    "ledger": {
+      "output_tokens": 312,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 256
+    },
+    "cache_status": "n/a",
+    "tools_offered": [],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": ["system_static_tokens", "user_input_tokens"],
+    "expect_zero": [
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ]
+  }
+}

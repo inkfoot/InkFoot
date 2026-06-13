@@ -26,8 +26,16 @@ your process and patches its client methods. Today's coverage:
 | SDK | Patched methods |
 |---|---|
 | `anthropic` | `Anthropic().messages.create`, `AsyncAnthropic().messages.create` |
-| `openai` | `OpenAI().chat.completions.create`, `AsyncOpenAI().chat.completions.create` |
+| `openai` | `OpenAI().chat.completions.create`, `AsyncOpenAI().chat.completions.create`, `OpenAI().responses.create`, `AsyncOpenAI().responses.create` |
 | `google-generativeai` | `GenerativeModel().generate_content`, `GenerativeModel().generate_content_async` |
+
+Both OpenAI call surfaces — Chat Completions and the Responses
+API — install together whenever `openai` is importable. On an
+older `openai` build without the Responses API, the Responses
+patch is quietly skipped and Chat Completions still installs.
+Azure clients (`AzureOpenAI`, `AsyncAzureOpenAI`) route through
+the same classes, so Azure calls on either surface are captured
+without extra setup.
 
 Bedrock and OpenAI-compatible endpoints are integrated at the
 provider level rather than through a shim — see

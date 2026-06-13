@@ -1,0 +1,112 @@
+{
+  "description": "Multi-item input: a developer-role item folds into the system block, prior turns land in memory, a function_call_output item lands in tool_result, and the final user item is the current turn.",
+  "request": {
+    "model": "gpt-4o",
+    "input": [
+      {
+        "role": "developer",
+        "content": "You are a travel-booking agent. Use tools when asked about availability."
+      },
+      {
+        "role": "user",
+        "content": "Find me a hotel in Lisbon for the first week of June."
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Let me check availability in Lisbon for those dates."
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "id": "fc_fixture_prior",
+        "call_id": "call_fixture_prior",
+        "name": "search_hotels",
+        "arguments": "{\"city\":\"Lisbon\",\"week\":\"2026-06-01\"}",
+        "status": "completed"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_fixture_prior",
+        "output": "Hotel Mar Azul: 5 rooms free, EUR 140/night. Casa do Rio: 2 rooms free, EUR 95/night."
+      },
+      {
+        "role": "user",
+        "content": "Book the cheaper one, please."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "name": "search_hotels",
+        "description": "Search hotel availability for a city and week.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" },
+            "week": { "type": "string" }
+          },
+          "required": ["city", "week"]
+        }
+      },
+      {
+        "type": "function",
+        "name": "book_hotel",
+        "description": "Book a named hotel.",
+        "parameters": {
+          "type": "object",
+          "properties": { "hotel": { "type": "string" } },
+          "required": ["hotel"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "id": "resp_fixture_multi_item",
+    "object": "response",
+    "status": "completed",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "function_call",
+        "id": "fc_fixture_book",
+        "call_id": "call_fixture_book",
+        "name": "book_hotel",
+        "arguments": "{\"hotel\":\"Casa do Rio\"}",
+        "status": "completed"
+      }
+    ],
+    "usage": {
+      "input_tokens": 410,
+      "input_tokens_details": { "cached_tokens": 0 },
+      "output_tokens": 18,
+      "output_tokens_details": { "reasoning_tokens": 0 },
+      "total_tokens": 428
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "ledger": {
+      "output_tokens": 18,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": ["search_hotels", "book_hotel"],
+    "tools_called": ["book_hotel"],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ],
+    "expect_zero": ["system_dynamic_tokens"]
+  }
+}

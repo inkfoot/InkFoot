@@ -1,0 +1,56 @@
+{
+  "description": "Streamed terminal event: the completed response snapshot carried by the stream's final event. Identical shape to a non-streamed response — usage only arrives here — so streaming capture can feed it through the same translator.",
+  "request": {
+    "model": "gpt-4o",
+    "instructions": "You are a terse assistant.",
+    "input": "Stream me a haiku about autumn.",
+    "stream": true
+  },
+  "response": {
+    "id": "resp_fixture_streamed",
+    "object": "response",
+    "status": "completed",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_fixture_streamed",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Red leaves drift earthward / the kettle hums in the dusk / steam joins the grey sky",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 28,
+      "input_tokens_details": { "cached_tokens": 0 },
+      "output_tokens": 24,
+      "output_tokens_details": { "reasoning_tokens": 0 },
+      "total_tokens": 52
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "ledger": {
+      "output_tokens": 24,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": [],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": ["system_static_tokens", "user_input_tokens"],
+    "expect_zero": [
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ]
+  }
+}

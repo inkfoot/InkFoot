@@ -9,7 +9,7 @@ cover, and how you can verify them yourself.
 
 | Operation | Budget (p95) | Budget (median) | What it covers |
 |---|---|---|---|
-| SDK shim wrapper (metadata mode) | 1 ms | 300 µs | The work the shim does on every `messages.create` / `chat.completions.create` — translator + emit + storage write. |
+| SDK shim wrapper (metadata mode) | 1 ms | 300 µs | The work the shim does on every `messages.create` / `chat.completions.create` / `responses.create` — translator + emit + storage write. |
 | SDK shim wrapper (replay mode) | 5 ms | — | Same as above, plus JSON-serialising the request and response into the `event_contents` table. |
 | Storage event insert | 1 ms | 500 µs | One `INSERT` into `events` plus the dirty-flag update, fsynced via WAL. |
 | Aggregator drain (50 runs) | 50 ms | 50 ms | The background thread that recomputes `runs.total_*` from the event log. |

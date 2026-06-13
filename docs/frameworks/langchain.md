@@ -132,6 +132,11 @@ from the raw provider response — is the one that survives. Calls
 with no extractable response id are never deduplicated: Inkfoot
 fails open and double-counts rather than drops.
 
+The rule covers every shimmed surface, including the OpenAI
+Responses API: a `ChatOpenAI(use_responses_api=True)` call is
+observed by both the Responses shim and the handler under the
+same `resp_...` wire id, and collapses to the shim's event.
+
 Failed calls have no response id, so the error path keys on the
 exception itself: the shim records the exception object it caught,
 and the handler's later sighting of the same exception — or of a

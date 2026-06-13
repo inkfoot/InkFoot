@@ -29,7 +29,9 @@ and `inkfoot.instrument(otel_export_endpoint=...)` mirrors every
 logs) to any collector.
 
 The user-facing surface today: `inkfoot.instrument()` to monkey-
-patch the SDKs (and auto-register the LangChain callback handler
+patch the SDKs — Anthropic, OpenAI on both the Chat Completions
+and Responses APIs, and Gemini — (and auto-register the
+LangChain callback handler
 when `langchain-core` is importable — one handler covers
 ChatAnthropic, ChatOpenAI on both the Chat Completions and
 Responses APIs, AzureChatOpenAI, ChatGoogleGenerativeAI, and

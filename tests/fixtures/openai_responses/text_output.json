@@ -1,0 +1,56 @@
+{
+  "description": "Plain text round-trip: top-level instructions as the system block, a string input as the single user turn, and one message item in output[].",
+  "request": {
+    "model": "gpt-4o",
+    "instructions": "You are a terse assistant.",
+    "input": "Summarise the day's weather in one line."
+  },
+  "response": {
+    "id": "resp_fixture_text",
+    "object": "response",
+    "status": "completed",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_fixture_text",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Mild and dry, light breeze.",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 36,
+      "input_tokens_details": { "cached_tokens": 0 },
+      "output_tokens": 9,
+      "output_tokens_details": { "reasoning_tokens": 0 },
+      "total_tokens": 45
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "ledger": {
+      "output_tokens": 9,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": [],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": ["system_static_tokens", "user_input_tokens"],
+    "expect_zero": [
+      "system_dynamic_tokens",
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ]
+  }
+}

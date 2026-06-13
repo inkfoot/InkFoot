@@ -9,6 +9,8 @@ hierarchy:
 * ``anthropic.resources.messages.AsyncMessages.create`` (async)
 * ``openai.resources.chat.completions.Completions.create``
 * ``openai.resources.chat.completions.AsyncCompletions.create``
+* ``openai.resources.responses.Responses.create``
+* ``openai.resources.responses.AsyncResponses.create``
 * ``google.generativeai.generative_models.GenerativeModel
   .generate_content`` (+ ``generate_content_async``)
 
@@ -110,9 +112,14 @@ def install_fake_anthropic() -> dict:
     }
 
 
-def install_fake_openai() -> dict:
+def install_fake_openai(*, with_responses: bool = True) -> dict:
     """Install a fake ``openai`` module hierarchy and return its
-    call log."""
+    call log.
+
+    ``with_responses=False`` mimics an SDK version that predates the
+    Responses API — ``openai.resources.responses`` is absent, which
+    is exactly the shape the Responses shim must skip gracefully.
+    """
     for key in list(sys.modules):
         if key == "openai" or key.startswith("openai."):
             del sys.modules[key]
@@ -121,8 +128,14 @@ def install_fake_openai() -> dict:
     resources_mod = types.ModuleType("openai.resources")
     chat_mod = types.ModuleType("openai.resources.chat")
     completions_mod = types.ModuleType("openai.resources.chat.completions")
+    responses_mod = types.ModuleType("openai.resources.responses")
 
     calls: list[dict[str, Any]] = []
+    responses_calls: list[dict[str, Any]] = []
+    # Exceptions queued here are raised (FIFO) by the next Responses
+    # ``create`` call — after the attempt is recorded — so tests can
+    # drive the shim's error path offline.
+    responses_errors: list[BaseException] = []
 
     class Completions:
         def create(self, *args: Any, **kwargs: Any) -> Any:
@@ -152,17 +165,70 @@ def install_fake_openai() -> dict:
                 ],
             }
 
+    # Response ids mimic the real API's ``resp_...`` ids and are
+    # unique per call (the emit-path dedup keys on them; a repeated
+    # id would wrongly collapse two distinct calls).
+
+    def _responses_payload(variant: str, kwargs: dict) -> dict:
+        return {
+            "id": f"resp_fake_{len(responses_calls)}",
+            "object": "response",
+            "status": "completed",
+            "model": kwargs.get("model", ""),
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_fake",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "ack" if variant == "sync" else "ack-async",
+                        }
+                    ],
+                }
+            ],
+            "usage": {
+                "input_tokens": 10 if variant == "sync" else 11,
+                "output_tokens": 5 if variant == "sync" else 6,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 15 if variant == "sync" else 17,
+            },
+        }
+
+    class Responses:
+        def create(self, *args: Any, **kwargs: Any) -> Any:
+            responses_calls.append(
+                {"variant": "sync", "args": args, "kwargs": kwargs}
+            )
+            if responses_errors:
+                raise responses_errors.pop(0)
+            return _responses_payload("sync", kwargs)
+
+    class AsyncResponses:
+        async def create(self, *args: Any, **kwargs: Any) -> Any:
+            responses_calls.append(
+                {"variant": "async", "args": args, "kwargs": kwargs}
+            )
+            if responses_errors:
+                raise responses_errors.pop(0)
+            return _responses_payload("async", kwargs)
+
     class _Chat:
         def __init__(self) -> None:
             self.completions = Completions()
 
     class OpenAI:
         """Client facade like the real SDK's — ``client.chat.completions``
-        is an instance of the same ``Completions`` class the shim
-        patches, so client calls flow through the patched method."""
+        and ``client.responses`` are instances of the same classes
+        the shims patch, so client calls flow through the patched
+        methods."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.chat = _Chat()
+            if with_responses:
+                self.responses = Responses()
 
     completions_mod.Completions = Completions
     completions_mod.AsyncCompletions = AsyncCompletions
@@ -176,10 +242,20 @@ def install_fake_openai() -> dict:
     sys.modules["openai.resources.chat"] = chat_mod
     sys.modules["openai.resources.chat.completions"] = completions_mod
 
+    if with_responses:
+        responses_mod.Responses = Responses
+        responses_mod.AsyncResponses = AsyncResponses
+        resources_mod.responses = responses_mod
+        sys.modules["openai.resources.responses"] = responses_mod
+
     return {
         "calls": calls,
+        "responses_calls": responses_calls,
+        "responses_errors": responses_errors,
         "Completions": Completions,
         "AsyncCompletions": AsyncCompletions,
+        "Responses": Responses,
+        "AsyncResponses": AsyncResponses,
         "OpenAI": OpenAI,
         "module": openai_mod,
     }

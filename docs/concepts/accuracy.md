@@ -70,6 +70,7 @@ Common flags:
 | `pricing_snapshot_stale` | The cost row used is older than the pinned freshness window (default 90 days). |
 | `attribution_below_tolerance` | The structural input sum diverged from `usage.input_tokens` by more than the tolerance. |
 | `cache_inferred` | The provider didn't return a cache breakdown; Inkfoot inferred one from a stable-prefix detection. |
+| `responses_shape_unknown:<key>` | An OpenAI Responses API reply carried a top-level key the translator doesn't map yet. The call still translated; the named key was ignored. |
 
 `inkfoot report` surfaces estimation flags in the run footer when
 any flag is set on any call in the run. `inkfoot benchmark`
