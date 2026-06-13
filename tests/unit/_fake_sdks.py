@@ -29,6 +29,334 @@ import types
 from typing import Any
 
 
+# ----------------------------------------------------------------------
+# Streaming fixtures
+# ----------------------------------------------------------------------
+#
+# Streamed calls hand the shim an *iterator* (or a context manager
+# wrapping one) instead of a finished response. The builders below
+# return the provider's on-wire event/chunk sequence as plain dicts —
+# the probes read them through a dict/attr accessor, so dicts are
+# enough to exercise every code path offline.
+
+
+class _AsyncListIterator:
+    """Minimal async iterator over a fixed list — stands in for an
+    SDK's async streaming response."""
+
+    def __init__(self, items: list) -> None:
+        self._it = iter(items)
+
+    def __aiter__(self) -> "_AsyncListIterator":
+        return self
+
+    async def __anext__(self) -> Any:
+        try:
+            return next(self._it)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+def anthropic_stream_events(
+    message_id: str,
+    *,
+    text: str = "ack",
+    input_tokens: int = 10,
+    output_tokens: int = 5,
+    cache_read: int = 0,
+    cache_creation: int = 0,
+    tool_name: str | None = None,
+    with_message_delta: bool = True,
+) -> list[dict]:
+    """Anthropic ``messages.stream`` event sequence. ``message_delta``
+    carries the terminal cumulative output count; omit it
+    (``with_message_delta=False``) to model an abandoned stream that
+    forces a tokeniser estimate."""
+    events: list[dict] = [
+        {
+            "type": "message_start",
+            "message": {
+                "id": message_id,
+                "model": "claude-sonnet-4-6",
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": cache_read,
+                    "cache_creation_input_tokens": cache_creation,
+                },
+            },
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": text},
+        },
+        {"type": "content_block_stop", "index": 0},
+    ]
+    if tool_name is not None:
+        events.extend(
+            [
+                {
+                    "type": "content_block_start",
+                    "index": 1,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": "toolu_fake",
+                        "name": tool_name,
+                        "input": {},
+                    },
+                },
+                {
+                    "type": "content_block_delta",
+                    "index": 1,
+                    "delta": {"type": "input_json_delta", "partial_json": "{}"},
+                },
+                {"type": "content_block_stop", "index": 1},
+            ]
+        )
+    if with_message_delta:
+        events.append(
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn"},
+                "usage": {"output_tokens": output_tokens},
+            }
+        )
+    events.append({"type": "message_stop"})
+    return events
+
+
+def openai_chat_stream_chunks(
+    chunk_id: str,
+    *,
+    text: str = "ack",
+    include_usage: bool = False,
+    prompt_tokens: int = 10,
+    completion_tokens: int = 5,
+    tool_name: str | None = None,
+) -> list[dict]:
+    """OpenAI Chat Completions stream chunks. The trailing usage chunk
+    only appears with ``include_usage=True`` (the caller passed
+    ``stream_options={"include_usage": True}``)."""
+    first_delta: dict[str, Any] = {"role": "assistant", "content": ""}
+    chunks: list[dict] = [
+        {"id": chunk_id, "choices": [{"index": 0, "delta": first_delta}]},
+        {
+            "id": chunk_id,
+            "choices": [{"index": 0, "delta": {"content": text}}],
+        },
+    ]
+    if tool_name is not None:
+        chunks.append(
+            {
+                "id": chunk_id,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_fake",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ],
+            }
+        )
+    chunks.append(
+        {
+            "id": chunk_id,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+    )
+    if include_usage:
+        chunks.append(
+            {
+                "id": chunk_id,
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                },
+            }
+        )
+    return chunks
+
+
+def openai_responses_stream_events(
+    response_id: str,
+    *,
+    text: str = "ack",
+    model: str = "gpt-4o",
+    input_tokens: int = 10,
+    output_tokens: int = 5,
+    with_completed: bool = True,
+) -> list[dict]:
+    """OpenAI Responses stream events. ``response.completed`` carries
+    the finished object (full ``output`` + ``usage``); omit it
+    (``with_completed=False``) to model an abandoned stream."""
+    events: list[dict] = [
+        {"type": "response.created", "response": {"id": response_id}},
+        {"type": "response.output_text.delta", "delta": text},
+    ]
+    if with_completed:
+        events.append(
+            {
+                "type": "response.completed",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "completed",
+                    "model": model,
+                    "output": [
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {"type": "output_text", "text": text}
+                            ],
+                        }
+                    ],
+                    "usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "input_tokens_details": {"cached_tokens": 0},
+                        "output_tokens_details": {"reasoning_tokens": 0},
+                        "total_tokens": input_tokens + output_tokens,
+                    },
+                },
+            }
+        )
+    return events
+
+
+def _accumulate_final_message(events_seen: list[dict], message_id: str) -> dict:
+    """Reduce a list of consumed events into the final-message shape the
+    real ``get_final_message`` returns."""
+    text_parts: list[str] = []
+    usage: dict[str, Any] = {}
+    mid = message_id
+    for event in events_seen:
+        etype = event.get("type")
+        if etype == "message_start":
+            mid = (event.get("message") or {}).get("id", mid)
+            usage.update((event.get("message") or {}).get("usage") or {})
+        elif etype == "content_block_delta":
+            delta = event.get("delta") or {}
+            if delta.get("type") == "text_delta":
+                text_parts.append(delta.get("text", ""))
+        elif etype == "message_delta":
+            usage.update(event.get("usage") or {})
+    return {
+        "id": mid,
+        "content": [{"type": "text", "text": "".join(text_parts)}],
+        "usage": usage,
+    }
+
+
+class _FakeMessageStream:
+    """Sync ``MessageStream`` stand-in. Every consumption mode pulls
+    from ``self._raw_stream`` — the exact contract the shim relies on
+    when it swaps that attribute for an observer."""
+
+    def __init__(self, events: list[dict], message_id: str) -> None:
+        self._raw_stream: Any = iter(events)
+        self._message_id = message_id
+
+    def __iter__(self) -> Any:
+        for event in self._raw_stream:
+            yield event
+
+    @property
+    def text_stream(self) -> Any:
+        for event in self._raw_stream:
+            if event.get("type") == "content_block_delta":
+                delta = event.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    yield delta.get("text", "")
+
+    def get_final_message(self) -> dict:
+        return _accumulate_final_message(
+            list(self._raw_stream), self._message_id
+        )
+
+    def until_done(self) -> "_FakeMessageStream":
+        for _ in self._raw_stream:
+            pass
+        return self
+
+
+class _FakeMessageStreamManager:
+    def __init__(self, events: list[dict], message_id: str) -> None:
+        self._events = events
+        self._message_id = message_id
+
+    def __enter__(self) -> _FakeMessageStream:
+        return _FakeMessageStream(self._events, self._message_id)
+
+    def __exit__(self, *exc: Any) -> bool:
+        return False
+
+
+class _FakeAsyncMessageStream:
+    def __init__(self, events: list[dict], message_id: str) -> None:
+        self._raw_stream: Any = _AsyncListIterator(events)
+        self._message_id = message_id
+
+    def __aiter__(self) -> Any:
+        return self._event_aiter()
+
+    async def _event_aiter(self) -> Any:
+        async for event in self._raw_stream:
+            yield event
+
+    @property
+    def text_stream(self) -> Any:
+        return self._text_aiter()
+
+    async def _text_aiter(self) -> Any:
+        async for event in self._raw_stream:
+            if event.get("type") == "content_block_delta":
+                delta = event.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    yield delta.get("text", "")
+
+    async def get_final_message(self) -> dict:
+        seen: list[dict] = []
+        async for event in self._raw_stream:
+            seen.append(event)
+        return _accumulate_final_message(seen, self._message_id)
+
+    async def until_done(self) -> "_FakeAsyncMessageStream":
+        async for _ in self._raw_stream:
+            pass
+        return self
+
+
+class _FakeAsyncMessageStreamManager:
+    def __init__(self, events: list[dict], message_id: str) -> None:
+        self._events = events
+        self._message_id = message_id
+
+    async def __aenter__(self) -> _FakeAsyncMessageStream:
+        return _FakeAsyncMessageStream(self._events, self._message_id)
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
 def install_fake_anthropic() -> dict:
     """Install a fake ``anthropic`` module hierarchy and return its
     call log. Repeated calls return the same log (idempotent)."""
@@ -57,6 +385,10 @@ def install_fake_anthropic() -> dict:
             calls.append({"variant": "sync", "args": args, "kwargs": kwargs})
             if errors:
                 raise errors.pop(0)
+            if kwargs.get("stream"):
+                return iter(
+                    anthropic_stream_events(f"msg_fake_{len(calls)}")
+                )
             return {
                 "id": f"msg_fake_{len(calls)}",
                 "usage": {
@@ -68,11 +400,26 @@ def install_fake_anthropic() -> dict:
                 "content": [{"type": "text", "text": "ack"}],
             }
 
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            calls.append({"variant": "stream", "args": args, "kwargs": kwargs})
+            if errors:
+                raise errors.pop(0)
+            message_id = f"msg_fake_{len(calls)}"
+            return _FakeMessageStreamManager(
+                anthropic_stream_events(message_id), message_id
+            )
+
     class AsyncMessages:
         async def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "async", "args": args, "kwargs": kwargs})
             if errors:
                 raise errors.pop(0)
+            if kwargs.get("stream"):
+                return _AsyncListIterator(
+                    anthropic_stream_events(
+                        f"msg_fake_{len(calls)}", text="ack-async"
+                    )
+                )
             return {
                 "id": f"msg_fake_{len(calls)}",
                 "usage": {
@@ -83,6 +430,18 @@ def install_fake_anthropic() -> dict:
                 },
                 "content": [{"type": "text", "text": "ack-async"}],
             }
+
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            # Like the real SDK, the async ``stream()`` returns its
+            # manager synchronously; the request fires on ``__aenter__``.
+            calls.append(
+                {"variant": "async-stream", "args": args, "kwargs": kwargs}
+            )
+            message_id = f"msg_fake_{len(calls)}"
+            return _FakeAsyncMessageStreamManager(
+                anthropic_stream_events(message_id, text="ack-async"),
+                message_id,
+            )
 
     class Anthropic:
         """Client facade like the real SDK's — ``client.messages``
@@ -112,6 +471,208 @@ def install_fake_anthropic() -> dict:
     }
 
 
+def _event_type(event: Any) -> Any:
+    return event.get("type") if isinstance(event, dict) else getattr(
+        event, "type", None
+    )
+
+
+def _event_response(event: Any) -> Any:
+    return (
+        event.get("response")
+        if isinstance(event, dict)
+        else getattr(event, "response", None)
+    )
+
+
+# --- OpenAI ``stream()`` helper stand-ins --------------------------------
+#
+# The real ``chat.completions.stream()`` / ``responses.stream()`` helpers
+# don't post on their own — their context manager calls
+# ``self.create(..., stream=True)`` and wraps the returned ``Stream`` in
+# an accumulator that the caller iterates. The shim patches ``create``,
+# so these stand-ins reproduce that routing: ``__enter__`` calls the
+# (patched) ``create`` and the accumulator iterates the returned object.
+# That's the contract the shim relies on instead of patching ``stream()``
+# directly — these fakes lock it offline; the live e2e tests verify it
+# against the real SDK accumulators.
+
+
+class _FakeChatCompletionStream:
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+
+    def __iter__(self) -> Any:
+        for chunk in self._raw:
+            yield chunk
+
+    def __enter__(self) -> "_FakeChatCompletionStream":
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        close = getattr(self._raw, "close", None)
+        if callable(close):
+            close()
+        return False
+
+    def get_final_completion(self) -> None:
+        for _ in self._raw:
+            pass
+
+
+class _FakeChatCompletionStreamManager:
+    def __init__(self, completions: Any, args: tuple, kwargs: dict) -> None:
+        self._completions = completions
+        self._args = args
+        self._kwargs = kwargs
+        self._stream: Any = None
+
+    def __enter__(self) -> _FakeChatCompletionStream:
+        raw = self._completions.create(
+            *self._args, stream=True, **self._kwargs
+        )
+        self._stream = _FakeChatCompletionStream(raw)
+        return self._stream
+
+    def __exit__(self, *exc: Any) -> bool:
+        if self._stream is not None:
+            return self._stream.__exit__(*exc)
+        return False
+
+
+class _FakeAsyncChatCompletionStream:
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+
+    def __aiter__(self) -> Any:
+        return self._gen()
+
+    async def _gen(self) -> Any:
+        async for chunk in self._raw:
+            yield chunk
+
+    async def __aenter__(self) -> "_FakeAsyncChatCompletionStream":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        close = getattr(self._raw, "aclose", None)
+        if callable(close):
+            await close()
+        return False
+
+
+class _FakeAsyncChatCompletionStreamManager:
+    def __init__(self, completions: Any, args: tuple, kwargs: dict) -> None:
+        self._completions = completions
+        self._args = args
+        self._kwargs = kwargs
+        self._stream: Any = None
+
+    async def __aenter__(self) -> _FakeAsyncChatCompletionStream:
+        raw = await self._completions.create(
+            *self._args, stream=True, **self._kwargs
+        )
+        self._stream = _FakeAsyncChatCompletionStream(raw)
+        return self._stream
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+class _FakeResponseStream:
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+        self._final: Any = None
+
+    def __iter__(self) -> Any:
+        for event in self._raw:
+            if _event_type(event) == "response.completed":
+                self._final = _event_response(event)
+            yield event
+
+    def get_final_response(self) -> Any:
+        for _ in self:
+            pass
+        return self._final
+
+    def __enter__(self) -> "_FakeResponseStream":
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        close = getattr(self._raw, "close", None)
+        if callable(close):
+            close()
+        return False
+
+
+class _FakeResponseStreamManager:
+    def __init__(self, responses: Any, args: tuple, kwargs: dict) -> None:
+        self._responses = responses
+        self._args = args
+        self._kwargs = kwargs
+        self._stream: Any = None
+
+    def __enter__(self) -> _FakeResponseStream:
+        raw = self._responses.create(
+            *self._args, stream=True, **self._kwargs
+        )
+        self._stream = _FakeResponseStream(raw)
+        return self._stream
+
+    def __exit__(self, *exc: Any) -> bool:
+        if self._stream is not None:
+            return self._stream.__exit__(*exc)
+        return False
+
+
+class _FakeAsyncResponseStream:
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+        self._final: Any = None
+
+    def __aiter__(self) -> Any:
+        return self._gen()
+
+    async def _gen(self) -> Any:
+        async for event in self._raw:
+            if _event_type(event) == "response.completed":
+                self._final = _event_response(event)
+            yield event
+
+    async def get_final_response(self) -> Any:
+        async for event in self._raw:
+            if _event_type(event) == "response.completed":
+                self._final = _event_response(event)
+        return self._final
+
+    async def __aenter__(self) -> "_FakeAsyncResponseStream":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        close = getattr(self._raw, "aclose", None)
+        if callable(close):
+            await close()
+        return False
+
+
+class _FakeAsyncResponseStreamManager:
+    def __init__(self, responses: Any, args: tuple, kwargs: dict) -> None:
+        self._responses = responses
+        self._args = args
+        self._kwargs = kwargs
+        self._stream: Any = None
+
+    async def __aenter__(self) -> _FakeAsyncResponseStream:
+        raw = await self._responses.create(
+            *self._args, stream=True, **self._kwargs
+        )
+        self._stream = _FakeAsyncResponseStream(raw)
+        return self._stream
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
 def install_fake_openai(*, with_responses: bool = True) -> dict:
     """Install a fake ``openai`` module hierarchy and return its
     call log.
@@ -137,9 +698,19 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
     # drive the shim's error path offline.
     responses_errors: list[BaseException] = []
 
+    def _chat_stream_kwargs(kwargs: dict) -> bool:
+        return bool((kwargs.get("stream_options") or {}).get("include_usage"))
+
     class Completions:
         def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "sync", "args": args, "kwargs": kwargs})
+            if kwargs.get("stream"):
+                return iter(
+                    openai_chat_stream_chunks(
+                        f"chatcmpl_fake_{len(calls)}",
+                        include_usage=_chat_stream_kwargs(kwargs),
+                    )
+                )
             return {
                 "usage": {
                     "prompt_tokens": 10,
@@ -151,9 +722,23 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
                 ],
             }
 
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            # Routes through the (patched) ``create`` like the real SDK.
+            return _FakeChatCompletionStreamManager(self, args, kwargs)
+
     class AsyncCompletions:
         async def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "async", "args": args, "kwargs": kwargs})
+            if kwargs.get("stream"):
+                return _AsyncListIterator(
+                    openai_chat_stream_chunks(
+                        f"chatcmpl_fake_{len(calls)}",
+                        text="ack-async",
+                        include_usage=_chat_stream_kwargs(kwargs),
+                        prompt_tokens=11,
+                        completion_tokens=6,
+                    )
+                )
             return {
                 "usage": {
                     "prompt_tokens": 11,
@@ -164,6 +749,9 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
                     {"message": {"role": "assistant", "content": "ack-async"}}
                 ],
             }
+
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            return _FakeAsyncChatCompletionStreamManager(self, args, kwargs)
 
     # Response ids mimic the real API's ``resp_...`` ids and are
     # unique per call (the emit-path dedup keys on them; a repeated
@@ -204,7 +792,17 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
             )
             if responses_errors:
                 raise responses_errors.pop(0)
+            if kwargs.get("stream"):
+                return iter(
+                    openai_responses_stream_events(
+                        f"resp_fake_{len(responses_calls)}",
+                        model=kwargs.get("model", ""),
+                    )
+                )
             return _responses_payload("sync", kwargs)
+
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            return _FakeResponseStreamManager(self, args, kwargs)
 
     class AsyncResponses:
         async def create(self, *args: Any, **kwargs: Any) -> Any:
@@ -213,7 +811,20 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
             )
             if responses_errors:
                 raise responses_errors.pop(0)
+            if kwargs.get("stream"):
+                return _AsyncListIterator(
+                    openai_responses_stream_events(
+                        f"resp_fake_{len(responses_calls)}",
+                        text="ack-async",
+                        model=kwargs.get("model", ""),
+                        input_tokens=11,
+                        output_tokens=6,
+                    )
+                )
             return _responses_payload("async", kwargs)
+
+        def stream(self, *args: Any, **kwargs: Any) -> Any:
+            return _FakeAsyncResponseStreamManager(self, args, kwargs)
 
     class _Chat:
         def __init__(self) -> None:

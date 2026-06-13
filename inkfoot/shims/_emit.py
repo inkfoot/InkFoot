@@ -106,6 +106,8 @@ def emit_llm_call(
     translator: Any,
     before_decisions: list["PolicyDecision"],
     response_id: Optional[str] = None,
+    skip_dedup: bool = False,
+    extra_estimation_flags: tuple[str, ...] = (),
 ) -> None:
     """Build the neutral payload and write the event(s) for one
     LLM call. Honors :data:`capture_mode` — replay mode writes the
@@ -122,13 +124,20 @@ def emit_llm_call(
     drop.
 
     Invariant: the gate is first-emit-wins, not directional. "The
-    shim's richer event survives" holds only because the shim emits
-    synchronously inside the SDK call, before the handler's
-    ``on_llm_end``. Any new capture path that emits *later* — for
-    example, recording a streamed call at stream-close — must either
-    preserve shim-before-handler ordering for the same response id
-    or make this gate directional; otherwise the thinner handler
-    event silently wins.
+    shim's richer event survives" holds because the shim records the
+    id *before* the handler's ``on_llm_end``. For a non-streaming
+    call that is automatic — the shim emits synchronously inside the
+    SDK call. A streamed call's event is only complete at
+    stream-close, which can land *after* ``on_llm_end``; the
+    streaming recorder therefore *claims* the id at the first chunk
+    that exposes it (always before the handler runs) and then emits
+    with ``skip_dedup=True``, so the gate stays effectively
+    directional without this function needing to know who is calling.
+
+    ``extra_estimation_flags`` are merged onto the translated event,
+    order-preserving and de-duplicated — the streaming path uses them
+    to mark a tokeniser-estimated output (``stream_no_usage`` /
+    ``stream_options_off``).
 
     Side-effects:
 
@@ -139,27 +148,28 @@ def emit_llm_call(
     """
     from dataclasses import asdict
 
-    dedup_id = response_id or _response_dedup_id(response)
-    if dedup_id:
-        from inkfoot._run_lifecycle import (  # noqa: PLC0415
-            _record_emitted_response_id,
-        )
-
-        first_sighting = safely_run(
-            _record_emitted_response_id,
-            ctx.run_id,
-            dedup_id,
-            fallback=True,
-            hook_label="_record_emitted_response_id",
-        )
-        if not first_sighting:
-            _LOG.debug(
-                "response %s already recorded for run %s; "
-                "skipping duplicate emit",
-                dedup_id,
-                ctx.run_id,
+    if not skip_dedup:
+        dedup_id = response_id or _response_dedup_id(response)
+        if dedup_id:
+            from inkfoot._run_lifecycle import (  # noqa: PLC0415
+                _record_emitted_response_id,
             )
-            return
+
+            first_sighting = safely_run(
+                _record_emitted_response_id,
+                ctx.run_id,
+                dedup_id,
+                fallback=True,
+                hook_label="_record_emitted_response_id",
+            )
+            if not first_sighting:
+                _LOG.debug(
+                    "response %s already recorded for run %s; "
+                    "skipping duplicate emit",
+                    dedup_id,
+                    ctx.run_id,
+                )
+                return
 
     state = get_or_create_run_state(ctx.run_id)
     neutral_call = safely_run(
@@ -177,6 +187,11 @@ def emit_llm_call(
         # rather than write a partial row.
         _LOG.warning("translator returned None for run %s; skipping emit", ctx.run_id)
         return
+
+    if extra_estimation_flags:
+        neutral_call = _merge_estimation_flags(
+            neutral_call, extra_estimation_flags
+        )
 
     if ctx.metadata.get(SUMMARISER_CALL_METADATA_KEY):
         neutral_call = _fold_into_summariser_tokens(neutral_call)
@@ -249,6 +264,21 @@ def _response_dedup_id(response: Any) -> Optional[str]:
     if isinstance(candidate, str) and candidate:
         return candidate
     return None
+
+
+def _merge_estimation_flags(neutral_call: Any, extra: tuple[str, ...]) -> Any:
+    """Append ``extra`` flags to a translated event, preserving order
+    and dropping anything already present (a category the translator
+    flagged shouldn't appear twice)."""
+    from dataclasses import replace
+
+    merged = list(neutral_call.estimation_flags)
+    seen = set(merged)
+    for flag in extra:
+        if flag not in seen:
+            merged.append(flag)
+            seen.add(flag)
+    return replace(neutral_call, estimation_flags=tuple(merged))
 
 
 def _fold_into_summariser_tokens(neutral_call: Any) -> Any:
