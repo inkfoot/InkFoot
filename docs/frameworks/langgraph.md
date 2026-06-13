@@ -12,11 +12,22 @@ it.
 pip install "inkfoot[langgraph]"
 ```
 
-The `[langgraph]` extra pulls the matching LangGraph peer
-dependency. Pin a specific version of LangGraph in your own
-`pyproject.toml` if you want hermetic installs; Inkfoot's
-adapter is forward-compatible across LangGraph's documented
-minor releases.
+The `[langgraph]` extra requires `langgraph>=0.2` and installs the
+latest release by default. The adapter is duck-typed against the
+LangGraph surface: it detects either node-registry layout (the plain
+dict and the reworked 1.x compiled-graph), descends into each node's
+`RunnableCallable` to wrap the underlying function, and scopes the
+sync, async, and streaming entry points. A CI matrix installs and runs
+the adapter suite against real **0.3.x** and **1.0.x** releases. Pin a
+specific version of LangGraph in your own `pyproject.toml` if you want
+hermetic installs.
+
+!!! note "Supported versions"
+    `langgraph>=0.2`, with the 0.3.x and 1.0.x lines exercised against
+    real releases in CI. Newer 1.x releases are expected to work; if an
+    upstream change breaks attribution, the adapter fails open — your
+    graph keeps running and the run is still scoped, you just lose
+    per-node metadata until the adapter catches up.
 
 ## Instrument
 

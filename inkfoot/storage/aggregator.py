@@ -109,6 +109,12 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
         "outcome": None,
     }
     for ev in events:
+        if ev.get("kind") == "embedding_call":
+            # Embeddings are accounted separately and must never fold
+            # into the run's token/cost totals — their payload reuses
+            # the ``input_tokens`` key, which would otherwise be summed
+            # below.
+            continue
         payload_raw = ev.get("payload_json")
         if not payload_raw:
             payload: dict[str, Any] = {}

@@ -114,6 +114,32 @@ PRICING_ND_PER_TOKEN: dict[tuple[str, str], PriceRow] = {
 }
 
 
+# Per-token nanodollar rates for embedding models. Embeddings bill a
+# single input-side rate (there is no output, no cache tier), so a
+# flat ``int`` per token is enough — no :class:`PriceRow`. Sample
+# arithmetic: ``text-embedding-3-small`` lists at $0.02 per million
+# tokens → per-token = 0.02e-6 USD = 20 nanodollars.
+#
+# Unknown ``(provider, model)`` pairs return ``None`` from
+# :func:`estimate_embedding_nanodollars`, mirroring the chat path —
+# the report shows token counts and omits the dollar column.
+EMBEDDING_PRICING_ND_PER_TOKEN: dict[tuple[str, str], int] = {
+    ("openai", "text-embedding-3-small"): 20,
+    ("openai", "text-embedding-3-large"): 130,
+    ("openai", "text-embedding-ada-002"): 100,
+    # Google embedding models. ``text-embedding-004`` ships on the
+    # free tier (priced at zero here so the report shows $0.0000
+    # rather than an unpriced blank); ``gemini-embedding-001`` is the
+    # paid successor.
+    ("gemini", "text-embedding-004"): 0,
+    ("gemini", "gemini-embedding-001"): 150,
+    # Voyage AI — the embedding provider Anthropic points to (the
+    # Anthropic API has no first-party embeddings endpoint).
+    ("voyage", "voyage-3"): 60,
+    ("voyage", "voyage-3-lite"): 20,
+}
+
+
 def _lookup_row(provider: str, model: str) -> Optional[PriceRow]:
     """Exact ``(provider, model)`` row first, then the provider's
     ``"*"`` wildcard row (how OpenAI-compat endpoints price every
@@ -188,6 +214,29 @@ def estimate_nanodollars(
         + ledger.output_tokens * row.output
     )
     return Nanodollar(total)
+
+
+def estimate_embedding_nanodollars(
+    provider: str,
+    model: str,
+    input_tokens: int,
+) -> Optional[Nanodollar]:
+    """Estimate the billed cost of one embedding call in nanodollars.
+
+    Embeddings price a single input rate — no output, no cache tiers
+    — so the estimate is ``input_tokens × rate``. Negative
+    ``input_tokens`` is clamped to zero so a miscounted call never
+    yields a negative cost.
+
+    Returns ``None`` when ``(provider, model)`` is not in
+    :data:`EMBEDDING_PRICING_ND_PER_TOKEN`, so callers fall back to a
+    tokens-only view rather than inventing a price. **Never raises**
+    for unknown models.
+    """
+    rate = EMBEDDING_PRICING_ND_PER_TOKEN.get((provider, model))
+    if rate is None:
+        return None
+    return Nanodollar(max(0, int(input_tokens)) * rate)
 
 
 def revision_date() -> date:

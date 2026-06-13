@@ -37,6 +37,11 @@ Azure clients (`AzureOpenAI`, `AsyncAzureOpenAI`) route through
 the same classes, so Azure calls on either surface are captured
 without extra setup.
 
+`embeddings.create` is **not** patched by default. Opt in with
+`inkfoot.instrument(embeddings=True)` to capture OpenAI embedding
+calls as a [separate event kind](../concepts/embeddings.md),
+accounted apart from the chat ledger.
+
 ### Streaming
 
 Streamed calls are captured the same way as buffered ones — no

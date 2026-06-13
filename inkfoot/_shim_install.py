@@ -43,6 +43,8 @@ def install_shims(
     storage: "Storage",
     capture_mode_getter: Callable[[], str],
     sdks: Optional[list[str]] = None,
+    embeddings: bool = False,
+    langchain_embeddings: bool = False,
 ) -> list[str]:
     """Install whichever SDK shims are available. Returns the list
     of provider names that were actually installed.
@@ -53,8 +55,21 @@ def install_shims(
     (useful for tests). Allow-list keys are provider names
     (``"anthropic"``, ``"openai"``, ``"gemini"``), not PyPI package
     names.
+
+    ``embeddings`` is opt-in (default off). When ``True`` and the
+    OpenAI SDK is in scope, the raw embeddings shim is installed
+    alongside the chat shims so ``embeddings.create`` calls are
+    captured as ``embedding_call`` events.
+
+    ``langchain_embeddings`` (computed by ``instrument`` from the
+    ``embeddings`` and ``langchain`` settings together) installs the
+    LangChain embeddings shim, which patches ``Embeddings`` subclass
+    methods to cover providers with no raw-SDK embeddings shim.
     """
     from inkfoot.shims.anthropic import AnthropicShim  # noqa: PLC0415
+    from inkfoot.shims.embeddings import (  # noqa: PLC0415
+        OpenAIEmbeddingsShim,
+    )
     from inkfoot.shims.gemini import GeminiShim  # noqa: PLC0415
     from inkfoot.shims.openai import OpenAIShim  # noqa: PLC0415
     from inkfoot.shims.openai_responses import (  # noqa: PLC0415
@@ -94,6 +109,13 @@ def install_shims(
         if responses_shim.install():
             _installed.append(responses_shim)
             openai_installed = True
+        # Embeddings are opt-in: only patch ``embeddings.create`` when
+        # the caller asked for it.
+        if embeddings:
+            embeddings_shim = OpenAIEmbeddingsShim(storage)
+            if embeddings_shim.install():
+                _installed.append(embeddings_shim)
+                openai_installed = True
         if openai_installed:
             installed.append("openai")
     if _want("gemini", import_name="google.generativeai"):
@@ -101,6 +123,22 @@ def install_shims(
         if shim.install():
             _installed.append(shim)
             installed.append("gemini")
+
+    # LangChain embeddings: opt-in, and only when LangChain integration
+    # is active (``instrument`` folds the ``langchain`` setting into
+    # ``langchain_embeddings``). Covers embedding providers with no
+    # raw-SDK shim (Gemini, Bedrock, Voyage, …) by patching the
+    # Embeddings subclass methods — LangChain has no embeddings callback
+    # to hook.
+    if langchain_embeddings and _try_import("langchain_core"):
+        from inkfoot.langchain.embeddings import (  # noqa: PLC0415
+            LangChainEmbeddingsShim,
+        )
+
+        lc_embeddings_shim = LangChainEmbeddingsShim(storage)
+        if lc_embeddings_shim.install():
+            _installed.append(lc_embeddings_shim)
+            installed.append("langchain_embeddings")
 
     return installed
 

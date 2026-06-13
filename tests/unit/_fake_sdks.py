@@ -826,6 +826,50 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
         def stream(self, *args: Any, **kwargs: Any) -> Any:
             return _FakeAsyncResponseStreamManager(self, args, kwargs)
 
+    # Embeddings surface. ``embedding_options`` lets a test toggle
+    # whether the response carries provider usage (exercising the
+    # shim's reported-vs-tokeniser-estimate split).
+    embedding_calls: list[dict[str, Any]] = []
+    embedding_options: dict[str, Any] = {
+        "include_usage": True,
+        "prompt_tokens": 7,
+    }
+
+    def _embedding_payload(kwargs: dict) -> dict:
+        inp = kwargs.get("input")
+        if isinstance(inp, str):
+            count = 1
+        elif isinstance(inp, (list, tuple)):
+            count = len(inp) or 1
+        else:
+            count = 1
+        payload: dict[str, Any] = {
+            "object": "list",
+            "model": kwargs.get("model", ""),
+            "data": [
+                {"object": "embedding", "index": i, "embedding": [0.0, 0.1, 0.2]}
+                for i in range(count)
+            ],
+        }
+        if embedding_options.get("include_usage"):
+            pt = int(embedding_options.get("prompt_tokens", 0))
+            payload["usage"] = {"prompt_tokens": pt, "total_tokens": pt}
+        return payload
+
+    class Embeddings:
+        def create(self, *args: Any, **kwargs: Any) -> Any:
+            embedding_calls.append(
+                {"variant": "sync", "args": args, "kwargs": kwargs}
+            )
+            return _embedding_payload(kwargs)
+
+    class AsyncEmbeddings:
+        async def create(self, *args: Any, **kwargs: Any) -> Any:
+            embedding_calls.append(
+                {"variant": "async", "args": args, "kwargs": kwargs}
+            )
+            return _embedding_payload(kwargs)
+
     class _Chat:
         def __init__(self) -> None:
             self.completions = Completions()
@@ -838,13 +882,19 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.chat = _Chat()
+            self.embeddings = Embeddings()
             if with_responses:
                 self.responses = Responses()
+
+    embeddings_mod = types.ModuleType("openai.resources.embeddings")
 
     completions_mod.Completions = Completions
     completions_mod.AsyncCompletions = AsyncCompletions
     chat_mod.completions = completions_mod
     resources_mod.chat = chat_mod
+    embeddings_mod.Embeddings = Embeddings
+    embeddings_mod.AsyncEmbeddings = AsyncEmbeddings
+    resources_mod.embeddings = embeddings_mod
     openai_mod.resources = resources_mod
     openai_mod.OpenAI = OpenAI
 
@@ -852,6 +902,7 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
     sys.modules["openai.resources"] = resources_mod
     sys.modules["openai.resources.chat"] = chat_mod
     sys.modules["openai.resources.chat.completions"] = completions_mod
+    sys.modules["openai.resources.embeddings"] = embeddings_mod
 
     if with_responses:
         responses_mod.Responses = Responses
@@ -863,10 +914,14 @@ def install_fake_openai(*, with_responses: bool = True) -> dict:
         "calls": calls,
         "responses_calls": responses_calls,
         "responses_errors": responses_errors,
+        "embedding_calls": embedding_calls,
+        "embedding_options": embedding_options,
         "Completions": Completions,
         "AsyncCompletions": AsyncCompletions,
         "Responses": Responses,
         "AsyncResponses": AsyncResponses,
+        "Embeddings": Embeddings,
+        "AsyncEmbeddings": AsyncEmbeddings,
         "OpenAI": OpenAI,
         "module": openai_mod,
     }

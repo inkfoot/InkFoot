@@ -29,9 +29,11 @@ from __future__ import annotations
 import asyncio
 import functools
 import hashlib
+import inspect
 import json
 import logging
 import time
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from inkfoot.adapters._registry import AdapterRegistry
@@ -254,16 +256,26 @@ def _emit_lifecycle_event(
 
 
 def _wrap_node(
-    node: Callable[..., Any], node_name: str
+    node: Callable[..., Any], node_name: str, *, force_async: bool = False
 ) -> Callable[..., Any]:
-    """Wrap a node callable (sync or async) so each invocation runs
-    under a :class:`_NodeScope`."""
-    if asyncio.iscoroutinefunction(node):
+    """Wrap a node callable so each invocation runs under a
+    :class:`_NodeScope`.
+
+    ``force_async`` produces an async wrapper even when ``node`` isn't a
+    coroutine function — used for a ``RunnableCallable.afunc`` slot,
+    which LangGraph awaits but which may be a ``partial`` of a sync
+    function (so ``iscoroutinefunction`` is False). The async wrapper
+    awaits the result only when it's actually awaitable, so it's
+    correct for both shapes."""
+    if force_async or asyncio.iscoroutinefunction(node):
 
         @functools.wraps(node)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             with _NodeScope(node_name):
-                return await node(*args, **kwargs)
+                result = node(*args, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
 
         async_wrapper.__inkfoot_wrapped_node__ = node  # type: ignore[attr-defined]
         return async_wrapper
@@ -282,6 +294,12 @@ def _wrap_node(
 # ----------------------------------------------------------------------
 
 
+# Execution entry points wrapped on a compiled graph. Sync + async,
+# unary + streaming. ``getattr``-probed per instance, so a graph that
+# only exposes a subset (or a stub in tests) wraps just what it has.
+_ENTRY_POINTS: tuple[str, ...] = ("invoke", "ainvoke", "stream", "astream")
+
+
 def _wrap_entry(
     method: Callable[..., Any],
     *,
@@ -296,53 +314,98 @@ def _wrap_entry(
     wrapped the call in their own :func:`agent_run` block) we don't
     open a new one — just set the fingerprint on the existing run
     state.
+
+    The streaming entry points (``stream`` / ``astream``) return a
+    lazily-consumed iterator: their nodes only execute as the caller
+    pulls items. So the wrapper must keep the run open *across the
+    whole iteration*, not just the call that builds the iterator —
+    otherwise the run closes early and node events land in a stray
+    ambient run. We drive the iterator inside the ``agent_run`` block
+    for exactly that reason. (LangGraph 1.x reworked ``astream`` into
+    an async generator; the function-shape probes below pick that up.)
     """
+
+    def _open_run():
+        import inkfoot  # noqa: PLC0415
+
+        return inkfoot.agent_run(task=task, metadata={"agent_kind": "langgraph"})
+
+    def _bind_fp(run_id: Optional[str]) -> None:
+        if run_id is not None:
+            _set_fp(run_id, tools_fingerprint)
+
+    # astream (async generator): yield through the iterator inside the
+    # run so every streamed node executes within scope.
+    if inspect.isasyncgenfunction(method):
+
+        @functools.wraps(method)
+        async def async_gen_wrapper(*args: Any, **kwargs: Any) -> Any:
+            from inkfoot._run_context import current_run_id  # noqa: PLC0415
+
+            outer = current_run_id()
+            if outer is not None:
+                _bind_fp(outer)
+                async for item in method(*args, **kwargs):
+                    yield item
+                return
+            async with _open_run():
+                _bind_fp(current_run_id())
+                async for item in method(*args, **kwargs):
+                    yield item
+
+        return async_gen_wrapper
+
     if asyncio.iscoroutinefunction(method):
 
         @functools.wraps(method)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            from inkfoot._run_context import (  # noqa: PLC0415
-                current_run_id,
-                get_or_create_run_state,
-            )
+            from inkfoot._run_context import current_run_id  # noqa: PLC0415
 
             outer = current_run_id()
             if outer is not None:
-                _set_fp(outer, tools_fingerprint)
+                _bind_fp(outer)
                 return await method(*args, **kwargs)
-
-            import inkfoot  # noqa: PLC0415
-
-            async with inkfoot.agent_run(
-                task=task, metadata={"agent_kind": "langgraph"}
-            ):
-                inner = current_run_id()
-                if inner is not None:
-                    _set_fp(inner, tools_fingerprint)
+            async with _open_run():
+                _bind_fp(current_run_id())
                 return await method(*args, **kwargs)
 
         return async_wrapper
 
+    # stream (sync generator): same lazy-iteration concern as astream.
+    if inspect.isgeneratorfunction(method):
+
+        @functools.wraps(method)
+        def gen_wrapper(*args: Any, **kwargs: Any) -> Any:
+            from inkfoot._run_context import current_run_id  # noqa: PLC0415
+
+            outer = current_run_id()
+            if outer is not None:
+                _bind_fp(outer)
+                yield from method(*args, **kwargs)
+                return
+            with _open_run():
+                _bind_fp(current_run_id())
+                yield from method(*args, **kwargs)
+
+        return gen_wrapper
+
     @functools.wraps(method)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        from inkfoot._run_context import (  # noqa: PLC0415
-            current_run_id,
-        )
+        from inkfoot._run_context import current_run_id  # noqa: PLC0415
 
         outer = current_run_id()
         if outer is not None:
-            _set_fp(outer, tools_fingerprint)
+            _bind_fp(outer)
             return method(*args, **kwargs)
-
-        import inkfoot  # noqa: PLC0415
-
-        with inkfoot.agent_run(
-            task=task, metadata={"agent_kind": "langgraph"}
-        ):
-            inner = current_run_id()
-            if inner is not None:
-                _set_fp(inner, tools_fingerprint)
-            return method(*args, **kwargs)
+        with _open_run():
+            _bind_fp(current_run_id())
+            result = method(*args, **kwargs)
+            # A plain method that *returns* a generator (rather than
+            # being a generator function) would otherwise be consumed
+            # after the run closes — drive it inside the scope too.
+            if inspect.isgenerator(result):
+                return list(result)
+            return result
 
     return wrapper
 
@@ -486,7 +549,7 @@ class LangGraphAdapter:
         # __dict__ so the wrapped attribute shadows the class-level
         # method without mutating the class — uninstrument is then
         # ``del instance.invoke`` (which re-exposes the class method).
-        for entry_name in ("invoke", "ainvoke", "stream", "astream"):
+        for entry_name in _ENTRY_POINTS:
             original = getattr(target, entry_name, None)
             if original is None or not callable(original):
                 continue
@@ -497,30 +560,22 @@ class LangGraphAdapter:
             install_attr(target, entry_name, wrapped, restorers)
 
         # 2. Wrap each node function. The compiled-graph shape varies
-        # across LangGraph versions; support the two common attribute
-        # layouts:
-        #   * ``target.nodes`` — dict-like mapping ``node_name → fn``.
-        #   * ``target.builder.nodes`` — same shape on the builder
-        #     side (some CompiledStateGraph variants).
-        # We wrap both in place so however the graph dispatches at
+        # across LangGraph versions; ``_node_holders`` finds every
+        # mapping that holds nodes (``target.nodes``, the builder side,
+        # and 1.x's ``target.graph.nodes``), and ``_wrap_node_in_holder``
+        # handles both the bare-callable and wrapper-object layouts. We
+        # wrap them all in place so however the graph dispatches at
         # runtime, it lands in our wrapper.
         for nodes_holder in _node_holders(target):
             for node_name, node in list(nodes_holder.items()):
-                callable_part, wrapper_factory = _extract_callable(node)
-                if callable_part is None:
+                # Skip LangGraph's internal nodes (``__start__`` /
+                # ``__end__``) — they carry framework plumbing, not user
+                # work, so attributing cost to them would be noise.
+                if _is_internal_node(node_name):
                     continue
-                wrapped_callable = _wrap_node(callable_part, node_name)
-                replacement = wrapper_factory(wrapped_callable)
-                nodes_holder[node_name] = replacement
-                # Capture by default-arg so each lambda closes over the
-                # right variables (Python late-binding hazard otherwise).
-                restorers.append(
-                    (
-                        lambda h=nodes_holder, n=node_name, o=node: h.__setitem__(
-                            n, o
-                        )
-                    )
-                )
+                restore = _wrap_node_in_holder(nodes_holder, node_name, node)
+                if restore is not None:
+                    restorers.append(restore)
 
         instrumentation = _LangGraphInstrumentation(
             self,
@@ -614,51 +669,155 @@ def instrument(
 
 
 def _node_holders(target: Any) -> list[Any]:
-    """Return every dict-like that holds the graph's nodes. Modern
-    LangGraph keeps them on ``target.nodes``; some compiled-graph
-    variants also expose ``target.builder.nodes``."""
+    """Return every mutable mapping that holds the graph's nodes.
+
+    The node registry has moved around across LangGraph versions:
+    the compiled graph exposes it on ``target.nodes``; the builder
+    side lives on ``target.builder.nodes`` (and, in some 1.x layouts,
+    ``target.graph.nodes``). 1.x also swapped the plain ``dict`` for a
+    custom mapping type, so we accept any
+    :class:`~collections.abc.MutableMapping` that supports item
+    assignment rather than requiring ``dict`` exactly — we wrap nodes
+    by reassigning into the mapping, which any ``MutableMapping``
+    supports. De-duplicated by identity so a holder shared across
+    attributes is wrapped once."""
     holders: list[Any] = []
-    nodes = getattr(target, "nodes", None)
-    if isinstance(nodes, dict):
-        holders.append(nodes)
-    builder = getattr(target, "builder", None)
-    if builder is not None:
-        builder_nodes = getattr(builder, "nodes", None)
-        if isinstance(builder_nodes, dict) and builder_nodes is not nodes:
-            holders.append(builder_nodes)
+    seen: list[int] = []
+
+    def _consider(candidate: Any) -> None:
+        if _is_node_mapping(candidate) and id(candidate) not in seen:
+            holders.append(candidate)
+            seen.append(id(candidate))
+
+    _consider(getattr(target, "nodes", None))
+    for parent_attr in ("builder", "graph"):
+        parent = getattr(target, parent_attr, None)
+        if parent is not None:
+            _consider(getattr(parent, "nodes", None))
     return holders
 
 
-def _extract_callable(
-    node: Any,
-) -> tuple[Optional[Callable[..., Any]], Callable[[Callable[..., Any]], Any]]:
-    """LangGraph stores nodes as either:
+def _is_node_mapping(candidate: Any) -> bool:
+    """A node holder we can wrap in place: a mutable mapping exposing
+    ``items()``. Excludes ``None`` and read-only mappings."""
+    return isinstance(candidate, MutableMapping) and hasattr(
+        candidate, "items"
+    )
 
-      * a bare callable, or
-      * a small wrapper object (e.g. ``RunnableLambda``,
-        ``ToolNode``) with the underlying callable on
-        ``.runnable`` / ``.func`` / ``.invoke``.
 
-    Returns ``(callable, factory)``: ``callable`` is the function to
-    wrap; ``factory(new_callable)`` produces the replacement that
-    goes back into the nodes dict (preserving the wrapper object if
-    one was there).
+# A node's underlying user function lives on a ``RunnableCallable``'s
+# ``func`` (sync) / ``afunc`` (async) slots. In 1.x the node held in
+# the registry is a ``PregelNode`` / ``StateNodeSpec`` that *references*
+# that ``RunnableCallable`` via ``bound`` / ``runnable`` (and the same
+# object also appears as the first step of the node's ``RunnableSeq``),
+# so we descend one level to find it. ``func`` / ``afunc`` directly on
+# the node object covers a ``RunnableCallable`` stored as the node and
+# the offline stubs.
+_NODE_FUNC_ATTRS: tuple[str, ...] = ("func", "afunc")
+_NODE_CARRIER_ATTRS: tuple[str, ...] = ("bound", "runnable")
+
+
+def _is_internal_node(node_name: Any) -> bool:
+    """LangGraph reserves dunder-style names (``__start__`` /
+    ``__end__``) for its own plumbing nodes."""
+    return (
+        isinstance(node_name, str)
+        and node_name.startswith("__")
+        and node_name.endswith("__")
+    )
+
+
+def _node_carriers(node: Any) -> list[Any]:
+    """The objects that may carry the user function on ``func`` /
+    ``afunc``: the node itself plus any ``RunnableCallable`` it
+    references via ``bound`` / ``runnable``. De-duplicated by identity
+    so a shared carrier (``PregelNode.bound is StateNodeSpec.runnable``)
+    isn't visited twice within one node."""
+    carriers: list[Any] = []
+    seen: set[int] = set()
+    for candidate in [node] + [getattr(node, a, None) for a in _NODE_CARRIER_ATTRS]:
+        if candidate is None or id(candidate) in seen:
+            continue
+        seen.add(id(candidate))
+        carriers.append(candidate)
+    return carriers
+
+
+def _wrap_node_in_holder(
+    holder: Any, node_name: str, node: Any
+) -> Optional[Callable[[], None]]:
+    """Wrap one node so its execution runs under a :class:`_NodeScope`,
+    returning a callable that fully reverses the wrapping (or ``None``
+    when the node exposes nothing wrappable).
+
+    LangGraph stores a node as either:
+
+      * a bare callable — replace the holder entry outright; or
+      * a wrapper object (``PregelNode`` / ``StateNodeSpec`` /
+        ``RunnableCallable``) whose user function sits on a carrier's
+        ``func`` / ``afunc`` slots.
+
+    The same ``RunnableCallable`` is reachable from several places (the
+    compiled ``PregelNode.bound``, the builder's
+    ``StateNodeSpec.runnable``, and the node's ``RunnableSeq`` first
+    step), so each wrapped slot is tagged and skipped on a second
+    sighting — wrapping is idempotent across holders. Restoration
+    reverses exactly what was changed.
     """
-    if callable(node) and not hasattr(node, "func") and not hasattr(node, "runnable"):
-        return node, lambda new: new
+    # Bare callable (legacy plain-dict graphs + offline stubs): swap
+    # the holder entry. A node object that carries func/afunc/bound/
+    # runnable goes to the carrier path instead.
+    has_carrier = any(
+        hasattr(node, attr)
+        for attr in _NODE_FUNC_ATTRS + _NODE_CARRIER_ATTRS
+    )
+    if callable(node) and not has_carrier:
+        holder[node_name] = _wrap_node(node, node_name)
 
-    for attr in ("func", "runnable"):
-        inner = getattr(node, attr, None)
-        if callable(inner):
-            def _factory(new: Callable[..., Any], attr=attr, node=node) -> Any:
+        def _restore_bare() -> None:
+            holder[node_name] = node
+
+        return _restore_bare
+
+    # Carrier path: wrap func/afunc on the node and on any
+    # RunnableCallable it references. Skip already-wrapped slots so the
+    # shared RunnableCallable isn't double-wrapped (which would emit two
+    # node events per call).
+    originals: list[tuple[Any, str, Any]] = []
+    for carrier in _node_carriers(node):
+        for attr in _NODE_FUNC_ATTRS:
+            inner = getattr(carrier, attr, None)
+            if not callable(inner):
+                continue
+            if getattr(inner, "__inkfoot_wrapped_node__", None) is not None:
+                continue
+            wrapped = _wrap_node(
+                inner, node_name, force_async=(attr == "afunc")
+            )
+            try:
+                setattr(carrier, attr, wrapped)
+            except (AttributeError, TypeError):
+                continue
+            originals.append((carrier, attr, inner))
+
+    if originals:
+        def _restore_attrs() -> None:
+            for carrier, attr, original in originals:
                 try:
-                    setattr(node, attr, new)
-                except (AttributeError, TypeError):
-                    return new
-                return node
+                    setattr(carrier, attr, original)
+                except (AttributeError, TypeError):  # pragma: no cover
+                    pass
 
-            return inner, _factory
+        return _restore_attrs
 
+    # Last resort: a callable wrapper object with no func/afunc carrier
+    # — wrap the object itself through the holder.
     if callable(node):
-        return node, lambda new: new
-    return None, lambda new: new
+        holder[node_name] = _wrap_node(node, node_name)
+
+        def _restore_obj() -> None:
+            holder[node_name] = node
+
+        return _restore_obj
+
+    return None
