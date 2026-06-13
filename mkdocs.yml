@@ -110,6 +110,7 @@ nav:
       - The Causal Token Ledger: concepts/causal-token-ledger.md
       - Cost Smells: concepts/cost-smells.md
       - Cost per Success: concepts/cost-per-success.md
+      - Embeddings: concepts/embeddings.md
       - Accuracy & Estimation: concepts/accuracy.md
       - Observation Policies: concepts/observation-policies.md
       - Modification Policies: concepts/modification-policies.md

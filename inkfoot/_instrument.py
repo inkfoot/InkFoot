@@ -77,6 +77,7 @@ def instrument(
     otel_ingest_port: Optional[int] = None,
     otel_ingest_host: str = "127.0.0.1",
     langchain: Union[bool, Literal["auto"]] = "auto",
+    embeddings: bool = False,
 ) -> None:
     """Install Pattern A monkey-patches for the detected SDKs, start
     the aggregator, and register the supplied policies.
@@ -107,6 +108,13 @@ def instrument(
     default ``"auto"`` registers it whenever ``langchain_core`` is
     importable; ``True`` requires it (``ImportError`` with an
     install hint when missing); ``False`` skips registration.
+
+    ``embeddings`` opts in to embedding-call capture (default off).
+    When ``True``, ``embeddings.create`` calls are recorded as
+    ``embedding_call`` events accounted *separately* from the causal
+    token ledger — they never appear in ``llm_call`` totals or the
+    attribution chart. ``inkfoot report`` surfaces them in their own
+    section below the chart.
     """
     global _INSTRUMENTED, _CAPTURE_MODE, _STORAGE, _WORKER
     global _OTEL_INGEST, _OTEL_EXPORTER
@@ -202,6 +210,14 @@ def instrument(
             enforcer = ContractEnforcer(loaded)
             set_active_enforcer(enforcer, storage)
 
+        # Resolve whether LangChain integration is active — gates both
+        # the chat callback handler and the embeddings shim, so a user
+        # who passes ``langchain=False`` gets neither.
+        langchain_active = langchain is True or (
+            langchain == "auto"
+            and importlib.util.find_spec("langchain_core") is not None
+        )
+
         # Install the SDK shims.
         from inkfoot._shim_install import install_shims  # noqa: PLC0415
 
@@ -209,6 +225,8 @@ def instrument(
             storage=storage,
             capture_mode_getter=_capture_mode_getter,
             sdks=sdks,
+            embeddings=embeddings,
+            langchain_embeddings=embeddings and langchain_active,
         )
 
         # Register the LangChain callback handler so chat-model calls
@@ -216,10 +234,7 @@ def instrument(
         # shim applies (Bedrock, Vertex, community integrations).
         # Calls seen by both layers are deduplicated on the provider
         # response id at emit time.
-        if langchain is True or (
-            langchain == "auto"
-            and importlib.util.find_spec("langchain_core") is not None
-        ):
+        if langchain_active:
             from inkfoot.langchain import (  # noqa: PLC0415
                 instrument as _instrument_langchain,
             )

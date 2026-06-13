@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
 dynamic = ["version"]
@@ -74,7 +75,9 @@ postgres = [
 # stable releases; bump with the per-framework guide page on
 # inkfoot.dev when upstream lands a breaking change.
 langgraph = [
-    "langgraph>=0.2,<0.4",
+    # Validated against the 0.3.x and 1.0.x lines; the duck-typed
+    # adapter tolerates both node/entry-point layouts.
+    "langgraph>=0.2",
 ]
 openai-agents = [
     # OpenAI Agents SDK; package name on PyPI is ``openai-agents``.

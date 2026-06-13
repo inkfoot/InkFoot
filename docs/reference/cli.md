@@ -51,11 +51,17 @@ inkfoot report --run <run-id>
 | `--group-by <field>` | Switch to the per-metadata ledger: `node` (alias for `metadata.node_name`) or any `metadata.<key>`, e.g. `metadata.agent_name` / `metadata.task_name` for a CrewAI crew. |
 | `--show-zero` | Show all fourteen ledger fields including always-zero rows. |
 | `--no-smells` | Skip smell evaluation and hide the smells stanza. Useful when you only want the attribution chart. |
+| `--exclude-embeddings` | Hide the [embeddings](../concepts/embeddings.md) section for a chat-only view. Embeddings are always reported separately from the causal ledger; this drops the section entirely. |
 | `--db <path>` | Override the default database path. |
 
 The smell engine runs by default on every single-run view, so
 the `Smells detected` block below appears any time at least one
 smell fires. Pass `--no-smells` to suppress it.
+
+When embedding capture is enabled (`instrument(embeddings=True)`),
+an "Embeddings (separate accounting)" section renders below the
+chart — separate from the ledger and the headline cost. Pass
+`--exclude-embeddings` for the chat-only view.
 
 Output:
 

@@ -157,11 +157,22 @@ handler records it. Either way, exactly one error event lands.
 The practical upshot: running the handler alongside the shims is
 safe and requires no configuration.
 
+## Embeddings
+
+Inkfoot also captures LangChain embedding calls —
+`OpenAIEmbeddings`, `BedrockEmbeddings`,
+`GoogleGenerativeAIEmbeddings`, `VoyageAIEmbeddings`, and the like —
+when you opt in with `inkfoot.instrument(embeddings=True)`. LangChain
+has no embeddings callback, so this isn't done through the handler:
+Inkfoot wraps the `embed_documents` / `embed_query` methods on the
+`Embeddings` classes directly (the same approach the raw shims take
+with a provider client). They are recorded as a
+[separate event kind](../concepts/embeddings.md), accounted apart from
+the chat ledger, so providers without a raw-SDK embeddings shim are
+still covered. Embedding capture is off by default.
+
 ## Limitations
 
-- **Chat and completion models only.** Embedding calls are not
-  captured yet; the handler's embeddings hooks exist but are
-  inert.
 - **Streaming usage depends on the integration.** The handler
   reads whatever `usage_metadata` the integration attaches at
   the end of the stream; integrations that omit usage on

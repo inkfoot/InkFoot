@@ -131,6 +131,7 @@ def render(
     ledger_totals: dict[str, int],
     smells: Sequence["DetectionResult"],
     show_zero: bool = False,
+    embeddings: Optional[dict[str, Any]] = None,
 ) -> str:
     """Render the single-run report as a string.
 
@@ -138,6 +139,13 @@ def render(
     dict (``SQLiteStorage.get_run`` row), ``ledger_totals`` is the
     per-category nanodollar split from :func:`estimate_per_category`,
     ``smells`` is the engine's per-run detection list.
+
+    ``embeddings`` is the optional summary from
+    :func:`_aggregate_embedding_totals`. When present and non-empty it
+    renders a separate "Embeddings" section below the chart; it is
+    *never* folded into ``ledger_totals`` or the headline cost. Pass
+    ``None`` (the ``--exclude-embeddings`` path) for a chat-only view
+    identical to the pre-embeddings output.
     """
     total_nd = sum(ledger_totals.values())
     if total_nd == 0:
@@ -206,6 +214,9 @@ def render(
                 f"are always-zero in the current implementation — hidden by default)"
             )
 
+    # Embeddings — separate accounting, never folded into the ledger.
+    lines.extend(_render_embeddings_section(embeddings))
+
     # Smells block.
     if smells:
         lines.append("")
@@ -237,6 +248,72 @@ _ALWAYS_ZERO_CATEGORIES = (
     "guardrail_tokens",
     "retry_overhead_tokens",
 )
+
+
+def _render_embeddings_section(
+    embeddings: Optional[dict[str, Any]],
+) -> list[str]:
+    """Render the standalone embeddings block, or an empty list when
+    there's nothing to show. Embeddings are reported *separately* from
+    the causal ledger — their tokens and cost never enter the chart or
+    the headline number above."""
+    if not embeddings or not embeddings.get("count"):
+        return []
+
+    lines = ["", "Embeddings (separate accounting — not part of the ledger above):"]
+    by_model = embeddings.get("by_model") or {}
+    labels = {key: _embedding_label(by_model[key]) for key in by_model}
+    width = max([12] + [len(lbl) for lbl in labels.values()])
+    for key in sorted(by_model, key=lambda k: labels[k]):
+        row = by_model[key]
+        lines.append(f"  {labels[key].ljust(width)}  {_embedding_metrics(row)}")
+    lines.append(
+        f"  {'total'.ljust(width)}  {_embedding_total_metrics(embeddings)}"
+    )
+    return lines
+
+
+def _embedding_label(row: dict[str, Any]) -> str:
+    """``provider/model`` so two providers serving a same-named model
+    don't merge into one ambiguous row."""
+    provider = row.get("provider") or ""
+    model = row.get("model") or ""
+    if provider and model:
+        return f"{provider}/{model}"
+    return model or provider or "(unknown)"
+
+
+def _embedding_metrics(row: dict[str, Any]) -> str:
+    """``N calls · T tokens · $cost`` for one (provider, model) row.
+    A single (provider, model) is uniformly priced or not, so there's
+    no mixed case here — that only arises in the total."""
+    count = int(row.get("count", 0))
+    tokens = int(row.get("input_tokens", 0))
+    call_word = "call" if count == 1 else "calls"
+    if row.get("priced"):
+        cost = format_usd(int(row.get("estimated_nanodollars", 0)), decimals=4)
+    else:
+        cost = "(unpriced)"
+    return f"{count} {call_word} · {tokens:,} tokens · {cost}"
+
+
+def _embedding_total_metrics(summary: dict[str, Any]) -> str:
+    """Total-row metrics. When the run mixes priced and unpriced models
+    the dollar figure covers only the priced calls, so we say so
+    explicitly rather than let it read as the full cost."""
+    count = int(summary.get("count", 0))
+    tokens = int(summary.get("input_tokens", 0))
+    priced_count = int(summary.get("priced_count", 0))
+    call_word = "call" if count == 1 else "calls"
+    if priced_count == 0:
+        cost = "(unpriced)"
+    else:
+        cost = format_usd(
+            int(summary.get("estimated_nanodollars", 0)), decimals=4
+        )
+        if priced_count < count:
+            cost = f"{cost} ({priced_count} of {count} calls priced)"
+    return f"{count} {call_word} · {tokens:,} tokens · {cost}"
 
 
 def _format_list(items: list[str]) -> str:
@@ -302,6 +379,13 @@ def run(args: Any) -> int:
             return 0
 
         ledger_totals = _aggregate_ledger_totals(events)
+        # ``--exclude-embeddings`` gives a chat-only view: skip the
+        # embeddings summary entirely so the output matches a run
+        # captured before embeddings were instrumented.
+        if getattr(args, "exclude_embeddings", False):
+            embeddings = None
+        else:
+            embeddings = _aggregate_embedding_totals(events)
         # ``--no-smells`` is the power-user opt-out for the inline
         # rendering. When set we hand an empty list to the renderer
         # so the stanza disappears (and the cheaper code path skips
@@ -317,6 +401,7 @@ def run(args: Any) -> int:
                 ledger_totals=ledger_totals,
                 smells=smells,
                 show_zero=bool(getattr(args, "show_zero", False)),
+                embeddings=embeddings,
             )
         )
         return 0
@@ -524,6 +609,70 @@ def _aggregate_ledger_totals(
         for name, nd in per_cat.items():
             totals[name] += int(nd)
     return totals
+
+
+def _aggregate_embedding_totals(
+    events: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarise ``embedding_call`` events for the embeddings section.
+
+    Returns ``{"count", "input_tokens", "estimated_nanodollars",
+    "priced", "by_model"}``. ``priced`` is ``True`` when at least one
+    call carried a non-null estimate; a call against an unpriced model
+    still counts toward ``count`` and ``input_tokens``. Returns a
+    zero-count summary when the run has no embedding events."""
+    summary: dict[str, Any] = {
+        "count": 0,
+        "input_tokens": 0,
+        "estimated_nanodollars": 0,
+        "priced": False,
+        "priced_count": 0,
+        "by_model": {},
+    }
+    # Bucketed by (provider, model) — two providers serving a same-named
+    # model stay distinct rows.
+    by_model: dict[tuple[str, str], dict[str, Any]] = summary["by_model"]
+    for ev in events:
+        if not isinstance(ev, dict) or ev.get("kind") != "embedding_call":
+            continue
+        raw = ev.get("payload_json")
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        provider = payload.get("provider") or ""
+        model = payload.get("model") or ""
+        tokens = payload.get("input_tokens")
+        tokens = int(tokens) if isinstance(tokens, int) else 0
+        nd = payload.get("estimated_nanodollars")
+        priced = isinstance(nd, int) and not isinstance(nd, bool)
+        nd_int = nd if priced else 0
+
+        bucket = by_model.setdefault(
+            (provider, model),
+            {
+                "provider": provider,
+                "model": model,
+                "count": 0,
+                "input_tokens": 0,
+                "estimated_nanodollars": 0,
+                "priced": False,
+            },
+        )
+        bucket["count"] += 1
+        bucket["input_tokens"] += tokens
+        bucket["estimated_nanodollars"] += nd_int
+        bucket["priced"] = bucket["priced"] or priced
+
+        summary["count"] += 1
+        summary["input_tokens"] += tokens
+        summary["estimated_nanodollars"] += nd_int
+        summary["priced"] = summary["priced"] or priced
+        if priced:
+            summary["priced_count"] += 1
+    return summary
 
 
 def _render_aggregate(storage: "Storage", args: Any) -> str:

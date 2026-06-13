@@ -348,11 +348,19 @@ class InkfootCallbackHandler(BaseCallbackHandler):
             before_decisions=[],
         )
 
-    # -- embeddings (forward stubs) ----------------------------------------
+    # -- embeddings --------------------------------------------------------
+    #
+    # LangChain has no embeddings callback — the callback manager only
+    # dispatches chat / LLM / tool / retriever events — so these hooks
+    # are never invoked by the framework and are kept inert. Embedding
+    # capture is done by patching the ``Embeddings`` subclass methods
+    # directly (see :mod:`inkfoot.langchain.embeddings`), the same way
+    # the raw-SDK shims patch a provider client.
 
     def on_embeddings_start(self, *args: Any, **kwargs: Any) -> None:
-        """Embedding-call capture is not implemented yet; the hook
-        exists so registration is already in place when it is."""
+        """Inert: LangChain does not dispatch an embeddings callback.
+        Embedding capture lives in
+        :mod:`inkfoot.langchain.embeddings`."""
         return None
 
     def on_embeddings_end(self, *args: Any, **kwargs: Any) -> None:

@@ -124,6 +124,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "for a smell-free attribution view."
         ),
     )
+    rep.add_argument(
+        "--exclude-embeddings",
+        action="store_true",
+        help=(
+            "Hide the embeddings section for a chat-only view. "
+            "Embeddings are always reported separately from the causal "
+            "ledger; this drops the section entirely."
+        ),
+    )
     rep.set_defaults(func=report.run)
 
     tg = subparsers.add_parser(

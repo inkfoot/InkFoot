@@ -12,6 +12,7 @@ import json
 import logging
 import threading
 import time
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Optional
 
 from ulid import ULID  # python-ulid
@@ -245,6 +246,113 @@ def emit_llm_call(
     from inkfoot.contracts.runtime import record_call as _record_contract_call
 
     _record_contract_call(ctx, neutral_call)
+
+
+# Cross-layer embedding dedup signal. One embedding call can be seen
+# by two layers at once: the raw OpenAI shim (``embeddings.create``)
+# and the LangChain embeddings shim (``OpenAIEmbeddings.embed_*``,
+# which calls the same SDK underneath). The raw shim runs *inside* the
+# LangChain method, so it sets this flag when it emits; the LangChain
+# wrapper resets it before the call and skips its own emit if the raw
+# shim already captured the call. The raw layer wins because it has the
+# provider's exact reported usage. A contextvar (not a threadlocal)
+# keeps the signal correct across async embed paths.
+_raw_embedding_captured: ContextVar[bool] = ContextVar(
+    "inkfoot_raw_embedding_captured", default=False
+)
+
+
+def signal_raw_embedding_captured() -> None:
+    """Mark that the raw-SDK embeddings shim emitted for the call
+    currently on the stack. Read by the LangChain embeddings shim to
+    suppress a duplicate emit. No-op outside a LangChain capture
+    scope."""
+    try:
+        _raw_embedding_captured.set(True)
+    except Exception:  # pragma: no cover — defensive
+        pass
+
+
+def raw_embedding_captured_reset(value: bool = False):
+    """Reset the cross-layer signal to ``value`` and return the token
+    for :func:`raw_embedding_captured_restore`. Used by the LangChain
+    embeddings shim to bracket one ``embed_*`` call."""
+    return _raw_embedding_captured.set(value)
+
+
+def raw_embedding_captured_get() -> bool:
+    return _raw_embedding_captured.get()
+
+
+def raw_embedding_captured_restore(token) -> None:
+    try:
+        _raw_embedding_captured.reset(token)
+    except Exception:  # pragma: no cover — defensive
+        pass
+
+
+def emit_embedding_call(
+    *,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    batch_size: int,
+    storage: "Storage",
+    occurred_at: Optional[int] = None,
+    token_count_estimated: bool = False,
+    run_id: Optional[str] = None,
+    signal_raw: bool = False,
+) -> None:
+    """Write one ``embedding_call`` event.
+
+    Embeddings are accounted *separately* from the causal token
+    ledger: this event kind never contributes to ``llm_call`` totals,
+    the per-category attribution chart, or the projected ``runs.total_*``
+    columns (the aggregator skips it). The payload carries the
+    input-token count, the batch size (number of inputs in the call),
+    the resolved provider/model, and an estimated cost in nanodollars
+    (``None`` when the model isn't priced).
+
+    ``token_count_estimated`` records whether the token count came
+    from the tokeniser fallback (the provider didn't report usage) so
+    reports can be honest about approximate numbers.
+
+    ``signal_raw`` is set by the raw-SDK embeddings shim so the
+    LangChain embeddings shim can dedup a call both layers observed.
+
+    Callers wrap this in :func:`safely_run` — a failure here logs and
+    is swallowed, never reaching the user's embeddings call.
+    """
+    from inkfoot.pricing import (  # noqa: PLC0415
+        estimate_embedding_nanodollars,
+    )
+
+    if signal_raw:
+        signal_raw_embedding_captured()
+
+    rid = run_id or ensure_active_run(storage, now_ms=_now_ms())
+    at = occurred_at if occurred_at is not None else _now_ms()
+    safe_input = max(0, int(input_tokens))
+    estimated_nd = estimate_embedding_nanodollars(provider, model, safe_input)
+    payload = {
+        "provider": provider,
+        "model": model,
+        "input_tokens": safe_input,
+        "batch_size": max(0, int(batch_size)),
+        "estimated_nanodollars": (
+            int(estimated_nd) if estimated_nd is not None else None
+        ),
+        "token_count_estimated": bool(token_count_estimated),
+    }
+    storage.insert_event(
+        event_id=str(ULID()),
+        run_id=rid,
+        kind="embedding_call",
+        occurred_at=at,
+        sequence=_next_sequence(rid),
+        payload_json=json.dumps(payload, default=str),
+        capture_mode="metadata",
+    )
 
 
 def _response_dedup_id(response: Any) -> Optional[str]:
