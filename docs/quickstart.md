@@ -41,9 +41,9 @@ inkfoot.instrument()
 
 That single call:
 
-- Monkey-patches `anthropic.Messages.create` (sync + async) and
-  `openai.chat.completions.create` (sync + async). Every LLM call
-  the SDK makes is recorded.
+- Monkey-patches `anthropic.Messages.create`,
+  `openai.chat.completions.create`, and `openai.responses.create`
+  (sync + async). Every LLM call the SDK makes is recorded.
 - Registers the [LangChain callback handler](frameworks/langchain.md)
   when `langchain-core` is importable, so calls made through
   LangChain chat models are captured too (once per call — the

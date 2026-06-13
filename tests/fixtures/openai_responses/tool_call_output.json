@@ -1,0 +1,93 @@
+{
+  "description": "Tool-call output: flat request tools (no nested function dict), two function_call items plus a message in output[], and a cached-prompt read in input_tokens_details.",
+  "request": {
+    "model": "gpt-4o",
+    "instructions": "You are a weather planning assistant.",
+    "input": "Should I pack an umbrella for Seattle and London next week?",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": { "city": { "type": "string" } },
+          "required": ["city"]
+        }
+      },
+      {
+        "type": "function",
+        "name": "get_forecast",
+        "description": "Get the 7-day forecast for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": { "city": { "type": "string" } },
+          "required": ["city"]
+        }
+      }
+    ]
+  },
+  "response": {
+    "id": "resp_fixture_tool_call",
+    "object": "response",
+    "status": "completed",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "function_call",
+        "id": "fc_fixture_1",
+        "call_id": "call_fixture_1",
+        "name": "get_forecast",
+        "arguments": "{\"city\":\"Seattle\"}",
+        "status": "completed"
+      },
+      {
+        "type": "function_call",
+        "id": "fc_fixture_2",
+        "call_id": "call_fixture_2",
+        "name": "get_forecast",
+        "arguments": "{\"city\":\"London\"}",
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "id": "msg_fixture_tool_call",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Checking both forecasts.",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 220,
+      "input_tokens_details": { "cached_tokens": 40 },
+      "output_tokens": 41,
+      "output_tokens_details": { "reasoning_tokens": 0 },
+      "total_tokens": 261
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "ledger": {
+      "output_tokens": 41,
+      "cache_read_tokens": 40,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "hit",
+    "tools_offered": ["get_weather", "get_forecast"],
+    "tools_called": ["get_forecast", "get_forecast"],
+    "priced": true,
+    "expect_positive": [
+      "system_static_tokens",
+      "user_input_tokens",
+      "tool_schema_tokens"
+    ],
+    "expect_zero": ["tool_result_tokens", "memory_tokens"]
+  }
+}

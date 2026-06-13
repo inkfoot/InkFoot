@@ -1,0 +1,70 @@
+{
+  "description": "Image input: a typed input list whose user message mixes an input_text part with an input_image part. The image part contributes no text tokens; the text part still lands in user_input.",
+  "request": {
+    "model": "gpt-4o",
+    "instructions": "Describe images factually.",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "What is in this photograph?"
+          },
+          {
+            "type": "input_image",
+            "image_url": "https://example.com/photo.jpg",
+            "detail": "auto"
+          }
+        ]
+      }
+    ]
+  },
+  "response": {
+    "id": "resp_fixture_image",
+    "object": "response",
+    "status": "completed",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_fixture_image",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "A lighthouse on a rocky shore at dusk.",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 1042,
+      "input_tokens_details": { "cached_tokens": 0 },
+      "output_tokens": 12,
+      "output_tokens_details": { "reasoning_tokens": 0 },
+      "total_tokens": 1054
+    }
+  },
+  "expected": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "ledger": {
+      "output_tokens": 12,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "cache_status": "n/a",
+    "tools_offered": [],
+    "tools_called": [],
+    "priced": true,
+    "expect_positive": ["system_static_tokens", "user_input_tokens"],
+    "expect_zero": [
+      "tool_schema_tokens",
+      "tool_result_tokens",
+      "memory_tokens"
+    ]
+  }
+}

@@ -1,11 +1,23 @@
-"""``OpenAIShim`` — mirror of :class:`AnthropicShim` for the OpenAI
-SDK.
+"""``OpenAIResponsesShim`` — Responses-API sibling of
+:class:`OpenAIShim`.
 
-Wraps ``openai.resources.chat.completions.Completions.create`` and
-``AsyncCompletions.create``. Same lifecycle (install,
-uninstall, sync+async, hook isolation). The translator is the
-OpenAI one; everything else flows through the shared
-:mod:`inkfoot.shims._emit` pipeline.
+Wraps ``openai.resources.responses.Responses.create`` and
+``AsyncResponses.create`` with the same lifecycle (install,
+uninstall, sync+async, hook isolation). Azure OpenAI needs no
+separate shim: ``AzureOpenAI`` clients route their Responses calls
+through the same patched classes.
+
+The translator is the Responses one
+(:class:`~inkfoot.normalise.openai_responses.OpenAIResponsesTranslator`);
+everything else flows through the shared
+:mod:`inkfoot.shims._emit` pipeline — including cross-layer dedup,
+which keys on the wire response's ``id`` (``resp_...``) so a call
+observed by both this shim and the LangChain callback handler lands
+exactly once.
+
+SDKs that predate the Responses API simply don't expose the target
+classes; :meth:`install` then reports ``False`` and the rest of
+instrumentation proceeds untouched.
 """
 
 from __future__ import annotations
@@ -17,7 +29,7 @@ import time
 from typing import Any, Callable, Optional
 
 from inkfoot.contracts.runtime import enforce_before_call
-from inkfoot.normalise.openai import OpenAITranslator
+from inkfoot.normalise.openai_responses import OpenAIResponsesTranslator
 from inkfoot.policy.registry import PolicyRegistry
 from inkfoot.shims._emit import (
     build_call_context,
@@ -26,14 +38,14 @@ from inkfoot.shims._emit import (
 )
 from inkfoot.shims._isolation import safely_run
 
-_LOG = logging.getLogger("inkfoot.shims.openai")
+_LOG = logging.getLogger("inkfoot.shims.openai_responses")
 
 _PROVIDER = "openai"
 _DEFAULT_MODEL = ""
 
 
-class OpenAIShim:
-    """Per-process OpenAI shim. Install via :meth:`install`,
+class OpenAIResponsesShim:
+    """Per-process Responses-API shim. Install via :meth:`install`,
     restore via :meth:`uninstall`."""
 
     provider = _PROVIDER
@@ -44,22 +56,25 @@ class OpenAIShim:
         self._installed = False
         self._original_sync: Optional[Callable[..., Any]] = None
         self._original_async: Optional[Callable[..., Any]] = None
-        self._translator = OpenAITranslator()
+        self._translator = OpenAIResponsesTranslator()
 
     def install(self) -> bool:
         if self._installed:
             return True
         try:
-            from openai.resources.chat.completions import (  # type: ignore[import-not-found]
-                AsyncCompletions,
-                Completions,
+            from openai.resources.responses import (  # type: ignore[import-not-found]
+                AsyncResponses,
+                Responses,
             )
         except ImportError:
-            _LOG.debug("openai SDK not importable; OpenAIShim skipped")
+            _LOG.debug(
+                "openai SDK without a Responses surface; "
+                "OpenAIResponsesShim skipped"
+            )
             return False
 
-        sync_target: Callable[..., Any] = Completions.create  # type: ignore[assignment]
-        async_target: Callable[..., Any] = AsyncCompletions.create  # type: ignore[assignment]
+        sync_target: Callable[..., Any] = Responses.create  # type: ignore[assignment]
+        async_target: Callable[..., Any] = AsyncResponses.create  # type: ignore[assignment]
         if getattr(sync_target, "__inkfoot_shim__", False):
             self._installed = True
             return True
@@ -67,13 +82,13 @@ class OpenAIShim:
         self._original_sync = sync_target
         self._original_async = async_target
 
-        Completions.create = self._build_sync_wrapper(sync_target)  # type: ignore[assignment]
+        Responses.create = self._build_sync_wrapper(sync_target)  # type: ignore[assignment]
         if inspect.iscoroutinefunction(async_target):
-            AsyncCompletions.create = self._build_async_wrapper(  # type: ignore[assignment]
+            AsyncResponses.create = self._build_async_wrapper(  # type: ignore[assignment]
                 async_target
             )
         else:
-            AsyncCompletions.create = self._build_sync_wrapper(  # type: ignore[assignment]
+            AsyncResponses.create = self._build_sync_wrapper(  # type: ignore[assignment]
                 async_target
             )
 
@@ -84,23 +99,23 @@ class OpenAIShim:
         if not self._installed:
             return
         try:
-            from openai.resources.chat.completions import (  # type: ignore[import-not-found]
-                AsyncCompletions,
-                Completions,
+            from openai.resources.responses import (  # type: ignore[import-not-found]
+                AsyncResponses,
+                Responses,
             )
         except ImportError:  # pragma: no cover — defensive
             self._installed = False
             return
         if self._original_sync is not None:
-            Completions.create = self._original_sync  # type: ignore[assignment]
+            Responses.create = self._original_sync  # type: ignore[assignment]
         if self._original_async is not None:
-            AsyncCompletions.create = self._original_async  # type: ignore[assignment]
+            AsyncResponses.create = self._original_async  # type: ignore[assignment]
         self._original_sync = None
         self._original_async = None
         self._installed = False
 
     # ------------------------------------------------------------------
-    # Wrappers + dispatch — same shape as AnthropicShim
+    # Wrappers + dispatch — same shape as OpenAIShim
     # ------------------------------------------------------------------
 
     def _build_sync_wrapper(
@@ -145,9 +160,8 @@ class OpenAIShim:
         enforce_before_call(ctx)
         # Provider exceptions propagate; we record a NeutralError
         # event first so reports don't under-count failures. The
-        # re-raised exception is
-        # identical to what the user would have seen without
-        # instrumentation.
+        # re-raised exception is identical to what the user would
+        # have seen without instrumentation.
         try:
             response = original(client_self, *args, **kwargs)
         except Exception as exc:
@@ -214,7 +228,7 @@ class OpenAIShim:
             model=kwargs.get("model", _DEFAULT_MODEL),
             request_kwargs=kwargs,
             storage=self._storage,
-            hook_label="openai.build_call_context",
+            hook_label="openai_responses.build_call_context",
         )
         if ctx is None:
             return [], None, started_at
@@ -245,6 +259,7 @@ class OpenAIShim:
             capture_mode=self._capture_mode_getter(),
             translator=self._translator,
             before_decisions=before_decisions,
+            response_id=self._response_id(response),
             hook_label="emit_llm_call",
         )
         safely_run(
@@ -253,3 +268,18 @@ class OpenAIShim:
             response,
             hook_label="PolicyRegistry.after_call",
         )
+
+    @staticmethod
+    def _response_id(response: Any) -> Optional[str]:
+        """The wire response's ``id`` (``resp_...``) — the
+        cross-layer dedup key shared with the LangChain handler,
+        which reads the same id off ``response_metadata``."""
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            candidate = response.get("id")
+        else:
+            candidate = getattr(response, "id", None)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+        return None

@@ -90,7 +90,9 @@ jobs:
         run: |
           pytest tests/unit/test_langchain_handler_skeleton.py \
             tests/unit/test_langchain_normalise.py \
+            tests/unit/test_openai_responses_shim.py \
             tests/integration/test_handler_shim_dedup.py \
+            tests/integration/test_handler_responses_dedup.py \
             -v --tb=short -rs
 
       - name: Run live integration tests
@@ -99,6 +101,7 @@ jobs:
         continue-on-error: true
         run: |
           pytest tests/integration/test_langchain_e2e.py \
+            tests/integration/test_openai_responses_e2e.py \
             -m ${{ matrix.marker }} -v --tb=short -rs
 
       - name: Write status row

@@ -57,6 +57,9 @@ def install_shims(
     from inkfoot.shims.anthropic import AnthropicShim  # noqa: PLC0415
     from inkfoot.shims.gemini import GeminiShim  # noqa: PLC0415
     from inkfoot.shims.openai import OpenAIShim  # noqa: PLC0415
+    from inkfoot.shims.openai_responses import (  # noqa: PLC0415
+        OpenAIResponsesShim,
+    )
 
     allow = set(sdks) if sdks is not None else None
     installed: list[str] = []
@@ -77,9 +80,21 @@ def install_shims(
             _installed.append(shim)
             installed.append("anthropic")
     if _want("openai"):
+        # Chat Completions and Responses install (and uninstall)
+        # together: one importable ``openai`` SDK means both call
+        # surfaces are instrumented. The Responses shim quietly
+        # reports False on SDK versions that predate the Responses
+        # API.
+        openai_installed = False
         shim = OpenAIShim(storage, capture_mode_getter)
         if shim.install():
             _installed.append(shim)
+            openai_installed = True
+        responses_shim = OpenAIResponsesShim(storage, capture_mode_getter)
+        if responses_shim.install():
+            _installed.append(responses_shim)
+            openai_installed = True
+        if openai_installed:
             installed.append("openai")
     if _want("gemini", import_name="google.generativeai"):
         shim = GeminiShim(storage, capture_mode_getter)
@@ -106,9 +121,11 @@ def uninstall_shims() -> None:
 
 def installed_providers() -> list[str]:
     """Return the names of providers currently shimmed (in
-    installation order). Mainly for diagnostics."""
+    installation order). Mainly for diagnostics. A provider with
+    several patched call surfaces (OpenAI: Chat Completions and
+    Responses) is listed once."""
     out: list[str] = []
     for shim in _installed:
-        name = type(shim).__name__.replace("Shim", "").lower()
-        out.append(name)
+        if shim.provider not in out:
+            out.append(shim.provider)
     return out
