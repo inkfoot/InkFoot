@@ -137,6 +137,15 @@ Responses API: a `ChatOpenAI(use_responses_api=True)` call is
 observed by both the Responses shim and the handler under the
 same `resp_...` wire id, and collapses to the shim's event.
 
+It also covers **streamed** calls, even though a stream's event
+can only be finalised once the caller finishes draining it —
+which may be *after* the handler's `on_llm_end`. To keep the
+shim's richer event the winner, the shim claims the response id
+at the first streamed chunk that exposes it (always before
+`on_llm_end`, which only runs once the same stream is consumed),
+then emits at close. The handler's later sighting is skipped as
+usual.
+
 Failed calls have no response id, so the error path keys on the
 exception itself: the shim records the exception object it caught,
 and the handler's later sighting of the same exception — or of a
@@ -157,6 +166,10 @@ safe and requires no configuration.
   reads whatever `usage_metadata` the integration attaches at
   the end of the stream; integrations that omit usage on
   streamed responses produce `usage_metadata_missing` events.
+  When the raw-SDK shim is also active it captures the streamed
+  call directly — with exact output tokens whenever the stream
+  carries terminal usage — and the dedup above keeps the shim's
+  event, sidestepping this gap.
 - **Token splits are estimates.** Request-side categories are
   tokeniser-derived and carry per-category estimation flags;
   provider-side harness overhead (tool-use system prompts and

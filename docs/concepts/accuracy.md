@@ -26,6 +26,13 @@ block. They are billed exactly what they say:
 | `cache_creation_tokens` | `response.usage.cache_creation_input_tokens` (Anthropic) / cache hints (OpenAI) | Provider-reported. Billed at the cache-write rate. |
 | `cache_read_tokens` | `response.usage.cache_read_input_tokens` (Anthropic) / cache hints (OpenAI) | Provider-reported. Billed at the cache-read rate. |
 
+One exception: a **streamed** call only yields these numbers if
+the stream carries a terminal usage payload. Most do (Anthropic's
+`message_delta`, the Responses `response.completed` event, an
+OpenAI Chat `stream_options={"include_usage": True}` chunk). When
+one doesn't, `output_tokens` is tokeniser-estimated and the call
+is flagged — see `stream_no_usage` / `stream_options_off` below.
+
 A fourth provider-exact number sits underneath the ledger but is
 visible in `inkfoot report`'s headline: the per-call total cost.
 That number is computed from the per-category token splits times
@@ -71,6 +78,9 @@ Common flags:
 | `attribution_below_tolerance` | The structural input sum diverged from `usage.input_tokens` by more than the tolerance. |
 | `cache_inferred` | The provider didn't return a cache breakdown; Inkfoot inferred one from a stable-prefix detection. |
 | `responses_shape_unknown:<key>` | An OpenAI Responses API reply carried a top-level key the translator doesn't map yet. The call still translated; the named key was ignored. |
+| `stream_no_usage` | A streamed call ended without a terminal usage payload, so `output_tokens` was tokeniser-estimated from the streamed text. |
+| `stream_options_off` | An OpenAI Chat streamed call omitted `stream_options={"include_usage": True}`, so no usage was streamed; `output_tokens` was tokeniser-estimated. Pass that option for an exact count. |
+| `output_tokens` | The output count is an estimate, not provider-reported. Accompanies the two stream flags above. |
 
 `inkfoot report` surfaces estimation flags in the run footer when
 any flag is set on any call in the run. `inkfoot benchmark`

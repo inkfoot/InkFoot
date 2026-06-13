@@ -25,6 +25,12 @@ from inkfoot.shims._emit import (
     emit_llm_call_error,
 )
 from inkfoot.shims._isolation import safely_run
+from inkfoot.shims._streaming import (
+    _AsyncStreamedCallObserver,
+    _OpenAIChatStreamProbe,
+    _StreamedCallObserver,
+    _StreamRecorder,
+)
 
 _LOG = logging.getLogger("inkfoot.shims.openai")
 
@@ -143,6 +149,7 @@ class OpenAIShim:
         # the caller; ``switch_to_cheap_model`` rewrites the model in
         # ``kwargs`` before the call is made.
         enforce_before_call(ctx)
+        streaming = bool(kwargs.get("stream"))
         # Provider exceptions propagate; we record a NeutralError
         # event first so reports don't under-count failures. The
         # re-raised exception is
@@ -156,6 +163,18 @@ class OpenAIShim:
                 ctx, exc, before_decisions, started_at, ended_at
             )
             raise
+        if streaming and ctx is not None:
+            # The ergonomic ``chat.completions.stream()`` helper doesn't
+            # post on its own — its context manager calls
+            # ``create(stream=True)`` and wraps the returned stream in an
+            # accumulator the caller iterates. Patching ``create`` covers
+            # both the raw and the helper API from one seam. The routing
+            # is locked offline (tests/unit/test_streaming_shims.py) and
+            # verified against the real SDK by the live e2e tests.
+            return _StreamedCallObserver(
+                response,
+                self._make_recorder(ctx, before_decisions, started_at),
+            )
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
@@ -169,6 +188,7 @@ class OpenAIShim:
     ) -> Any:
         before_decisions, ctx, started_at = self._before(kwargs)
         enforce_before_call(ctx)
+        streaming = bool(kwargs.get("stream"))
         try:
             response = await original(client_self, *args, **kwargs)
         except Exception as exc:
@@ -177,9 +197,27 @@ class OpenAIShim:
                 ctx, exc, before_decisions, started_at, ended_at
             )
             raise
+        if streaming and ctx is not None:
+            return _AsyncStreamedCallObserver(
+                response,
+                self._make_recorder(ctx, before_decisions, started_at),
+            )
         ended_at = int(time.time() * 1000)
         self._after(ctx, response, before_decisions, started_at, ended_at)
         return response
+
+    def _make_recorder(
+        self, ctx: Any, before_decisions: list, started_at: int
+    ) -> _StreamRecorder:
+        return _StreamRecorder(
+            ctx=ctx,
+            probe=_OpenAIChatStreamProbe(model=ctx.model),
+            started_at=started_at,
+            storage=self._storage,
+            capture_mode_getter=self._capture_mode_getter,
+            translator=self._translator,
+            before_decisions=before_decisions,
+        )
 
     def _on_provider_error(
         self,

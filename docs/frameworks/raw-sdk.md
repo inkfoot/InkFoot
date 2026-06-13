@@ -25,8 +25,8 @@ your process and patches its client methods. Today's coverage:
 
 | SDK | Patched methods |
 |---|---|
-| `anthropic` | `Anthropic().messages.create`, `AsyncAnthropic().messages.create` |
-| `openai` | `OpenAI().chat.completions.create`, `AsyncOpenAI().chat.completions.create`, `OpenAI().responses.create`, `AsyncOpenAI().responses.create` |
+| `anthropic` | `messages.create`, `messages.stream` (sync + async) |
+| `openai` | `chat.completions.create`, `responses.create` (sync + async) |
 | `google-generativeai` | `GenerativeModel().generate_content`, `GenerativeModel().generate_content_async` |
 
 Both OpenAI call surfaces — Chat Completions and the Responses
@@ -36,6 +36,33 @@ patch is quietly skipped and Chat Completions still installs.
 Azure clients (`AzureOpenAI`, `AsyncAzureOpenAI`) route through
 the same classes, so Azure calls on either surface are captured
 without extra setup.
+
+### Streaming
+
+Streamed calls are captured the same way as buffered ones — no
+flag to set. Whether you pass `stream=True` to `create(...)`, use
+the ergonomic helpers (`anthropic` `messages.stream(...)`, OpenAI
+`responses.stream(...)` / `chat.completions.stream(...)`), or
+iterate synchronously or with `async for`, Inkfoot tees the
+stream and emits one `llm_call` event when you finish draining
+it. The chunks you receive are passed through untouched — same
+objects, same order — so instrumentation never changes what your
+code sees.
+
+Because the event can only be complete once the stream closes,
+its timing differs from a buffered call: a partly-consumed or
+abandoned stream is finalised when it's closed, its context
+manager exits, or it's garbage-collected.
+
+A streamed call's output-token count comes straight from the
+provider's terminal usage when the stream carries it (Anthropic's
+`message_delta`, the Responses `response.completed` event, or an
+OpenAI Chat `stream_options={"include_usage": True}` chunk).
+When it doesn't, Inkfoot estimates the output with its tokeniser
+and flags the event — see
+[Accuracy & estimation flags](../concepts/accuracy.md). For exact
+OpenAI Chat output counts on a streamed call, pass
+`stream_options={"include_usage": True}`.
 
 Bedrock and OpenAI-compatible endpoints are integrated at the
 provider level rather than through a shim — see

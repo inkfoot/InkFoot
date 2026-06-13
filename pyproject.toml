@@ -37,6 +37,8 @@ dev = [
     "pytest>=7",
     "pytest-benchmark>=4",
     "pytest-cov>=4",
+    # Property-based fuzzing of the streaming chunk-identity invariant.
+    "hypothesis>=6",
     "pyyaml>=6",
     # The LangChain callback handler subclasses
     # ``langchain_core.callbacks.BaseCallbackHandler``, so unlike the

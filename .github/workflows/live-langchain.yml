@@ -102,6 +102,9 @@ jobs:
         run: |
           pytest tests/integration/test_langchain_e2e.py \
             tests/integration/test_openai_responses_e2e.py \
+            tests/integration/test_anthropic_streaming_e2e.py \
+            tests/integration/test_openai_chat_streaming_e2e.py \
+            tests/integration/test_openai_responses_streaming_e2e.py \
             -m ${{ matrix.marker }} -v --tb=short -rs
 
       - name: Write status row
