@@ -110,6 +110,20 @@ variables).
 
 ### ::: inkfoot.storage.postgres.PostgresStorage
 
+## Redaction
+
+When `inkfoot.instrument(capture_mode="replay")` persists request and
+response bodies, a regex floor masks the secret shapes that must never
+reach disk. Implement `RedactionHook` and pass it as
+`inkfoot.instrument(redaction_hook=...)` to mask
+organisation-specific shapes on top of the floor — both run. See
+[Services & multi-replica deployments](../operations/services-and-multi-replica.md#redaction-is-required-before-replay-capture-in-services)
+for the operational picture.
+
+### ::: inkfoot.storage.redaction.RedactionHook
+
+### ::: inkfoot.storage.redaction.RedactionContext
+
 ## Exceptions
 
 ### ::: inkfoot.errors.InkfootError

@@ -57,6 +57,16 @@ That single call:
 A second call is a no-op — the existing instrumentation stays in
 place.
 
+!!! tip "Running in production?"
+
+    The SQLite default assumes one writer — perfect for this
+    walkthrough, not for a multi-worker service. When you scale past
+    one process (gunicorn, Celery, multi-replica Kubernetes), or you
+    turn on full request/response capture, read
+    [Services & multi-replica deployments](operations/services-and-multi-replica.md).
+    It covers OTel export vs. the Postgres backend and why replay
+    capture needs a redaction hook first.
+
 ## 3. Wrap your work in a run
 
 A *run* is one unit of agent work: handling a ticket, answering

@@ -38,6 +38,14 @@ The pieces:
   the recorder emits with ``skip_dedup=True`` if it won the claim, and
   stays silent if it lost.
 
+Replay content rides the same path. At close ``emit_llm_call``
+serialises the accumulated request and response and hands them to
+``inkfoot.storage``'s ``insert_event`` exactly as the non-streaming
+path does. So when replay capture is on, a streamed call's content is
+written through the one storage boundary every surface shares — the
+redaction hook runs there, once per ``event_contents`` row, with no
+streaming-specific branch.
+
 Provider shims own the install/patch wiring; this module owns the
 proxy mechanics, the probes, and the recorder.
 """
@@ -448,7 +456,9 @@ class _StreamRecorder:
         # ``skip_dedup`` is always safe here: when we won the claim the
         # id is already recorded (a second record would suppress our own
         # emit); when no id ever appeared we fail open exactly like the
-        # non-streaming path.
+        # non-streaming path. The accumulated ``response`` flows into the
+        # same storage write path as a unary call, so replay content is
+        # redacted at the storage boundary without a branch here.
         safely_run(
             emit_llm_call,
             ctx=self._ctx,

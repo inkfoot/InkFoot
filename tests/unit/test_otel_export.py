@@ -351,6 +351,47 @@ def test_tap_storage_proxies_unrelated_methods():
     assert wrapped.proxy_only_method() == "proxied"
 
 
+class _RecordingExporter:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def enqueue_event(self, event: dict[str, Any]) -> None:
+        self.events.append(event)
+
+
+def test_tap_storage_excludes_replay_content_from_export_envelope():
+    # Redaction runs inside the backend's insert_event, rewriting its
+    # own locals — the tap still sees the original kwargs. The export
+    # envelope must not carry the (un-redacted) replay bodies, so they
+    # never enter the export queue regardless of what the span builder
+    # reads.
+    storage = _FakeStorage()
+    exporter = _RecordingExporter()
+    wrapped = tap_storage(storage, exporter)
+
+    event = _llm_call_event(event_id="evt-redact")
+    event.update(
+        {
+            "capture_mode": "replay",
+            "request_json": '{"system": "secret@example.com"}',
+            "response_json": '{"text": "ok"}',
+            "tool_result_json": '{"result": "data"}',
+            "content_redacted": True,
+        }
+    )
+    wrapped.insert_event(**event)
+
+    # The wrapped backend still receives the content (it does the redaction).
+    assert "request_json" in storage.calls[0]
+    # The export envelope carries metadata but none of the content bodies.
+    assert len(exporter.events) == 1
+    envelope = exporter.events[0]
+    for field in ("request_json", "response_json", "tool_result_json"):
+        assert field not in envelope
+    assert envelope["event_id"] == "evt-redact"
+    assert envelope["payload_json"] == event["payload_json"]
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
