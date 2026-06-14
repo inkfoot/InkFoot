@@ -4,24 +4,30 @@ Five minutes from `pip install` to a rendered report — that's the
 target. The whole flow is three steps: install, add one
 `inkfoot.instrument()` call, wrap your agent in a `@agent_run`.
 
+This quickstart leads with **LangChain**, the most common way agents
+reach a model. Calling a provider SDK directly instead? Everything
+below still applies — swap step 3 for the
+[Raw Provider SDK](frameworks/raw-sdk.md) shape and read on.
+
 ## 1. Install
 
 ```bash
-pip install inkfoot
+pip install "inkfoot[langchain]" langchain-anthropic
 ```
 
-Requires Python 3.10+. Inkfoot is stdlib-friendly: the only hard
-deps are [`tiktoken`](https://pypi.org/project/tiktoken/) (for
-tokenisation) and [`python-ulid`](https://pypi.org/project/python-ulid/)
-(for run identifiers). The provider SDKs (`anthropic`, `openai`)
-are auto-detected — Inkfoot patches whichever is importable.
+Requires Python 3.10+. The `[langchain]` extra pins only
+`langchain-core` — the package that defines the callback interface
+Inkfoot registers against. Your provider partner package
+(`langchain-anthropic` here, or `langchain-openai`,
+`langchain-google-genai`, `langchain-aws`, …) stays yours to choose
+and version.
 
 ??? info "Optional extras"
 
     | Extra | Adds |
     |---|---|
     | `pip install "inkfoot[langchain]"` | LangChain callback handler (auto-registers on `instrument()`) |
-    | `pip install "inkfoot[langgraph]"` | LangGraph framework adapter |
+    | `pip install "inkfoot[langgraph]"` | LangGraph framework adapter (per-node attribution) |
     | `pip install "inkfoot[openai-agents]"` | OpenAI Agents SDK adapter |
     | `pip install "inkfoot[anthropic-agent]"` | Anthropic Agent SDK adapter |
     | `pip install "inkfoot[all]"` | All framework adapters at once. This is the shape the `inkfoot/diff-action` GitHub Action installs in CI. |
@@ -29,9 +35,9 @@ are auto-detected — Inkfoot patches whichever is importable.
 
 ## 2. Instrument
 
-Call `inkfoot.instrument()` once at process startup, before any
-agent code runs. Top of `main()`, FastAPI's `lifespan`, or your
-worker's startup hook are all fine.
+Call `inkfoot.instrument()` once at process startup, before any agent
+code runs. Top of `main()`, FastAPI's `lifespan`, or your worker's
+startup hook are all fine.
 
 ```python
 import inkfoot
@@ -41,21 +47,24 @@ inkfoot.instrument()
 
 That single call:
 
-- Monkey-patches `anthropic.Messages.create`,
-  `openai.chat.completions.create`, and `openai.responses.create`
-  (sync + async). Every LLM call the SDK makes is recorded.
-- Registers the [LangChain callback handler](frameworks/langchain.md)
-  when `langchain-core` is importable, so calls made through
-  LangChain chat models are captured too (once per call — the
-  handler and the SDK shims deduplicate).
-- Opens a local SQLite database at `~/.inkfoot/runs.db` (override
-  with `INKFOOT_HOME=<dir>`).
-- Starts a background thread that keeps run totals up to date.
-- Registers an `atexit` hook so the database flushes cleanly on
+- Registers the [LangChain callback handler](concepts/langchain-integration.md)
+  globally when `langchain-core` is importable, so every chat-model
+  call through any chain, agent, or LCEL pipeline is captured — no
+  `callbacks=` plumbing.
+- Monkey-patches the provider SDKs too (`anthropic.Messages.create`,
+  `openai.chat.completions.create`, and `openai.responses.create`,
+  sync + async). When a LangChain call lands on a patched SDK, the two
+  sightings [deduplicate](concepts/langchain-integration.md#why-that-doesnt-double-count)
+  to one event.
+- Opens a local SQLite database at `~/.inkfoot/runs.db` (override with
+  `INKFOOT_HOME=<dir>`).
+- Starts a background thread that keeps run totals up to date, and
+  registers an `atexit` hook so the database flushes cleanly on
   shutdown.
 
 A second call is a no-op — the existing instrumentation stays in
-place.
+place. The explicit form `inkfoot.langchain.instrument()` registers
+just the handler, if you want it without patching the raw SDKs.
 
 !!! tip "Running in production?"
 
@@ -69,28 +78,28 @@ place.
 
 ## 3. Wrap your work in a run
 
-A *run* is one unit of agent work: handling a ticket, answering
-a query, processing a document. Wrap each one with
-`@inkfoot.agent_run(task=...)` so Inkfoot has somewhere to
-attribute the LLM calls.
+A *run* is one unit of agent work: handling a ticket, answering a
+query, processing a document. Wrap each one with
+`@inkfoot.agent_run(task=...)` so Inkfoot has somewhere to attribute
+the LLM calls.
 
 ```python title="ticket_triage.py"
 import inkfoot
-import anthropic
+from langchain_anthropic import ChatAnthropic
 
 inkfoot.instrument()
 
+model = ChatAnthropic(model="claude-haiku-4-5", max_tokens=512)
+
+
 @inkfoot.agent_run(task="customer-support-triage")
 def handle_ticket(ticket_id: str) -> str:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=512,
-        system="You triage customer-support tickets.",
-        messages=[{"role": "user", "content": f"Triage ticket {ticket_id}."}],
+    reply = model.invoke(
+        "You triage customer-support tickets. "
+        f"Triage ticket {ticket_id}."
     )
     inkfoot.set_outcome("success", quality_score=0.94)
-    return response.content[0].text
+    return reply.content
 
 
 if __name__ == "__main__":
@@ -107,8 +116,8 @@ python ticket_triage.py
 ## 4. Look at the report
 
 `inkfoot report` reads the same SQLite database the run wrote to.
-Grab the run id from the previous output (or list recent runs
-with `inkfoot report --last 1h`), then:
+Grab the run id from the previous output (or list recent runs with
+`inkfoot report --last 1h`), then:
 
 ```bash
 inkfoot report --run run-01JX...
@@ -127,11 +136,11 @@ Causal attribution:
 Smells detected (0)
 ```
 
-The headline number is the call cost. The bar chart splits that
-across the [Causal Token Ledger](concepts/causal-token-ledger.md)
-categories. The smells block stays empty on a clean run and fills
-in the moment one fires. Re-run with a longer prompt or a
-timestamp embedded in your system message and watch
+The headline number is the call cost. The bar chart splits that across
+the [Causal Token Ledger](concepts/causal-token-ledger.md) categories.
+The smells block stays empty on a clean run and fills in the moment one
+fires. Re-run with a longer prompt or a timestamp embedded in your
+system message and watch
 [`unstable-prompt-prefix`](concepts/cost-smells.md#unstable-prompt-prefix)
 light up.
 
@@ -139,60 +148,75 @@ light up.
 
 You've got a working baseline. Pick the next thread:
 
-- [Find your most expensive agent](recipes/find-expensive-agent.md) —
-  use the aggregate view to spot the worst offender across a week
-  of runs.
-- [Spot cache-miss patterns](recipes/spot-cache-misses.md) — the
-  `unstable-prompt-prefix` smell and the report bar chart, together.
-- [Set up CI cost review](recipes/set-up-ci.md) — wire `inkfoot
-  benchmark` + `inkfoot diff` into a PR-time comment via the
-  published GitHub Action.
+- [Find your most expensive LangChain node](recipes/find-expensive-langchain-node.md) —
+  break a LangGraph run down by node and find the one burning the
+  budget.
+- [Spot streaming-cost surprises](recipes/streaming-cost-surprises.md) —
+  diagnose the `stream_options_off` estimation flag.
+- [Wire CI cost review for a LangChain repo](recipes/ci-cost-review-langchain.md) —
+  catch a prompt change that doubles the bill on the pull request
+  that introduces it.
 
 ## Troubleshooting
 
-??? failure "`anthropic.AuthenticationError: No API key provided`"
+??? failure "My LangChain calls aren't showing up"
+    Two common causes:
+
+    1. **`langchain-core` wasn't importable when `instrument()`
+       ran.** The handler only auto-registers when the package is
+       present. Install the `[langchain]` extra and confirm the
+       import works in the same environment that runs your agent.
+    2. **`instrument()` ran in a different process.** With a
+       multi-process server (Gunicorn, Celery), call it in the worker
+       bootstrap, not the parent.
+
+??? failure "`AuthenticationError: No API key provided`"
     Inkfoot doesn't supply provider credentials. Export
-    `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) before running.
+    `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) before running — the
+    error is raised by the provider SDK underneath LangChain, not by
+    Inkfoot.
 
 ??? failure "Report says `inkfoot report: no run with id ...`"
     Two common causes:
 
-    1. **Typo in the run id.** Run `inkfoot report --last 1h` to
-       list recent runs and copy the id from there.
-    2. **Two databases.** Inkfoot writes to `~/.inkfoot/runs.db`
-       by default. If your agent set `INKFOOT_HOME=<dir>` but the
-       report didn't, they don't share storage. Pass `--db
-       <path>/runs.db` to `inkfoot report`, or export the same
-       `INKFOOT_HOME` in both shells.
+    1. **Typo in the run id.** Run `inkfoot report --last 1h` to list
+       recent runs and copy the id from there.
+    2. **Two databases.** Inkfoot writes to `~/.inkfoot/runs.db` by
+       default. If your agent set `INKFOOT_HOME=<dir>` but the report
+       didn't, they don't share storage. Pass `--db <path>/runs.db`
+       to `inkfoot report`, or export the same `INKFOOT_HOME` in both
+       shells.
 
 ??? failure "`inkfoot.errors.InkfootError: agent_run requires inkfoot.instrument()`"
-    The decorator needs storage. Call `inkfoot.instrument()` once
-    at startup *before* any decorated function runs. If you're
-    using a multi-process server (Gunicorn, Celery), put the call
-    in the worker bootstrap, not the parent process.
+    The decorator needs storage. Call `inkfoot.instrument()` once at
+    startup *before* any decorated function runs. If you're using a
+    multi-process server (Gunicorn, Celery), put the call in the
+    worker bootstrap, not the parent process.
 
 ??? failure "Report shows `(no outcome)` even though my agent finished"
     `inkfoot.set_outcome("success" | "accepted_answer" | "failure" | "human_escalated")`
     has to fire before the run scope exits. Decorators wrap the
-    function call exactly, so any `return` after `set_outcome`
-    counts — but a swallowed exception path that skips both
-    `set_outcome` and the implicit run-end can leave the row at
-    `(no outcome)`. Add a `set_outcome` call to your error path or
-    let the exception propagate (which Inkfoot records as
-    `error`).
+    function call exactly, so any `return` after `set_outcome` counts
+    — but a swallowed exception path that skips both `set_outcome` and
+    the implicit run-end can leave the row at `(no outcome)`. Add a
+    `set_outcome` call to your error path or let the exception
+    propagate (which Inkfoot records as `error`).
 
 ??? failure "`pip install inkfoot` fails on `tiktoken`"
-    `tiktoken` is the heaviest dependency Inkfoot pulls in.
-    Common fixes:
+    `tiktoken` is the heaviest dependency Inkfoot pulls in. Common
+    fixes:
 
     - Upgrade `pip` (`python -m pip install --upgrade pip`).
-    - On Apple Silicon / Linux ARM, install a Rust toolchain
-      first: `rustup` (or `brew install rust`) — `tiktoken`'s
-      wheel build needs it on systems without a prebuilt binary.
+    - On Apple Silicon / Linux ARM, install a Rust toolchain first:
+      `rustup` (or `brew install rust`) — `tiktoken`'s wheel build
+      needs it on systems without a prebuilt binary.
 
 ## Where to from here?
 
-The fastest follow-up is the [aggregate view](recipes/find-expensive-agent.md).
-For the design intent behind everything you saw above, jump to
-the [Causal Token Ledger](concepts/causal-token-ledger.md)
-concept page.
+The fastest follow-up is the
+[aggregate view](recipes/find-expensive-agent.md). For how the
+LangChain capture actually works — the two capture layers and the one
+accuracy caveat — read
+[the LangChain integration model](concepts/langchain-integration.md).
+For the design intent behind the report, jump to the
+[Causal Token Ledger](concepts/causal-token-ledger.md) concept page.
