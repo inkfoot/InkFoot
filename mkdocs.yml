@@ -111,6 +111,9 @@ nav:
       - Cost Smells: concepts/cost-smells.md
       - Cost per Success: concepts/cost-per-success.md
       - Embeddings: concepts/embeddings.md
+      - LangChain integration: concepts/langchain-integration.md
+      - OpenAI Responses API: concepts/openai-responses.md
+      - Streaming capture: concepts/streaming.md
       - Accuracy & Estimation: concepts/accuracy.md
       - Observation Policies: concepts/observation-policies.md
       - Modification Policies: concepts/modification-policies.md
@@ -131,8 +134,11 @@ nav:
   - Providers: providers.md
   - Recipes:
       - Find your most expensive agent: recipes/find-expensive-agent.md
+      - Find your most expensive LangChain node: recipes/find-expensive-langchain-node.md
       - Spot cache-miss patterns: recipes/spot-cache-misses.md
+      - Spot streaming-cost surprises: recipes/streaming-cost-surprises.md
       - Set up CI cost review: recipes/set-up-ci.md
+      - CI cost review for a LangChain repo: recipes/ci-cost-review-langchain.md
       - OTel + Honeycomb: recipes/otel-honeycomb.md
       - CI on GitLab: recipes/ci-gitlab.md
       - CI on Bitbucket: recipes/ci-bitbucket.md

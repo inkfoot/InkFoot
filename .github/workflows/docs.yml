@@ -38,7 +38,13 @@ jobs:
       - name: Install docs deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[docs]"
+          pip install -e ".[docs]" pytest
+      - name: Check documentation links
+        # Validates intra-page ``#anchor`` targets, nav entries, and
+        # orphan pages — the failure modes ``mkdocs build --strict``
+        # does not catch on its own. Fails the deploy before a broken
+        # link can ship.
+        run: pytest tests/docs -v --tb=short
       - name: Build docs (strict)
         # `--strict` upgrades broken links and orphan files to errors
         # so a typo in a relative link fails the build instead of
