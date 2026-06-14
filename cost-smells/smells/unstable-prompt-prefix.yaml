@@ -1,0 +1,24 @@
+id: unstable-prompt-prefix
+title: Unstable prompt prefix
+severity: warn
+description: >-
+  More than 10% of this run's system block is dynamic. The provider's
+  prompt cache only fires when the prefix is byte-identical
+  call-over-call, so every drifting token costs full input rate instead
+  of the (cheaper) cache-read rate. The usual culprit is a timestamp or
+  user-context line embedded inside the system block — move it out into
+  a normal user message, or split the system block so the static portion
+  stays cacheable.
+
+detection:
+  language: builtin
+  query: system_dynamic_tokens / (system_static_tokens + system_dynamic_tokens)
+  trigger_condition: "value > 0.10"
+
+recommendation: >-
+  Move time-varying content (timestamps, request IDs, per-call context)
+  out of the system block.
+
+suggested_policy: CacheControlPlacer
+primary_category: system_dynamic_tokens
+evidence_query: "SELECT system_static_tokens, system_dynamic_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

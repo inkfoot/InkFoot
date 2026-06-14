@@ -1,0 +1,34 @@
+{# Per-smell page. `estimated_savings` / `evidence_kind` render only when
+   the savings-estimation worker has filled them; until then the page
+   shows "not yet estimated". #}
+# {{ smell.title }}
+
+`{{ smell.id }}` · severity **{{ smell.severity }}**{% if smell.primary_category %} · anchored to `{{ smell.primary_category }}`{% endif %}
+
+{{ smell.description }}
+
+## Detection
+
+| | |
+|---|---|
+| Language | `{{ smell.detection.language | cell }}` |
+| Query | `{{ smell.detection.query | cell }}` |
+{% if smell.detection.trigger_condition %}| Triggers when | `{{ smell.detection.trigger_condition | cell }}` |
+{% endif %}
+
+## Recommendation
+
+{{ smell.recommendation }}
+
+{% if smell.suggested_policy %}**Suggested policy:** `{{ smell.suggested_policy }}`{% else %}_No automated policy fix exists for this smell yet._{% endif %}
+
+## Estimated savings
+
+{% if smell.estimated_savings %}
+- **Average potential saving:** {{ smell.estimated_savings.estimated_potential_saved_avg_percent }}% (~{{ smell.estimated_savings.estimated_potential_saved_nanodollars_per_run | usd }} per triggering run)
+- **Evidence:** `{{ smell.evidence_kind }}` ({{ smell.estimated_savings.confidence }} confidence)
+- Computed from {{ smell.estimated_savings.triggered_in }} of {{ smell.estimated_savings.corpus_runs }} corpus runs, last updated {{ smell.estimated_savings.last_computed }}.
+{% else %}
+Savings: _not yet estimated_. This smell is in the catalogue, but the
+savings-estimation worker has not yet measured a potential saving for it.
+{% endif %}

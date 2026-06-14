@@ -109,6 +109,7 @@ nav:
   - Concepts:
       - The Causal Token Ledger: concepts/causal-token-ledger.md
       - Cost Smells: concepts/cost-smells.md
+      - Cost Smell Library: concepts/cost-smell-library.md
       - Cost per Success: concepts/cost-per-success.md
       - Embeddings: concepts/embeddings.md
       - LangChain integration: concepts/langchain-integration.md

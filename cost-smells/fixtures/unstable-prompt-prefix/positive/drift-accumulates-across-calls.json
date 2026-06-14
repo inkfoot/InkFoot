@@ -1,0 +1,17 @@
+{
+  "name": "small per-call drift accumulates past 10% over several calls",
+  "expect": "fires",
+  "run": {"id": "pos-3", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 900, "system_dynamic_tokens": 150}}
+    },
+    {
+      "kind": "llm_call",
+      "sequence": 2,
+      "payload": {"ledger": {"system_static_tokens": 900, "system_dynamic_tokens": 150}}
+    }
+  ]
+}

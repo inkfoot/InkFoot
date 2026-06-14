@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://library.inkfoot.dev/schema/smell.schema.json",
+  "title": "Cost smell definition",
+  "description": "Frozen v1 schema for a single cost-smell definition. One smell per YAML file. Unknown fields are rejected so a typo fails loudly instead of being silently ignored. Future additions to this schema must be optional fields only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "severity",
+    "description",
+    "detection",
+    "recommendation"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable, unique identifier. Lower-case kebab-case, optionally namespaced with a single 'owner/' prefix for community smells (for example 'my-org/spurious-system-edit').",
+      "pattern": "^([a-z0-9]+(-[a-z0-9]+)*/)?[a-z0-9]+(-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable name shown in reports and on the library site.",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "severity": {
+      "type": "string",
+      "description": "Impact level. 'info' is advisory, 'warn' is wasted spend, 'critical' is wasted spend or degraded quality that needs attention.",
+      "enum": ["info", "warn", "critical"]
+    },
+    "description": {
+      "type": "string",
+      "description": "What the smell detects and why it costs money.",
+      "minLength": 1
+    },
+    "detection": {
+      "type": "object",
+      "description": "How the smell is detected.",
+      "additionalProperties": false,
+      "required": ["language", "query"],
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Query language. 'jsonpath' and 'sql' are evaluated against a run's event stream; 'builtin' is reserved for detectors that ship inside the package, where the query is documentary.",
+          "enum": ["jsonpath", "sql", "builtin"]
+        },
+        "query": {
+          "type": "string",
+          "description": "The detection expression. Must terminate in O(events x constant): no pathological cross-joins or nested full scans.",
+          "minLength": 1
+        },
+        "trigger_condition": {
+          "type": "string",
+          "description": "Boolean condition over the query result that fires the smell, for example 'value > 0.10'."
+        }
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "description": "One-sentence, actionable remediation.",
+      "minLength": 1
+    },
+    "suggested_policy": {
+      "type": ["string", "null"],
+      "description": "Name of a policy that remediates this smell, or null when no policy fix exists yet.",
+      "maxLength": 80
+    },
+    "primary_category": {
+      "type": ["string", "null"],
+      "description": "Optional token-ledger category the smell primarily explains; null for run-shape or cross-run patterns."
+    },
+    "evidence_query": {
+      "type": "string",
+      "description": "Optional SQL or JSONPath expression that reproduces the smell's evidence for auditing."
+    },
+    "evidence_kind": {
+      "type": "string",
+      "description": "RESERVED. Set only by the savings-estimation worker; never authored by hand. Describes the strength of the savings evidence: 'simulation' recomputes a corrected ledger from anonymised shapes, 'replay_pair' is a measured before/after on the same input, 'production_pair' is a contributed and manually verified before/after.",
+      "enum": ["simulation", "replay_pair", "production_pair"]
+    },
+    "estimated_savings": {
+      "type": "object",
+      "description": "RESERVED. Set only by the savings-estimation worker; never authored by hand. Absent until savings have been estimated for this smell.",
+      "additionalProperties": false,
+      "required": [
+        "corpus_runs",
+        "triggered_in",
+        "estimated_potential_saved_avg_percent",
+        "estimated_potential_saved_nanodollars_per_run",
+        "confidence",
+        "last_computed"
+      ],
+      "properties": {
+        "corpus_runs": {
+          "type": "integer",
+          "description": "Number of runs in the corpus the estimate was computed over.",
+          "minimum": 0
+        },
+        "triggered_in": {
+          "type": "integer",
+          "description": "Number of corpus runs in which this smell triggered.",
+          "minimum": 0
+        },
+        "estimated_potential_saved_avg_percent": {
+          "type": "number",
+          "description": "Average potential saving as a percentage of run cost, were the recommendation applied.",
+          "minimum": 0
+        },
+        "estimated_potential_saved_nanodollars_per_run": {
+          "type": "integer",
+          "description": "Average potential saving per triggering run, in nanodollars.",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "string",
+          "description": "Confidence in the estimate, driven by corpus size and contributor count.",
+          "enum": ["low", "medium", "high"]
+        },
+        "last_computed": {
+          "type": "string",
+          "description": "Date the estimate was last computed (ISO-8601 date).",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      }
+    }
+  }
+}

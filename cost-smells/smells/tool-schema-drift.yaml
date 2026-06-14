@@ -1,0 +1,24 @@
+id: tool-schema-drift
+title: Tool schema drift mid-run
+severity: warn
+description: >-
+  The tool-schema fingerprint changed partway through this run — tools
+  were added, removed, or reordered between calls. Tool schemas
+  serialise near the top of the request body, so every call after the
+  change misses the provider's prompt cache on the schema block and pays
+  full input rate for it. Keep the tool set stable for the lifetime of a
+  run: register every tool up front and keep the ordering deterministic.
+
+detection:
+  language: builtin
+  query: count(distinct metadata.tools_fingerprint across calls)
+  trigger_condition: "value > 1"
+
+recommendation: >-
+  Stabilise tool ordering and avoid adding tools mid-run. If the agent
+  only needs a subset of tools per call, narrow exposure with
+  LazyToolExposure instead of mutating the registered set.
+
+suggested_policy: LazyToolExposure
+primary_category: tool_schema_tokens
+evidence_query: "SELECT sequence, metadata.tools_fingerprint, tool_schema_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

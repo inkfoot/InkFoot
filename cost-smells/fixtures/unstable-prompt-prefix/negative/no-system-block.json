@@ -1,0 +1,12 @@
+{
+  "name": "no system tokens at all — nothing to divide, so the smell stays silent",
+  "expect": "silent",
+  "run": {"id": "neg-3", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 0, "system_dynamic_tokens": 0, "user_input_tokens": 400}}
+    }
+  ]
+}

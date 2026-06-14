@@ -1,0 +1,24 @@
+id: over-instrumented-retries
+title: Retries firing far above call rate
+severity: warn
+description: >-
+  SDK retries in this run averaged more than 3 per completed call. The
+  upstream is failing (rate limits, timeouts, overload) and the agent
+  keeps re-sending the same request — each attempt re-tokenises the full
+  context, so a persistent failure multiplies the run's cost without
+  producing anything. Back off harder, and stop retrying into an
+  upstream that keeps refusing.
+
+detection:
+  language: builtin
+  query: count(failed calls) / max(1, count(completed calls))
+  trigger_condition: "value > 3.0"
+
+recommendation: >-
+  Tune the SDK's backoff (fewer attempts, longer waits) and
+  circuit-break the upstream after repeated failures. RetryThrottle
+  enforces a retry budget per window at the instrumentation layer.
+
+suggested_policy: RetryThrottle
+primary_category: retry_overhead_tokens
+evidence_query: "SELECT sequence, error.type FROM events_json WHERE run_id = :run_id AND kind = 'llm_call' AND error IS NOT NULL"

@@ -1,0 +1,23 @@
+id: cost-skewed-by-outlier
+title: Cost skewed by outlier run
+severity: warn
+description: >-
+  This run cost more than 10× the median of its task's recent runs. One
+  run like this drags the task's average far above what a typical run
+  costs, so per-task aggregates stop reflecting reality. The usual
+  causes are a retry storm, a runaway loop, or an unusually large input
+  that deserves its own task name.
+
+detection:
+  language: builtin
+  query: run_cost_nanodollars / task_peer_p50_nanodollars, evaluated only when task_peer_count >= 5
+  trigger_condition: "value > 10.0 and task_peer_count >= 5"
+
+recommendation: >-
+  Investigate what made this run exceptional, and consider enforcing a
+  BudgetCap so a single run cannot overshoot the task's typical cost
+  unbounded.
+
+suggested_policy: BudgetCap
+primary_category: null
+evidence_query: "SELECT id, total_nanodollars FROM runs WHERE task = :task ORDER BY started_at DESC"

@@ -1,0 +1,23 @@
+id: recurring-cache-writes
+title: Recurring cache writes (cache thrashing)
+severity: warn
+description: >-
+  More than 80% of this run's calls wrote to the prompt cache. Writes
+  cost more than fresh input — the break-even point is roughly 4 reads
+  per write — so a run that keeps writing is churning the cache without
+  amortising. The usual cause is a cache_control marker positioned past
+  the drifting section so each call invalidates the prior write.
+
+detection:
+  language: builtin
+  query: count(calls where cache_creation_tokens > 0) / count(calls)
+  trigger_condition: "value > 0.80"
+
+recommendation: >-
+  Move the cache_control marker earlier in the prompt — before the
+  unstable section — so the static prefix gets cached and the per-call
+  drift becomes a normal input read.
+
+suggested_policy: CacheControlPlacer
+primary_category: cache_creation_tokens
+evidence_query: "SELECT cache_creation_tokens, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

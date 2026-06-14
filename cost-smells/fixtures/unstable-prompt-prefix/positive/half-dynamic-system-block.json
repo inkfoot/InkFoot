@@ -1,0 +1,12 @@
+{
+  "name": "system block is 50% dynamic, well above the 10% threshold",
+  "expect": "fires",
+  "run": {"id": "pos-1", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 500, "system_dynamic_tokens": 500}}
+    }
+  ]
+}
