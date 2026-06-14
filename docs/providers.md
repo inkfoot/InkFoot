@@ -157,10 +157,40 @@ models. As with Anthropic's native API, `inputTokens` excludes the
 cached portion — Inkfoot adds it back so `input_tokens` is always
 the full prompt size.
 
-Only the Anthropic family is priced out of the box (AWS lists
-Claude on Bedrock at parity with Anthropic direct). The other
+Only the Anthropic family is priced out of the box, at AWS's
+Bedrock list prices for the matching Claude generation. The other
 families vary by region and purchasing model, so they report
 tokens without a dollar estimate.
+
+### Claude on Bedrock via the Anthropic SDK
+
+There is a second way to reach Claude on Bedrock: Anthropic's own
+`AnthropicBedrock` client (`pip install "anthropic[bedrock]"`).
+Because it reuses the same `messages` resource class as the direct
+Anthropic client, the auto-patched Anthropic shim captures it with
+no extra wiring — you don't go through `BedrockProvider` at all:
+
+```python
+import inkfoot
+from anthropic import AnthropicBedrock
+
+inkfoot.instrument()
+
+with inkfoot.agent_run(task="triage"):
+    client = AnthropicBedrock(aws_region="us-east-1")
+    client.messages.create(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        max_tokens=512,
+        messages=[{"role": "user", "content": "…"}],
+    )
+```
+
+These calls are tagged `provider="anthropic_bedrock"` — distinct
+from the boto3 `"bedrock"` path — and priced against the same
+Bedrock-namespaced rows, so a Claude-on-Bedrock model id resolves to
+a dollar estimate whichever client you use. Without the
+`anthropic[bedrock]` extra installed, nothing changes for direct
+Anthropic users.
 
 ## OpenAI-compatible endpoints
 

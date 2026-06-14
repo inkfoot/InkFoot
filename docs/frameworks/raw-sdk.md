@@ -35,7 +35,12 @@ older `openai` build without the Responses API, the Responses
 patch is quietly skipped and Chat Completions still installs.
 Azure clients (`AzureOpenAI`, `AsyncAzureOpenAI`) route through
 the same classes, so Azure calls on either surface are captured
-without extra setup.
+without extra setup. Likewise, Anthropic's managed-cloud client
+`AnthropicBedrock` (and `AsyncAnthropicBedrock`) shares the same
+`messages` resource class, so Claude-on-Bedrock calls made through
+it are captured with no extra wiring and tagged
+`provider="anthropic_bedrock"` — see
+[Amazon Bedrock](../providers.md#amazon-bedrock).
 
 `embeddings.create` is **not** patched by default. Opt in with
 `inkfoot.instrument(embeddings=True)` to capture OpenAI embedding
@@ -69,10 +74,12 @@ and flags the event — see
 OpenAI Chat output counts on a streamed call, pass
 `stream_options={"include_usage": True}`.
 
-Bedrock and OpenAI-compatible endpoints are integrated at the
-provider level rather than through a shim — see
-[Providers](../providers.md) for those, the capability matrix,
-and the per-provider usage-mapping notes.
+The boto3 Bedrock (`converse`) path and OpenAI-compatible
+endpoints are integrated at the provider level rather than through
+a shim — see [Providers](../providers.md) for those, the capability
+matrix, and the per-provider usage-mapping notes. (Claude on
+Bedrock reached through `anthropic`'s `AnthropicBedrock` client is
+the exception: it rides the Anthropic shim above.)
 
 Calls flowing through any patched method emit an `llm_call` event
 into Inkfoot's storage. Nothing else changes — your code

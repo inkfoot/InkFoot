@@ -207,3 +207,47 @@ def test_pricerow_is_frozen() -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         row.input = 1  # type: ignore[misc]
+
+
+# ----------------------------------------------------------------------
+# Claude on Bedrock — two SDK paths, one rate
+# ----------------------------------------------------------------------
+
+
+def test_bedrock_claude_priced_under_both_provider_keys() -> None:
+    """A Claude-on-Bedrock model resolves whether the call arrived via
+    the boto3 ``bedrock`` path or the ``anthropic_bedrock`` client, and
+    both share the identical row so the rates can't drift apart."""
+    model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    assert ("bedrock", model) in PRICING_ND_PER_TOKEN
+    assert ("anthropic_bedrock", model) in PRICING_ND_PER_TOKEN
+    assert (
+        PRICING_ND_PER_TOKEN[("bedrock", model)]
+        == PRICING_ND_PER_TOKEN[("anthropic_bedrock", model)]
+    )
+
+
+def test_common_anthropic_bedrock_models_resolve_to_a_price() -> None:
+    ledger = CausalTokenLedger(user_input_tokens=1_000, output_tokens=1_000)
+    for model in (
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "anthropic.claude-3-opus-20240229-v1:0",
+        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+    ):
+        nd = estimate_nanodollars("anthropic_bedrock", model, ledger)
+        assert nd is not None, f"{model} should resolve to a price"
+        assert int(nd) > 0
+
+
+def test_unknown_anthropic_bedrock_model_is_unpriced() -> None:
+    ledger = CausalTokenLedger(user_input_tokens=10, output_tokens=10)
+    assert (
+        estimate_nanodollars(
+            "anthropic_bedrock", "anthropic.imaginary-model-v9:0", ledger
+        )
+        is None
+    )

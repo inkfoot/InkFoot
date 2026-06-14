@@ -454,6 +454,22 @@ def test_registry_seeds_builtin_providers_on_first_access() -> None:
     assert ProviderRegistry.get("openai_compat") is None
 
 
+def test_registry_resolves_anthropic_bedrock_to_bedrock_capabilities() -> None:
+    # Claude-on-Bedrock via the AnthropicBedrock client is tagged
+    # "anthropic_bedrock"; capability lookups must resolve it (not fall
+    # back to None) with the Anthropic-family cache style and a
+    # Bedrock-namespaced cheap summariser model.
+    provider = ProviderRegistry.get("anthropic_bedrock")
+    assert isinstance(provider, BedrockProvider)
+    caps = provider.get_capabilities(
+        "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )
+    assert caps.prompt_cache_style == "explicit_marker"
+    assert caps.cheap_model_for_summariser == (
+        "anthropic.claude-3-5-haiku-20241022-v1:0"
+    )
+
+
 def test_registry_get_unknown_type_returns_none() -> None:
     assert ProviderRegistry.get("unknown") is None
 

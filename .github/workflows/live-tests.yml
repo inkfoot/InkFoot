@@ -126,7 +126,11 @@ jobs:
             tests: tests/integration/test_gemini_e2e.py
           - provider: bedrock
             extras: "dev,bedrock"
-            tests: tests/integration/test_bedrock_e2e.py
+            # The AnthropicBedrock leg also needs the Anthropic SDK with
+            # its bedrock extra (pulls boto3); the boto3 Converse leg is
+            # already covered by the bedrock extra above.
+            extra-packages: "anthropic[bedrock]"
+            tests: tests/integration/test_bedrock_e2e.py tests/integration/test_anthropic_bedrock_e2e.py
           - provider: ollama
             extras: "dev"
             # The compat endpoints are reached through the OpenAI
@@ -181,7 +185,9 @@ jobs:
         id: integration
         if: steps.install.outcome == 'success'
         continue-on-error: true
-        run: pytest "${{ matrix.tests }}" -v --tb=short -rs
+        # Unquoted so a leg can list more than one test path (the
+        # matrix values are trusted, fixed paths).
+        run: pytest ${{ matrix.tests }} -v --tb=short -rs
 
       - name: Write status row
         if: always()

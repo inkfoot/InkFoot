@@ -68,6 +68,14 @@ from the model id's prefix at call time:
 Unrecognised families get the conservative "other families" column:
 tool use only, no caching, no cheap summary tier.
 
+The same family resolution applies to Claude reached through
+Anthropic's `AnthropicBedrock` client, which the Anthropic shim
+captures and tags `provider="anthropic_bedrock"`. That string resolves
+to the same Bedrock Anthropic-models column above (and the same
+Bedrock pricing rows), so it shares the explicit-marker caching style
+and a Bedrock-namespaced cheap summariser model — distinct from the
+direct `anthropic` provider's.
+
 ## OpenAI-compatible endpoints are declared per instance
 
 `OpenAICompatProvider` covers self-hosted and third-party endpoints
