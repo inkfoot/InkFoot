@@ -204,9 +204,21 @@ def _memory_text(request: dict[str, Any]) -> str:
 class AnthropicTranslator:
     """Stateless translator. Pass the same instance across calls for
     a single run so the stable-prefix detector tracks history via
-    the :class:`InMemoryRunState` argument."""
+    the :class:`InMemoryRunState` argument.
+
+    ``provider`` selects the provider tag and pricing namespace the
+    emitted :class:`NeutralCall` carries. It defaults to the direct
+    Anthropic API. A managed-cloud client that speaks the same
+    ``messages.create`` shape (e.g. ``AnthropicBedrock``) reuses this
+    translator with its own provider value so the call is tagged and
+    priced against that platform's per-token table rather than the
+    direct-API one.
+    """
 
     provider = _PROVIDER
+
+    def __init__(self, provider: str = _PROVIDER) -> None:
+        self.provider = provider
 
     def translate(
         self,
@@ -312,13 +324,13 @@ class AnthropicTranslator:
         metadata = _collect_runtime_metadata(run_state)
 
         return NeutralCall(
-            provider=_PROVIDER,
+            provider=self.provider,
             model=model,
             started_at=started_at,
             ended_at=ended_at,
             ledger=ledger,
             estimated_nanodollars=estimate_nanodollars(
-                _PROVIDER, model, ledger
+                self.provider, model, ledger
             ),
             tools_offered=tools_offered,
             tools_called=_tool_calls_in_response(response),

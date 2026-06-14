@@ -89,19 +89,10 @@ PRICING_ND_PER_TOKEN: dict[tuple[str, str], PriceRow] = {
     ("gemini", "gemini-1.5-flash"): PriceRow(
         input=75, output=300, cache_read=18, cache_write=75
     ),
-    # Bedrock — only the Anthropic family is priced: AWS lists
-    # Claude on Bedrock at parity with Anthropic direct (same
-    # 0.1× cache-read / 1.25× cache-write ratios). The other
-    # families (Llama, Titan, Mistral, Cohere) vary by region and
-    # purchasing model (on-demand vs provisioned throughput), so
-    # they stay unpriced — estimate_nanodollars returns None and
-    # callers fall back to tokens-only reporting.
-    ("bedrock", "anthropic.claude-3-5-sonnet-20241022-v2:0"): PriceRow(
-        input=3_000, output=15_000, cache_read=300, cache_write=3_750
-    ),
-    ("bedrock", "anthropic.claude-3-5-haiku-20241022-v1:0"): PriceRow(
-        input=800, output=4_000, cache_read=80, cache_write=1_000
-    ),
+    # Claude-on-Bedrock rows are registered after this literal, under
+    # both the boto3 ("bedrock") and AnthropicBedrock
+    # ("anthropic_bedrock") provider keys — see
+    # _CLAUDE_ON_BEDROCK_ND_PER_TOKEN below.
     # OpenAI-compatible endpoints (vLLM, Ollama, Together, …). The
     # "*" wildcard matches any model under the provider type —
     # self-hosted is free at the provider boundary, so the default
@@ -112,6 +103,58 @@ PRICING_ND_PER_TOKEN: dict[tuple[str, str], PriceRow] = {
         input=0, output=0, cache_read=0, cache_write=0
     ),
 }
+
+
+# Claude-on-Bedrock per-token rates, keyed by the Bedrock-namespaced
+# model id. AWS bills a Claude model the same regardless of which SDK
+# issued the request, so these rows are registered under two provider
+# keys below:
+#
+# * "bedrock" — the call went through the boto3 ``bedrock-runtime``
+#   Converse path (mapped by :class:`BedrockProvider`).
+# * "anthropic_bedrock" — the call went through Anthropic's
+#   ``AnthropicBedrock`` client, captured by the Anthropic shim.
+#
+# Defining the rates once keeps the two paths from drifting when AWS
+# revises a rate. These are the Bedrock list prices, which track the
+# model *generation* — not aliases of the direct-API rows above (the
+# direct API lists a different model lineup under its own ids). Cache
+# tiers follow the Anthropic family's 0.1× read / 1.25× write ratios;
+# they are inert for the Claude 3 models that predate Bedrock prompt
+# caching (those calls never report cache tokens).
+#
+# Only the Anthropic family is priced here. Llama, Titan, Mistral and
+# Cohere vary by region and purchasing model (on-demand vs provisioned
+# throughput), so they stay unpriced — estimate_nanodollars returns
+# None and callers fall back to tokens-only reporting.
+_CLAUDE_ON_BEDROCK_ND_PER_TOKEN: dict[str, PriceRow] = {
+    "anthropic.claude-3-7-sonnet-20250219-v1:0": PriceRow(
+        input=3_000, output=15_000, cache_read=300, cache_write=3_750
+    ),
+    "anthropic.claude-3-5-sonnet-20241022-v2:0": PriceRow(
+        input=3_000, output=15_000, cache_read=300, cache_write=3_750
+    ),
+    "anthropic.claude-3-5-sonnet-20240620-v1:0": PriceRow(
+        input=3_000, output=15_000, cache_read=300, cache_write=3_750
+    ),
+    "anthropic.claude-3-5-haiku-20241022-v1:0": PriceRow(
+        input=800, output=4_000, cache_read=80, cache_write=1_000
+    ),
+    "anthropic.claude-3-opus-20240229-v1:0": PriceRow(
+        input=15_000, output=75_000, cache_read=1_500, cache_write=18_750
+    ),
+    "anthropic.claude-3-sonnet-20240229-v1:0": PriceRow(
+        input=3_000, output=15_000, cache_read=300, cache_write=3_750
+    ),
+    "anthropic.claude-3-haiku-20240307-v1:0": PriceRow(
+        input=250, output=1_250, cache_read=25, cache_write=312
+    ),
+}
+
+for _model_id, _row in _CLAUDE_ON_BEDROCK_ND_PER_TOKEN.items():
+    PRICING_ND_PER_TOKEN[("bedrock", _model_id)] = _row
+    PRICING_ND_PER_TOKEN[("anthropic_bedrock", _model_id)] = _row
+del _model_id, _row
 
 
 # Per-token nanodollar rates for embedding models. Embeddings bill a

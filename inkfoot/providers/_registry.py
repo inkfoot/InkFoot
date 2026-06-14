@@ -58,6 +58,16 @@ class _ProviderRegistry:
             BedrockProvider,
         ):
             self._by_type.setdefault(cls.PROVIDER_TYPE, cls())
+        # Claude reached through the AnthropicBedrock client is captured
+        # by the Anthropic shim and tagged "anthropic_bedrock". Its
+        # capability profile is the Bedrock Anthropic family
+        # (explicit-marker caching, a Bedrock-namespaced cheap model),
+        # so registry capability lookups resolve it through
+        # BedrockProvider, which reads the family off the
+        # bedrock-namespaced model id. Usage mapping for that path stays
+        # with AnthropicProvider in the translator — the client returns
+        # native Anthropic messages, not Converse responses.
+        self._by_type.setdefault("anthropic_bedrock", BedrockProvider())
         self._seeded = True
 
     def register(

@@ -44,7 +44,50 @@ from inkfoot.shims._streaming import (
 _LOG = logging.getLogger("inkfoot.shims.anthropic")
 
 _PROVIDER = "anthropic"
+_PROVIDER_BEDROCK = "anthropic_bedrock"
 _DEFAULT_MODEL = ""
+
+
+def _bedrock_client_types() -> tuple[type, ...]:
+    """The ``AnthropicBedrock`` client classes, or ``()`` when the
+    ``anthropic[bedrock]`` extra isn't importable.
+
+    Resolved per call rather than cached so the result always tracks
+    the live ``anthropic`` module — by the time a wrapped
+    ``messages.create`` runs, the import is a ``sys.modules`` hit.
+    Any failure (extra absent, boto3 broken) collapses to ``()`` so a
+    user without Bedrock sees the direct-API provider and zero change.
+    """
+    try:
+        import anthropic  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover — anthropic is importable here
+        return ()
+    found: list[type] = []
+    for name in ("AnthropicBedrock", "AsyncAnthropicBedrock"):
+        cls = getattr(anthropic, name, None)
+        if isinstance(cls, type):
+            found.append(cls)
+    return tuple(found)
+
+
+def _resolve_provider(client_self: Any) -> str:
+    """``"anthropic_bedrock"`` when the wrapped call came from an
+    ``AnthropicBedrock`` client, else ``"anthropic"``.
+
+    The patched method is ``Messages.create``; ``client_self`` is the
+    ``Messages`` resource, which the SDK builds with a back-reference
+    to its owning client in ``_client``. Detecting the Bedrock client
+    by identity lets the single ``Messages`` patch serve both the
+    direct and Bedrock clients (they share the resource class). Never
+    raises — an unrecognised shape resolves to the direct provider.
+    """
+    bedrock_types = _bedrock_client_types()
+    if not bedrock_types:
+        return _PROVIDER
+    client = getattr(client_self, "_client", None)
+    if client is not None and isinstance(client, bedrock_types):
+        return _PROVIDER_BEDROCK
+    return _PROVIDER
 
 
 class AnthropicShim:
@@ -63,6 +106,17 @@ class AnthropicShim:
         self._original_stream: Optional[Callable[..., Any]] = None
         self._original_async_stream: Optional[Callable[..., Any]] = None
         self._translator = AnthropicTranslator()
+        self._bedrock_translator = AnthropicTranslator(
+            provider=_PROVIDER_BEDROCK
+        )
+
+    def _translator_for(self, ctx: Any) -> AnthropicTranslator:
+        """Pick the translator whose provider matches the call
+        context so a Bedrock call is tagged and priced under
+        ``anthropic_bedrock`` while direct calls stay ``anthropic``."""
+        if getattr(ctx, "provider", _PROVIDER) == _PROVIDER_BEDROCK:
+            return self._bedrock_translator
+        return self._translator
 
     # ------------------------------------------------------------------
     # Install / uninstall
@@ -204,7 +258,13 @@ class AnthropicShim:
         args: tuple,
         kwargs: dict,
     ) -> Any:
-        before_decisions, ctx, started_at = self._before(kwargs)
+        provider = safely_run(
+            _resolve_provider,
+            client_self,
+            fallback=_PROVIDER,
+            hook_label="anthropic._resolve_provider",
+        )
+        before_decisions, ctx, started_at = self._before(kwargs, provider)
         # Contract enforcement runs outside isolation so a ``block``
         # decision can raise ``PolicyBlocked`` straight to the caller
         # and the SDK request is never made. A ``switch_to_cheap_model``
@@ -242,7 +302,13 @@ class AnthropicShim:
         args: tuple,
         kwargs: dict,
     ) -> Any:
-        before_decisions, ctx, started_at = self._before(kwargs)
+        provider = safely_run(
+            _resolve_provider,
+            client_self,
+            fallback=_PROVIDER,
+            hook_label="anthropic._resolve_provider",
+        )
+        before_decisions, ctx, started_at = self._before(kwargs, provider)
         enforce_before_call(ctx)
         streaming = bool(kwargs.get("stream"))
         try:
@@ -275,7 +341,7 @@ class AnthropicShim:
             started_at=started_at,
             storage=self._storage,
             capture_mode_getter=self._capture_mode_getter,
-            translator=self._translator,
+            translator=self._translator_for(ctx),
             before_decisions=before_decisions,
         )
 
@@ -290,7 +356,13 @@ class AnthropicShim:
 
         @functools.wraps(original)
         def wrapper(client_self: Any, *args: Any, **kwargs: Any) -> Any:
-            before_decisions, ctx, started_at = shim._before(kwargs)
+            provider = safely_run(
+                _resolve_provider,
+                client_self,
+                fallback=_PROVIDER,
+                hook_label="anthropic._resolve_provider",
+            )
+            before_decisions, ctx, started_at = shim._before(kwargs, provider)
             enforce_before_call(ctx)
             manager = original(client_self, *args, **kwargs)
             if ctx is None:
@@ -334,11 +406,11 @@ class AnthropicShim:
             hook_label="emit_llm_call_error",
         )
 
-    def _before(self, kwargs: dict):
+    def _before(self, kwargs: dict, provider: str = _PROVIDER):
         started_at = int(time.time() * 1000)
         ctx = safely_run(
             build_call_context,
-            provider=_PROVIDER,
+            provider=provider,
             model=kwargs.get("model", _DEFAULT_MODEL),
             request_kwargs=kwargs,
             storage=self._storage,
@@ -370,7 +442,7 @@ class AnthropicShim:
             ended_at=ended_at,
             storage=self._storage,
             capture_mode=self._capture_mode_getter(),
-            translator=self._translator,
+            translator=self._translator_for(ctx),
             before_decisions=before_decisions,
         )
         safely_run(emit_llm_call, **emit_llm_call_args, hook_label="emit_llm_call")

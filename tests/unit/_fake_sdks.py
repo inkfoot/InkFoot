@@ -357,9 +357,17 @@ class _FakeAsyncMessageStreamManager:
         return False
 
 
-def install_fake_anthropic() -> dict:
+def install_fake_anthropic(*, with_bedrock: bool = True) -> dict:
     """Install a fake ``anthropic`` module hierarchy and return its
-    call log. Repeated calls return the same log (idempotent)."""
+    call log. Repeated calls return the same log (idempotent).
+
+    ``with_bedrock=True`` also exposes ``AnthropicBedrock`` /
+    ``AsyncAnthropicBedrock`` on the module and gives the ``Messages``
+    resource a ``_client`` back-reference, so the shim's Bedrock
+    detection can run offline. ``with_bedrock=False`` models an
+    install without the ``anthropic[bedrock]`` extra — the classes are
+    absent, exactly the shape the shim must treat as plain Anthropic.
+    """
     if "anthropic" in sys.modules:
         # Test isolation: tear down any leftover fake.
         for key in list(sys.modules):
@@ -381,6 +389,12 @@ def install_fake_anthropic() -> dict:
     # wrongly collapse two distinct calls).
 
     class Messages:
+        def __init__(self, client: Any = None) -> None:
+            # The real SDK resource stores a back-reference to its
+            # owning client here; the shim reads it to tell an
+            # AnthropicBedrock client apart from a direct one.
+            self._client = client
+
         def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "sync", "args": args, "kwargs": kwargs})
             if errors:
@@ -410,6 +424,9 @@ def install_fake_anthropic() -> dict:
             )
 
     class AsyncMessages:
+        def __init__(self, client: Any = None) -> None:
+            self._client = client
+
         async def create(self, *args: Any, **kwargs: Any) -> Any:
             calls.append({"variant": "async", "args": args, "kwargs": kwargs})
             if errors:
@@ -449,13 +466,29 @@ def install_fake_anthropic() -> dict:
         patches, so client calls flow through the patched method."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.messages = Messages()
+            self.messages = Messages(self)
+
+    class AnthropicBedrock:
+        """``anthropic[bedrock]`` client facade. It reuses the patched
+        ``Messages`` resource class, so calls flow through the same
+        wrapper as the direct client; the shim distinguishes the two
+        by the client type reachable via ``messages._client``."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.messages = Messages(self)
+
+    class AsyncAnthropicBedrock:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.messages = AsyncMessages(self)
 
     messages_mod.Messages = Messages
     messages_mod.AsyncMessages = AsyncMessages
     resources_mod.messages = messages_mod
     anthropic_mod.resources = resources_mod
     anthropic_mod.Anthropic = Anthropic
+    if with_bedrock:
+        anthropic_mod.AnthropicBedrock = AnthropicBedrock
+        anthropic_mod.AsyncAnthropicBedrock = AsyncAnthropicBedrock
 
     sys.modules["anthropic"] = anthropic_mod
     sys.modules["anthropic.resources"] = resources_mod
@@ -467,6 +500,8 @@ def install_fake_anthropic() -> dict:
         "Messages": Messages,
         "AsyncMessages": AsyncMessages,
         "Anthropic": Anthropic,
+        "AnthropicBedrock": AnthropicBedrock,
+        "AsyncAnthropicBedrock": AsyncAnthropicBedrock,
         "module": anthropic_mod,
     }
 
