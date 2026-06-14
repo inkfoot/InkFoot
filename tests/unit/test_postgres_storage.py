@@ -265,6 +265,20 @@ def test_postgres_storage_satisfies_runtime_protocol() -> None:
     assert isinstance(PostgresStorage(dsn=_DSN), Storage)
 
 
+def test_postgres_accepts_and_exposes_redaction_hook() -> None:
+    """The redaction wiring installs the hook on whichever backend
+    writes content; the Postgres backend must accept it the same way
+    the SQLite one does, so replay content is masked on either."""
+    hook = object()
+    storage = PostgresStorage(dsn=_DSN, redaction_hook=hook)
+    assert storage._redaction_hook is hook
+    replacement = object()
+    storage.set_redaction_hook(replacement)
+    assert storage._redaction_hook is replacement
+    storage.set_redaction_hook(None)
+    assert storage._redaction_hook is None
+
+
 def test_lazy_reexport_from_storage_package() -> None:
     from inkfoot.storage import PostgresStorage as ReExported
 

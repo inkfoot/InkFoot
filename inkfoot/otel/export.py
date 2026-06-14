@@ -375,6 +375,20 @@ class OTLPExporter:
 # ----------------------------------------------------------------------
 
 
+# Replay-mode content kwargs. The span is built from ``payload_json``
+# (metadata) and never reads these, so they are dropped from the export
+# envelope: redaction is applied inside the backend's ``insert_event``,
+# which rewrites its own locals — the tap would otherwise queue the
+# original, un-redacted bodies. Stripping them here keeps the no-leak
+# guarantee at the export boundary too, independent of what the span
+# builder happens to read.
+_REPLAY_CONTENT_KWARGS = (
+    "request_json",
+    "response_json",
+    "tool_result_json",
+)
+
+
 class _ExportingStorage:
     """Proxy around a real Storage that tees ``insert_event`` to an
     :class:`OTLPExporter`. Other Storage methods pass through
@@ -398,8 +412,15 @@ class _ExportingStorage:
     def insert_event(self, **kwargs: Any) -> None:
         self._wrapped.insert_event(**kwargs)
         # Build the export envelope from the kwargs we already have;
-        # never read back from storage on the hot path.
-        self._exporter.enqueue_event(dict(kwargs))
+        # never read back from storage on the hot path. Replay content
+        # is excluded so un-redacted bodies never enter the export
+        # queue (see ``_REPLAY_CONTENT_KWARGS``).
+        envelope = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in _REPLAY_CONTENT_KWARGS
+        }
+        self._exporter.enqueue_event(envelope)
 
 
 def tap_storage(storage: Any, exporter: OTLPExporter) -> Any:

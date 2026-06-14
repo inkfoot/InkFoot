@@ -45,6 +45,8 @@ if TYPE_CHECKING:  # pragma: no cover
     import psycopg
     import psycopg_pool
 
+    from inkfoot.storage.redaction import RedactionHook
+
 
 _LOG = logging.getLogger("inkfoot.storage.postgres")
 
@@ -137,6 +139,7 @@ class PostgresStorage:
         pool_min: Optional[int] = None,
         pool_max: Optional[int] = None,
         connect_timeout: float = 30.0,
+        redaction_hook: Optional["RedactionHook"] = None,
     ) -> None:
         if dsn is None:
             dsn = os.environ.get(_DSN_ENV)
@@ -157,10 +160,21 @@ class PostgresStorage:
         self._pool: Optional["psycopg_pool.ConnectionPool[Any]"] = None
         self._lock = threading.Lock()
         self._closed = False
+        # Optional redaction hook run over replay content before it is
+        # written to ``event_contents`` (see :meth:`set_redaction_hook`).
+        self._redaction_hook: Optional["RedactionHook"] = redaction_hook
 
     @property
     def dsn(self) -> str:
         return self._dsn
+
+    def set_redaction_hook(
+        self, hook: Optional["RedactionHook"]
+    ) -> None:
+        """Install (or clear) the redaction hook applied to replay
+        content. ``inkfoot.instrument()`` calls this when replay capture
+        is enabled."""
+        self._redaction_hook = hook
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -311,7 +325,9 @@ class PostgresStorage:
         replay-mode content contract matches SQLite: a sibling
         ``event_contents`` row is written only when
         ``capture_mode='replay'`` *and* some content kwarg is
-        non-None."""
+        non-None. An installed redaction hook runs over the content
+        before it is written; ``content_redacted`` records whether it
+        changed anything."""
         if capture_mode not in {"metadata", "replay"}:
             raise ValueError(
                 f"capture_mode must be 'metadata' or 'replay', not "
@@ -322,6 +338,34 @@ class PostgresStorage:
             or response_json is not None
             or tool_result_json is not None
         )
+        if (
+            capture_mode == "replay"
+            and has_content
+            and self._redaction_hook is not None
+        ):
+            from inkfoot.storage.redaction import (  # noqa: PLC0415
+                RedactionContext,
+                apply_to_content,
+            )
+
+            (
+                request_json,
+                response_json,
+                tool_result_json,
+                content_redacted,
+            ) = apply_to_content(
+                self._redaction_hook,
+                ctx=RedactionContext(
+                    run_id=run_id,
+                    event_id=event_id,
+                    kind=kind,
+                    capture_mode=capture_mode,
+                    sequence=sequence,
+                ),
+                request_json=request_json,
+                response_json=response_json,
+                tool_result_json=tool_result_json,
+            )
         with self._connection() as conn:
             conn.execute(
                 """

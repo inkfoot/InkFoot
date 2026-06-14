@@ -38,6 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.policy import Policy
     from inkfoot.storage import Storage
     from inkfoot.storage.aggregator import AggregatorWorker
+    from inkfoot.storage.redaction import RedactionHook
 
 
 _LOG = logging.getLogger("inkfoot.instrument")
@@ -78,6 +79,7 @@ def instrument(
     otel_ingest_host: str = "127.0.0.1",
     langchain: Union[bool, Literal["auto"]] = "auto",
     embeddings: bool = False,
+    redaction_hook: Optional["RedactionHook"] = None,
 ) -> None:
     """Install Pattern A monkey-patches for the detected SDKs, start
     the aggregator, and register the supplied policies.
@@ -115,6 +117,15 @@ def instrument(
     token ledger — they never appear in ``llm_call`` totals or the
     attribution chart. ``inkfoot report`` surfaces them in their own
     section below the chart.
+
+    ``redaction_hook`` masks sensitive content before it is written to
+    the replay store. It only matters when ``capture_mode='replay'``
+    (metadata capture persists no content). In replay mode a regex
+    floor — email addresses, the common provider API-key shapes, and
+    JWTs — always runs at the storage boundary; a supplied hook runs in
+    front of it and composes, so it can mask more but never less than
+    the floor. Implement the :class:`inkfoot.storage.redaction.RedactionHook`
+    protocol to add organisation-specific shapes.
     """
     global _INSTRUMENTED, _CAPTURE_MODE, _STORAGE, _WORKER
     global _OTEL_INGEST, _OTEL_EXPORTER
@@ -155,6 +166,34 @@ def instrument(
         # where an ingested span re-exports out the same endpoint
         # it came from.
         raw_storage = storage
+
+        # Install the redaction hook on the backend that writes content
+        # to disk. In replay mode the regex floor always runs and a
+        # caller hook composes in front of it; in metadata mode no
+        # content is persisted, so a supplied hook would never run.
+        from inkfoot.storage.redaction import (  # noqa: PLC0415
+            resolve_redaction_hook,
+        )
+
+        effective_redaction_hook = resolve_redaction_hook(
+            capture_mode, redaction_hook
+        )
+        if effective_redaction_hook is not None:
+            set_hook = getattr(raw_storage, "set_redaction_hook", None)
+            if callable(set_hook):
+                set_hook(effective_redaction_hook)
+            else:
+                _LOG.warning(
+                    "storage backend %s does not support redaction hooks; "
+                    "replay content will be written unredacted",
+                    type(raw_storage).__name__,
+                )
+        elif redaction_hook is not None:
+            _LOG.warning(
+                "redaction_hook was supplied but capture_mode=%r persists "
+                "no content; the hook will not run",
+                capture_mode,
+            )
 
         # OTel export tap: wrap storage so insert_event
         # mirrors to the exporter. Installed *before* the policy /

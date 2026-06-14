@@ -267,6 +267,38 @@ def test_replay_mode_without_content_skips_sibling_row(
     assert _content_row_count(pg_dsn, "evt-1") == 0
 
 
+def test_redaction_hook_masks_content_before_write(
+    pg_storage, pg_dsn
+) -> None:
+    """Cross-backend parity: the floor masks replay content on Postgres
+    exactly as it does on SQLite — no secret reaches the content row,
+    and ``content_redacted`` is set."""
+    from inkfoot.storage.redaction import default_redactor
+
+    pg_storage.set_redaction_hook(default_redactor())
+    _seed_run(pg_storage)
+    pg_storage.insert_event(
+        event_id="evt-1",
+        run_id="run-1",
+        kind="llm_call",
+        occurred_at=1,
+        sequence=1,
+        capture_mode="replay",
+        request_json='{"system": "mail alice@example.com"}',
+        response_json='{"text": "ok"}',
+    )
+    with psycopg.connect(pg_dsn) as conn:
+        row = conn.execute(
+            "SELECT request_json, content_redacted "
+            "FROM event_contents WHERE event_id = %s",
+            ("evt-1",),
+        ).fetchone()
+    assert row is not None
+    assert "alice@example.com" not in row[0]
+    assert "[REDACTED:email]" in row[0]
+    assert row[1] == 1
+
+
 # ----------------------------------------------------------------------
 # Dirty queue + claim-and-project
 # ----------------------------------------------------------------------

@@ -40,7 +40,7 @@ find:
 |---|---|
 | `runs` | One row per agent run: task, agent_kind, started_at, ended_at, status, outcome, quality_score, and projected totals (`total_input_tokens`, `total_output_tokens`, `total_cache_read_tokens`, `total_cache_creation_tokens`, `total_nanodollars`). |
 | `events` | The append-only event log. One row per LLM call (`kind='llm_call'`), per policy warning, per `inkfoot.tag(...)` call, per `set_outcome`, and per run lifecycle event. |
-| `event_contents` | Full request and response bodies — populated only when `inkfoot.instrument(capture_mode="replay")` is in effect. Empty by default. |
+| `event_contents` | Full request and response bodies — populated only when `inkfoot.instrument(capture_mode="replay")` is in effect. Empty by default. Bodies are masked by the [redaction hook](../operations/services-and-multi-replica.md#redaction-is-required-before-replay-capture-in-services) before they land here; `content_redacted` flags rows the hook changed. |
 | `applied_migrations` | Inkfoot's own migration bookkeeping. |
 
 The event log is the source of truth. The `runs.total_*` columns are

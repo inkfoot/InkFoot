@@ -121,6 +121,12 @@ class Storage(Protocol):
         accept these kwargs (so the shim call site doesn't have to
         branch) and ignore them — a future Postgres backend may
         defer the replay implementation to future Cloud code.
+
+        Backends that persist replay content may *optionally* expose a
+        ``set_redaction_hook(hook)`` method; when present,
+        ``inkfoot.instrument()`` installs the redaction hook there so
+        sensitive bytes are masked before the content row is written.
+        ``content_redacted`` records whether the hook changed anything.
         """
 
     def mark_dirty(self, run_id: str) -> None:

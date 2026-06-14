@@ -1,0 +1,55 @@
+# Sample OpenTelemetry Collector config for forwarding Inkfoot events.
+#
+# Inkfoot, started with
+#   inkfoot.instrument(otel_export_endpoint="http://otel-collector.local:4318")
+# mirrors every llm_call event (plus smells and outcomes) to this
+# collector as OTLP/JSON logs over HTTP. The collector batches them and
+# forwards to whatever backend you operate. Point each service replica
+# at the same collector; it fans the streams into one backend.
+#
+# Run with the OpenTelemetry Collector (contrib distribution):
+#   otelcol-contrib --config otel-collector.yaml
+
+receivers:
+  # Accept what Inkfoot exports: OTLP/JSON over HTTP on :4318.
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Batch before export to cut request volume under fleet load.
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  # Drop the collector's own memory runaway before it OOMs.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+exporters:
+  # Forward to your upstream backend. Replace the endpoint and auth
+  # with your vendor's OTLP intake (Honeycomb, Grafana, Datadog, …).
+  otlphttp/backend:
+    endpoint: https://otlp.your-backend.example
+    headers:
+      # x-api-key: ${env:OTEL_BACKEND_API_KEY}
+      {}
+  # Uncomment to eyeball the stream locally while wiring things up.
+  # debug:
+  #   verbosity: detailed
+
+service:
+  pipelines:
+    # Inkfoot's export side emits logs (POST /v1/logs).
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/backend]
+    # Inkfoot's ingest side (if you also POST spans back to Inkfoot)
+    # uses traces; included so a round-trip collector stays valid.
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/backend]

@@ -25,10 +25,13 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional
 
 from inkfoot.storage import PROJECTION_COLUMNS
 from inkfoot.storage.migrations import apply_migrations, current_schema_version
+
+if TYPE_CHECKING:  # pragma: no cover
+    from inkfoot.storage.redaction import RedactionHook
 
 
 _PRAGMAS = (
@@ -61,7 +64,12 @@ class SQLiteStorage:
     in-memory DB).
     """
 
-    def __init__(self, path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        path: Optional[Path] = None,
+        *,
+        redaction_hook: Optional["RedactionHook"] = None,
+    ) -> None:
         if path is None:
             path = _default_db_path()
         self._path: Path | str
@@ -80,6 +88,18 @@ class SQLiteStorage:
         self._connections: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
         self._closed = False
+        # Optional redaction hook run over replay content before it is
+        # written to ``event_contents``. ``None`` means no redaction
+        # (the default for metadata capture).
+        self._redaction_hook: Optional["RedactionHook"] = redaction_hook
+
+    def set_redaction_hook(
+        self, hook: Optional["RedactionHook"]
+    ) -> None:
+        """Install (or clear) the redaction hook applied to replay
+        content. ``inkfoot.instrument()`` calls this when replay capture
+        is enabled."""
+        self._redaction_hook = hook
 
     # ------------------------------------------------------------------
     # Connection management
@@ -282,11 +302,57 @@ class SQLiteStorage:
         are silently ignored — the row is suppressed here at the
         storage layer rather than in the shim, so both shims share
         one write path.
+
+        When a redaction hook is installed it runs over the content
+        *before* the transaction opens (so the regex/serialise work
+        never holds the write lock); the row's ``content_redacted``
+        flag records whether the hook changed anything.
         """
         if capture_mode not in {"metadata", "replay"}:
             raise ValueError(
                 f"capture_mode must be 'metadata' or 'replay', not "
                 f"{capture_mode!r}"
+            )
+        # Replay-mode content row:
+        # we only write when there's actual content to record.
+        # The shim's policy-event branch doesn't carry content
+        # — writing a row of all-NULLs would pollute the
+        # event_contents table and confuse readers who join
+        # to it expecting "this is a replayable LLM call".
+        has_content = (
+            request_json is not None
+            or response_json is not None
+            or tool_result_json is not None
+        )
+        # Redact replay content *before* opening the write transaction
+        # so the regex/serialise work never holds the SQLite write lock.
+        if (
+            capture_mode == "replay"
+            and has_content
+            and self._redaction_hook is not None
+        ):
+            from inkfoot.storage.redaction import (  # noqa: PLC0415
+                RedactionContext,
+                apply_to_content,
+            )
+
+            (
+                request_json,
+                response_json,
+                tool_result_json,
+                content_redacted,
+            ) = apply_to_content(
+                self._redaction_hook,
+                ctx=RedactionContext(
+                    run_id=run_id,
+                    event_id=event_id,
+                    kind=kind,
+                    capture_mode=capture_mode,
+                    sequence=sequence,
+                ),
+                request_json=request_json,
+                response_json=response_json,
+                tool_result_json=tool_result_json,
             )
         with self._locked_conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -311,17 +377,6 @@ class SQLiteStorage:
                 conn.execute(
                     "UPDATE runs SET aggregates_dirty = 1 WHERE id = ?",
                     (run_id,),
-                )
-                # Replay-mode content row:
-                # we only write when there's actual content to record.
-                # The shim's policy-event branch doesn't carry content
-                # — writing a row of all-NULLs would pollute the
-                # event_contents table and confuse readers who join
-                # to it expecting "this is a replayable LLM call".
-                has_content = (
-                    request_json is not None
-                    or response_json is not None
-                    or tool_result_json is not None
                 )
                 if capture_mode == "replay" and has_content:
                     conn.execute(
