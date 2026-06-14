@@ -1,0 +1,12 @@
+{
+  "name": "every system token drifts call-over-call",
+  "expect": "fires",
+  "run": {"id": "pos-2", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 0, "system_dynamic_tokens": 800}}
+    }
+  ]
+}

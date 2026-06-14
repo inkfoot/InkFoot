@@ -370,3 +370,8 @@ register_smell(MY_SMELL)
 
 After registration, your smell evaluates alongside the built-ins on
 every report.
+
+To share a smell with everyone rather than keeping it local, contribute
+it to the open [Cost Smell Library](cost-smell-library.md) — the same
+catalogue these built-in smells are published through, bundled with the
+package and browsable on the web.

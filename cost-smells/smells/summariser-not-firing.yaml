@@ -1,0 +1,23 @@
+id: summariser-not-firing
+title: Summariser not firing on oversized tool results
+severity: warn
+description: >-
+  Three or more calls in this run each carried over 2000 tokens of raw
+  tool results, and no summariser activity appears anywhere in the run.
+  Every oversized result is billed at full input rate on every call it
+  stays in context. A summariser folds those bodies into a few hundred
+  tokens before they re-enter the conversation.
+
+detection:
+  language: builtin
+  query: count(calls where tool_result_tokens > 2000), evaluated only when no summariser activity appears in the run
+  trigger_condition: "value >= 3 and summariser_activity == false"
+
+recommendation: >-
+  Enable CheapSummariser(threshold_tokens=1500) so oversized tool
+  results are folded into short summaries before they recycle through the
+  context.
+
+suggested_policy: CheapSummariser
+primary_category: tool_result_tokens
+evidence_query: "SELECT sequence, tool_result_tokens, summariser_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

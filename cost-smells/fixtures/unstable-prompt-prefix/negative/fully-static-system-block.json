@@ -1,0 +1,12 @@
+{
+  "name": "system block is entirely static, so the cache stays warm",
+  "expect": "silent",
+  "run": {"id": "neg-1", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 1000, "system_dynamic_tokens": 0}}
+    }
+  ]
+}

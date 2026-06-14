@@ -72,9 +72,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Regenerate the bundled smell snapshot from the catalogue
+        # Freeze the snapshot from the smell catalogue at tag time so the
+        # released wheel carries a snapshot current with the catalogue.
+        # The builder needs only a YAML parser + schema validator, not
+        # the package itself.
+        run: |
+          python -m pip install --upgrade pip "pyyaml>=6" "jsonschema>=4"
+          python scripts/build_library_snapshot.py
       - name: Build distributions
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade build
           python -m build
       - name: Check distribution metadata
         run: |

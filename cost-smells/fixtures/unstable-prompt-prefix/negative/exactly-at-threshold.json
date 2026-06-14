@@ -1,0 +1,12 @@
+{
+  "name": "dynamic fraction is exactly 10% — the trigger is strictly greater-than",
+  "expect": "silent",
+  "run": {"id": "neg-2", "task": "support-triage", "agent_kind": "raw"},
+  "events": [
+    {
+      "kind": "llm_call",
+      "sequence": 1,
+      "payload": {"ledger": {"system_static_tokens": 900, "system_dynamic_tokens": 100}}
+    }
+  ]
+}

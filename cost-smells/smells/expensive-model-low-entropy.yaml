@@ -1,0 +1,24 @@
+id: expensive-model-low-entropy
+title: Expensive model used for low-entropy output
+severity: info
+description: >-
+  One or more calls in this run used an expensive model (Opus, gpt-4o,
+  o-series) for a short non-reasoning response. A cheaper model (Haiku,
+  gpt-4o-mini) would have produced the same answer for a fraction of the
+  cost. The smell is purely informational — sometimes the expensive
+  model is the right call (latency, instruction-following) — but the
+  cost difference is usually worth a look.
+
+detection:
+  language: builtin
+  query: count(calls where model is expensive, reasoning_tokens == 0, output_tokens < 200, and the model's output price exceeds a cheap model's)
+  trigger_condition: "value >= 1"
+
+recommendation: >-
+  Route short, non-reasoning prompts to a cheaper model. a future
+  CheapSummariser does this automatically for summarisation; for
+  classification + key-extract use a named-routing wrapper today.
+
+suggested_policy: null
+primary_category: output_tokens
+evidence_query: "SELECT model, output_tokens, reasoning_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

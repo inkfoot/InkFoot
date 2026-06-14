@@ -48,6 +48,12 @@ node_modules/
 .benchmarks/
 benchmark.json
 
-# Docs build
+# Docs build (repo-root mkdocs output only; anchored so it doesn't also
+# match the library site sources under cost-smells/site/)
 docs/_build/
-site/
+/site/
+
+# Cost smell library site — generated pages and build output
+cost-smells/site/_site/
+cost-smells/site/docs/smells/
+cost-smells/site/docs/catalogue.md

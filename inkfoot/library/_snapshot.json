@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "smell_count": 11,
+  "smells": [
+    {
+      "description": "This run cost more than 10× the median of its task's recent runs. One run like this drags the task's average far above what a typical run costs, so per-task aggregates stop reflecting reality. The usual causes are a retry storm, a runaway loop, or an unusually large input that deserves its own task name.",
+      "detection": {
+        "language": "builtin",
+        "query": "run_cost_nanodollars / task_peer_p50_nanodollars, evaluated only when task_peer_count >= 5",
+        "trigger_condition": "value > 10.0 and task_peer_count >= 5"
+      },
+      "evidence_query": "SELECT id, total_nanodollars FROM runs WHERE task = :task ORDER BY started_at DESC",
+      "id": "cost-skewed-by-outlier",
+      "primary_category": null,
+      "recommendation": "Investigate what made this run exceptional, and consider enforcing a BudgetCap so a single run cannot overshoot the task's typical cost unbounded.",
+      "severity": "warn",
+      "suggested_policy": "BudgetCap",
+      "title": "Cost skewed by outlier run"
+    },
+    {
+      "description": "One or more calls in this run used an expensive model (Opus, gpt-4o, o-series) for a short non-reasoning response. A cheaper model (Haiku, gpt-4o-mini) would have produced the same answer for a fraction of the cost. The smell is purely informational — sometimes the expensive model is the right call (latency, instruction-following) — but the cost difference is usually worth a look.",
+      "detection": {
+        "language": "builtin",
+        "query": "count(calls where model is expensive, reasoning_tokens == 0, output_tokens < 200, and the model's output price exceeds a cheap model's)",
+        "trigger_condition": "value >= 1"
+      },
+      "evidence_query": "SELECT model, output_tokens, reasoning_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "expensive-model-low-entropy",
+      "primary_category": "output_tokens",
+      "recommendation": "Route short, non-reasoning prompts to a cheaper model. a future CheapSummariser does this automatically for summarisation; for classification + key-extract use a named-routing wrapper today.",
+      "severity": "info",
+      "suggested_policy": null,
+      "title": "Expensive model used for low-entropy output"
+    },
+    {
+      "description": "SDK retries in this run averaged more than 3 per completed call. The upstream is failing (rate limits, timeouts, overload) and the agent keeps re-sending the same request — each attempt re-tokenises the full context, so a persistent failure multiplies the run's cost without producing anything. Back off harder, and stop retrying into an upstream that keeps refusing.",
+      "detection": {
+        "language": "builtin",
+        "query": "count(failed calls) / max(1, count(completed calls))",
+        "trigger_condition": "value > 3.0"
+      },
+      "evidence_query": "SELECT sequence, error.type FROM events_json WHERE run_id = :run_id AND kind = 'llm_call' AND error IS NOT NULL",
+      "id": "over-instrumented-retries",
+      "primary_category": "retry_overhead_tokens",
+      "recommendation": "Tune the SDK's backoff (fewer attempts, longer waits) and circuit-break the upstream after repeated failures. RetryThrottle enforces a retry budget per window at the instrumentation layer.",
+      "severity": "warn",
+      "suggested_policy": "RetryThrottle",
+      "title": "Retries firing far above call rate"
+    },
+    {
+      "description": "A tool result of more than 2000 tokens is sitting in the context across 3+ turns. The agent is paying full input rate for that body on every turn it stays in scope. The right fix is to summarise the tool result before reusing it — a future CheapSummariser does this automatically.",
+      "detection": {
+        "language": "builtin",
+        "query": "max(tool_result_tokens per call) over runs with at least 3 turns carrying tool results",
+        "trigger_condition": "tool_result_tokens >= 2000 and turns_with_tool_results >= 3"
+      },
+      "evidence_query": "SELECT tool_result_tokens, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "oversized-tool-result-recycled",
+      "primary_category": "tool_result_tokens",
+      "recommendation": "Summarise large tool results before recycling them across turns. Enable CheapSummariser(threshold_tokens=1500), or prune the messages array manually after each tool invocation.",
+      "severity": "warn",
+      "suggested_policy": "CheapSummariser",
+      "title": "Oversized tool result recycled across turns"
+    },
+    {
+      "description": "More than 80% of this run's calls wrote to the prompt cache. Writes cost more than fresh input — the break-even point is roughly 4 reads per write — so a run that keeps writing is churning the cache without amortising. The usual cause is a cache_control marker positioned past the drifting section so each call invalidates the prior write.",
+      "detection": {
+        "language": "builtin",
+        "query": "count(calls where cache_creation_tokens > 0) / count(calls)",
+        "trigger_condition": "value > 0.80"
+      },
+      "evidence_query": "SELECT cache_creation_tokens, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "recurring-cache-writes",
+      "primary_category": "cache_creation_tokens",
+      "recommendation": "Move the cache_control marker earlier in the prompt — before the unstable section — so the static prefix gets cached and the per-call drift becomes a normal input read.",
+      "severity": "warn",
+      "suggested_policy": "CacheControlPlacer",
+      "title": "Recurring cache writes (cache thrashing)"
+    },
+    {
+      "description": "The agent invoked the same tool more than 5 times in this run. The classic cause is a tool whose result the agent can't interpret, so it keeps retrying with marginally different inputs. Each retry pays for the full prompt + tool-result history again — the cost grows quadratically in the worst case.",
+      "detection": {
+        "language": "builtin",
+        "query": "max(count of tools_called grouped by tool name)",
+        "trigger_condition": "value > 5"
+      },
+      "evidence_query": "SELECT tools_called, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "runaway-retry-loop",
+      "primary_category": null,
+      "recommendation": "Inspect the tool's output for ambiguity or a missing exit condition in the agent's loop. Add a guard that breaks the loop after N attempts or escalates to a human.",
+      "severity": "critical",
+      "suggested_policy": "RetryThrottle",
+      "title": "Runaway retry loop"
+    },
+    {
+      "description": "Three or more calls in this run each carried over 2000 tokens of raw tool results, and no summariser activity appears anywhere in the run. Every oversized result is billed at full input rate on every call it stays in context. A summariser folds those bodies into a few hundred tokens before they re-enter the conversation.",
+      "detection": {
+        "language": "builtin",
+        "query": "count(calls where tool_result_tokens > 2000), evaluated only when no summariser activity appears in the run",
+        "trigger_condition": "value >= 3 and summariser_activity == false"
+      },
+      "evidence_query": "SELECT sequence, tool_result_tokens, summariser_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "summariser-not-firing",
+      "primary_category": "tool_result_tokens",
+      "recommendation": "Enable CheapSummariser(threshold_tokens=1500) so oversized tool results are folded into short summaries before they recycle through the context.",
+      "severity": "warn",
+      "suggested_policy": "CheapSummariser",
+      "title": "Summariser not firing on oversized tool results"
+    },
+    {
+      "description": "Runs where oversized tool results were summarised succeed measurably less often than runs that kept the raw results. The summariser is trading away task quality for token savings; it has been auto-disabled for this task.",
+      "detection": {
+        "language": "builtin",
+        "query": "presence of a summariser_quality_regression event in the run",
+        "trigger_condition": "event present"
+      },
+      "evidence_query": "SELECT payload_json FROM events WHERE run_id = :run_id AND kind = 'summariser_quality_regression'",
+      "id": "summariser-quality-regression",
+      "primary_category": "summariser_tokens",
+      "recommendation": "Inspect the summarised tool results preserved in the event log to see what the summaries dropped. Raise the summariser's threshold_tokens or max_summary_tokens so more context survives, or leave it disabled for this task. Re-enable with inkfoot.policy.cheap_summariser.enable_summariser_for_task() once the configuration changes.",
+      "severity": "critical",
+      "suggested_policy": null,
+      "title": "Summariser quality regression"
+    },
+    {
+      "description": "The tool-schema fingerprint changed partway through this run — tools were added, removed, or reordered between calls. Tool schemas serialise near the top of the request body, so every call after the change misses the provider's prompt cache on the schema block and pays full input rate for it. Keep the tool set stable for the lifetime of a run: register every tool up front and keep the ordering deterministic.",
+      "detection": {
+        "language": "builtin",
+        "query": "count(distinct metadata.tools_fingerprint across calls)",
+        "trigger_condition": "value > 1"
+      },
+      "evidence_query": "SELECT sequence, metadata.tools_fingerprint, tool_schema_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "tool-schema-drift",
+      "primary_category": "tool_schema_tokens",
+      "recommendation": "Stabilise tool ordering and avoid adding tools mid-run. If the agent only needs a subset of tools per call, narrow exposure with LazyToolExposure instead of mutating the registered set.",
+      "severity": "warn",
+      "suggested_policy": "LazyToolExposure",
+      "title": "Tool schema drift mid-run"
+    },
+    {
+      "description": "At least one call in this run carried more than 50,000 tokens of conversation history / agent memory. Nothing is trimming the history, so every additional turn re-sends the whole transcript and the per-call cost grows linearly until the context window runs out. Long-running agents need a memory policy: compress older turns into a summary, or truncate beyond a fixed window.",
+      "detection": {
+        "language": "builtin",
+        "query": "max(memory_tokens per call)",
+        "trigger_condition": "value > 50000"
+      },
+      "evidence_query": "SELECT sequence, memory_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call' ORDER BY memory_tokens DESC",
+      "id": "unbounded-conversation-history",
+      "primary_category": "memory_tokens",
+      "recommendation": "Add memory compression — fold older turns into a running summary — or truncate history beyond a fixed turn window.",
+      "severity": "warn",
+      "suggested_policy": null,
+      "title": "Unbounded conversation history"
+    },
+    {
+      "description": "More than 10% of this run's system block is dynamic. The provider's prompt cache only fires when the prefix is byte-identical call-over-call, so every drifting token costs full input rate instead of the (cheaper) cache-read rate. The usual culprit is a timestamp or user-context line embedded inside the system block — move it out into a normal user message, or split the system block so the static portion stays cacheable.",
+      "detection": {
+        "language": "builtin",
+        "query": "system_dynamic_tokens / (system_static_tokens + system_dynamic_tokens)",
+        "trigger_condition": "value > 0.10"
+      },
+      "evidence_query": "SELECT system_static_tokens, system_dynamic_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'",
+      "id": "unstable-prompt-prefix",
+      "primary_category": "system_dynamic_tokens",
+      "recommendation": "Move time-varying content (timestamps, request IDs, per-call context) out of the system block.",
+      "severity": "warn",
+      "suggested_policy": "CacheControlPlacer",
+      "title": "Unstable prompt prefix"
+    }
+  ],
+  "source": "cost-smells"
+}

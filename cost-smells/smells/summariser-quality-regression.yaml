@@ -1,0 +1,25 @@
+id: summariser-quality-regression
+title: Summariser quality regression
+severity: critical
+description: >-
+  Runs where oversized tool results were summarised succeed measurably
+  less often than runs that kept the raw results. The summariser is
+  trading away task quality for token savings; it has been auto-disabled
+  for this task.
+
+detection:
+  language: builtin
+  query: presence of a summariser_quality_regression event in the run
+  trigger_condition: "event present"
+
+recommendation: >-
+  Inspect the summarised tool results preserved in the event log to see
+  what the summaries dropped. Raise the summariser's threshold_tokens or
+  max_summary_tokens so more context survives, or leave it disabled for
+  this task. Re-enable with
+  inkfoot.policy.cheap_summariser.enable_summariser_for_task() once the
+  configuration changes.
+
+suggested_policy: null
+primary_category: summariser_tokens
+evidence_query: "SELECT payload_json FROM events WHERE run_id = :run_id AND kind = 'summariser_quality_regression'"

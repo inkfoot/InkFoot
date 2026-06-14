@@ -1,0 +1,23 @@
+id: unbounded-conversation-history
+title: Unbounded conversation history
+severity: warn
+description: >-
+  At least one call in this run carried more than 50,000 tokens of
+  conversation history / agent memory. Nothing is trimming the history,
+  so every additional turn re-sends the whole transcript and the
+  per-call cost grows linearly until the context window runs out.
+  Long-running agents need a memory policy: compress older turns into a
+  summary, or truncate beyond a fixed window.
+
+detection:
+  language: builtin
+  query: max(memory_tokens per call)
+  trigger_condition: "value > 50000"
+
+recommendation: >-
+  Add memory compression — fold older turns into a running summary — or
+  truncate history beyond a fixed turn window.
+
+suggested_policy: null
+primary_category: memory_tokens
+evidence_query: "SELECT sequence, memory_tokens FROM events_json WHERE run_id = :run_id AND kind = 'llm_call' ORDER BY memory_tokens DESC"

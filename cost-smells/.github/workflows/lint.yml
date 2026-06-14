@@ -1,0 +1,42 @@
+name: Lint smells
+
+# Fires on every pull request that touches a smell, its fixtures, the
+# schema, or the validator itself — and on pushes to main as a backstop.
+on:
+  pull_request:
+    paths:
+      - "smells/**"
+      - "fixtures/**"
+      - "schema/**"
+      - "tools/**"
+      - ".github/workflows/lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "smells/**"
+      - "fixtures/**"
+      - "schema/**"
+      - "tools/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate smell definitions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pyyaml>=6" "jsonschema>=4"
+      - name: Validate all smell files against the schema
+        # Schema conformance, reserved-field rejection, and the
+        # query-cost heuristic run on every file. --require-fixtures
+        # enforces the publish bar (>=3 positive + 3 negative) for every
+        # community smell; the package-shipped 'builtin' seed is exempt.
+        run: python tools/validate_smells.py --require-fixtures

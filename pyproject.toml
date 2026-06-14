@@ -41,6 +41,13 @@ dev = [
     # Property-based fuzzing of the streaming chunk-identity invariant.
     "hypothesis>=6",
     "pyyaml>=6",
+    # Schema validation for the smell catalogue: used by the snapshot
+    # build step and its tests. Not a runtime dependency — the shipped
+    # snapshot is pre-validated, so the loader needs only the stdlib.
+    "jsonschema>=4",
+    # Renders the library site's per-smell pages; here so the site
+    # generator's tests run in the default test job.
+    "jinja2>=3.1",
     # The LangChain callback handler subclasses
     # ``langchain_core.callbacks.BaseCallbackHandler``, so unlike the
     # duck-typed framework adapters its unit tests need the real
@@ -132,6 +139,11 @@ Issues = "https://github.com/inkfoot/inkfoot/issues"
 [tool.setuptools.packages.find]
 include = ["inkfoot*"]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+# Ship the bundled smell snapshot inside the wheel so the library works
+# offline; it is regenerated from the catalogue at release time.
+"inkfoot.library" = ["_snapshot.json"]
 
 [tool.setuptools.dynamic]
 version = { attr = "inkfoot._version.__version__" }

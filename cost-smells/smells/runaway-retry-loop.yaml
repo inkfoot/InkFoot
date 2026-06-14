@@ -1,0 +1,23 @@
+id: runaway-retry-loop
+title: Runaway retry loop
+severity: critical
+description: >-
+  The agent invoked the same tool more than 5 times in this run. The
+  classic cause is a tool whose result the agent can't interpret, so it
+  keeps retrying with marginally different inputs. Each retry pays for
+  the full prompt + tool-result history again — the cost grows
+  quadratically in the worst case.
+
+detection:
+  language: builtin
+  query: max(count of tools_called grouped by tool name)
+  trigger_condition: "value > 5"
+
+recommendation: >-
+  Inspect the tool's output for ambiguity or a missing exit condition in
+  the agent's loop. Add a guard that breaks the loop after N attempts or
+  escalates to a human.
+
+suggested_policy: RetryThrottle
+primary_category: null
+evidence_query: "SELECT tools_called, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"

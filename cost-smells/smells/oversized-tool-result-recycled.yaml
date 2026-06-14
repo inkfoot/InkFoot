@@ -1,0 +1,23 @@
+id: oversized-tool-result-recycled
+title: Oversized tool result recycled across turns
+severity: warn
+description: >-
+  A tool result of more than 2000 tokens is sitting in the context
+  across 3+ turns. The agent is paying full input rate for that body on
+  every turn it stays in scope. The right fix is to summarise the tool
+  result before reusing it — a future CheapSummariser does this
+  automatically.
+
+detection:
+  language: builtin
+  query: max(tool_result_tokens per call) over runs with at least 3 turns carrying tool results
+  trigger_condition: "tool_result_tokens >= 2000 and turns_with_tool_results >= 3"
+
+recommendation: >-
+  Summarise large tool results before recycling them across turns.
+  Enable CheapSummariser(threshold_tokens=1500), or prune the messages
+  array manually after each tool invocation.
+
+suggested_policy: CheapSummariser
+primary_category: tool_result_tokens
+evidence_query: "SELECT tool_result_tokens, sequence FROM events_json WHERE run_id = :run_id AND kind = 'llm_call'"
