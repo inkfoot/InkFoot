@@ -1,0 +1,75 @@
+name: Bug report
+description: Something Inkfoot does is wrong, crashes, or behaves unexpectedly.
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A small, runnable
+        reproduction is the single most useful thing you can include.
+
+        If Inkfoot simply *didn't capture* a call, please use the
+        "Provider coverage gap" or "LangChain integration gap" template
+        instead — those route to the right place faster.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe, and what did you expect instead?
+      placeholder: Inkfoot recorded 0 tokens for a streamed Anthropic call that clearly used some.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code or commands that reproduce the problem. Redact any API keys.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: inkfoot-version
+    attributes:
+      label: Inkfoot version
+      description: 'Output of: python -c "import inkfoot; print(inkfoot.__version__)"'
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or tracebacks
+      description: Paste any error output. This is automatically formatted as code, so no backticks are needed.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am on the latest 1.0.x release, or have noted why not.
+          required: true
+        - label: I redacted any secrets from the reproduction and logs.
+          required: true

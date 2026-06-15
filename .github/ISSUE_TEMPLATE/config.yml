@@ -1,0 +1,15 @@
+# Issue-template chooser configuration.
+# Blank issues are disabled so every report starts from a structured
+# form — that keeps triage cheap and makes the common "Inkfoot didn't
+# capture my call" reports land in the right bucket from the start.
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/inkfoot/inkfoot/discussions
+    about: Ask how to use Inkfoot, share a setup, or get help — use Discussions, not an issue.
+  - name: Security vulnerability
+    url: https://github.com/inkfoot/inkfoot/security/advisories/new
+    about: Report a security issue privately. Please do NOT open a public issue.
+  - name: Documentation
+    url: https://inkfoot.dev
+    about: Browse the guides, recipes, and provider capability matrix.

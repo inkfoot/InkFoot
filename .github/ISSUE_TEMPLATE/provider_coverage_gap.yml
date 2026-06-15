@@ -1,0 +1,76 @@
+name: Provider coverage gap
+description: A provider/SDK call was not captured, or was captured with wrong numbers.
+title: "[provider]: "
+labels: ["provider-coverage", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when you call a model **through a provider SDK directly**
+        (Anthropic, OpenAI, Gemini, Bedrock, …) and Inkfoot missed it or
+        got the token/cost numbers wrong. If you call models **through
+        LangChain**, use the "LangChain integration gap" template instead.
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - Anthropic
+        - OpenAI (Chat Completions)
+        - OpenAI (Responses API)
+        - Azure OpenAI
+        - Google Gemini
+        - AWS Bedrock
+        - Other (name it below)
+    validations:
+      required: true
+  - type: input
+    id: sdk-version
+    attributes:
+      label: Provider SDK and version
+      placeholder: anthropic==0.39.0
+    validations:
+      required: true
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What went wrong?
+      options:
+        - The call was not captured at all (no event recorded)
+        - The call was captured but token counts are wrong
+        - The call was captured but cost is wrong
+        - Streaming was not captured correctly
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The SDK call you made and how you ran instrument(). Redact API keys.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual
+      description: What numbers did you expect (from the provider's own usage), and what did `inkfoot report` show?
+    validations:
+      required: true
+  - type: input
+    id: inkfoot-version
+    attributes:
+      label: Inkfoot version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the provider capability matrix on inkfoot.dev for this provider/API.
+          required: true
+        - label: I called instrument() before making the SDK call.
+          required: true

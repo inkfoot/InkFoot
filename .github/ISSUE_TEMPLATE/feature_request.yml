@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. The most persuasive requests start from a
+        concrete problem rather than a proposed solution — tell us what
+        you were trying to do and where Inkfoot got in the way.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The use case or pain point, independent of any particular fix.
+      placeholder: I want per-team cost attribution, but tags only group by a single key.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like Inkfoot to do? Sketch the API or CLI shape if you have one.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, or other designs you weighed.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for the same request.
+          required: true

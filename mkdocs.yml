@@ -124,6 +124,7 @@ nav:
       - Postgres Backend: concepts/postgres.md
       - Performance & Overhead: concepts/performance.md
       - OpenTelemetry: concepts/otel.md
+      - Privacy & Telemetry: concepts/privacy.md
   - Frameworks:
       - LangChain: frameworks/langchain.md
       - LangGraph: frameworks/langgraph.md
