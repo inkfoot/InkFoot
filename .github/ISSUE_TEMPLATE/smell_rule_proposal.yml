@@ -1,0 +1,73 @@
+name: Cost smell proposal
+description: Propose a new cost smell for the community Cost Smell Library.
+title: "[smell]: "
+labels: ["smell-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cost smells are named, detectable patterns that waste tokens.
+        This issue is for *proposing and discussing* a smell. The smell
+        itself is contributed as a YAML file (plus fixtures) to the
+        community library — see its CONTRIBUTING guide for the schema and
+        the publish bar.
+  - type: input
+    id: smell-id
+    attributes:
+      label: Proposed smell id
+      description: Lowercase kebab-case; namespace with your org if you like.
+      placeholder: acme/oversized-system-prompt
+    validations:
+      required: true
+  - type: textarea
+    id: pattern
+    attributes:
+      label: What is the wasteful pattern?
+      description: Describe the smell and why it costs money.
+    validations:
+      required: true
+  - type: dropdown
+    id: detection-language
+    attributes:
+      label: Detection language
+      description: How the smell is detected over a run's events.
+      options:
+        - jsonpath
+        - sql
+        - builtin (maintainers only)
+    validations:
+      required: true
+  - type: textarea
+    id: detection-query
+    attributes:
+      label: Detection query
+      description: The JSONPath or SQL that flags the pattern. Keep it O(events) — no cross joins or double recursive descent.
+      render: sql
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: One sentence telling the user the single obvious thing to do about it.
+    validations:
+      required: true
+  - type: input
+    id: suggested-policy
+    attributes:
+      label: Suggested policy (optional)
+      description: An automated policy that fixes it, if one applies (e.g. CacheControlPlacer).
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Publish bar
+      description: A community smell ships with these. Tick what you can already meet.
+      options:
+        - label: The detection query is linear in the number of events (no cross joins / double `..`).
+          required: false
+        - label: I can provide at least 3 positive and 3 negative fixture cases.
+          required: false
+        - label: The recommendation is a single, concrete action.
+          required: false

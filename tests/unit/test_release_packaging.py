@@ -1,11 +1,12 @@
-"""Packaging + release-pipeline gate for the early-access PyPI release.
+"""Packaging + release-pipeline gate for the public release.
 
-The early-access release ships three things: the framework-adapter
-extras in ``pyproject.toml``, the tag-triggered publish workflow, and
-the post-publish smoke workflow. These tests assert the static shape of
-all three so a regression — a dropped extra, a publish workflow that
-quietly stops using Trusted Publishing — fails CI instead of surfacing
-at release time.
+The public release ships three things: the framework-adapter and
+tooling extras in ``pyproject.toml``, the tag-triggered publish
+workflow, and the post-publish smoke workflow. These tests assert the
+static shape of all three so a regression — a dropped extra, a publish
+workflow that quietly stops using Trusted Publishing, a smoke matrix
+that loses an interpreter — fails CI instead of surfacing at release
+time.
 
 YAML/TOML parsing skips when the parser isn't importable; both ship in
 the dev extra (``pip install -e ".[dev]"``) which CI installs.
@@ -21,8 +22,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
-PRERELEASE_WF = WORKFLOWS / "release-prerelease.yml"
+RELEASE_WF = WORKFLOWS / "release.yml"
 SMOKE_WF = WORKFLOWS / "release-smoke.yml"
+
+# The full set of interpreters the package promises to support.
+SUPPORTED_PYTHONS = {"3.10", "3.11", "3.12", "3.13"}
 
 
 def _have(mod: str) -> bool:
@@ -55,7 +59,8 @@ yaml_required = pytest.mark.skipif(
 )
 
 
-# --- T2: extras ----------------------------------------------------------
+# --- extras --------------------------------------------------------------
+
 
 @toml_required
 def test_framework_extras_declared():
@@ -101,6 +106,23 @@ def test_provider_extras_declared():
 
 
 @toml_required
+def test_storage_extra_declared():
+    extras = _load_toml()["project"]["optional-dependencies"]
+    assert "postgres" in extras
+    assert "psycopg" in " ".join(extras["postgres"])
+
+
+@toml_required
+def test_lint_extra_declared_with_ruff():
+    # The lint toolchain ships as its own extra so contributors can pull
+    # it without the full dev install.
+    extras = _load_toml()["project"]["optional-dependencies"]
+    assert "lint" in extras, "missing [lint] extra"
+    joined = " ".join(extras["lint"])
+    assert "ruff" in joined, f"[lint] should pin ruff, got {extras['lint']}"
+
+
+@toml_required
 def test_all_meta_extra_bundles_every_framework_and_provider_extra():
     extras = _load_toml()["project"]["optional-dependencies"]
     assert "all" in extras
@@ -140,59 +162,68 @@ def test_langchain_extra_pins_only_langchain_core():
 
 @toml_required
 def test_supports_declared_python_versions():
-    # Acceptance: works on Python 3.10/3.11/3.12.
     project = _load_toml()["project"]
     assert project["requires-python"] == ">=3.10"
     classifiers = " ".join(project["classifiers"])
-    for minor in ("3.10", "3.11", "3.12"):
-        assert minor in classifiers
+    for minor in sorted(SUPPORTED_PYTHONS):
+        assert minor in classifiers, f"missing classifier for Python {minor}"
 
 
-# --- version is a pre-release -------------------------------------------
+@toml_required
+def test_classifier_marks_production_stable():
+    # A 1.0 GA release should not still advertise itself as Alpha.
+    classifiers = _load_toml()["project"]["classifiers"]
+    statuses = [c for c in classifiers if c.startswith("Development Status")]
+    assert statuses == ["Development Status :: 5 - Production/Stable"], statuses
 
-def test_shipped_version_is_a_prerelease():
-    # The early-access pipeline only publishes a/b/rc releases; the
-    # package's own version must be one too.
+
+# --- version is a final release -----------------------------------------
+
+
+def test_shipped_version_is_a_final_release():
+    # The public pipeline only publishes final releases; the package's
+    # own version must be one too.
     spec = importlib.util.spec_from_file_location(
-        "check_prerelease_tag", REPO_ROOT / "scripts" / "check_prerelease_tag.py"
+        "check_release_tag", REPO_ROOT / "scripts" / "check_release_tag.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)  # type: ignore[union-attr]
     from inkfoot._version import __version__
 
-    assert module.is_prerelease(__version__), (
-        f"_version.py declares '{__version__}', which is not a pre-release; "
-        f"the early-access pipeline can only publish a/b/rc versions."
+    assert module.is_final_release(__version__), (
+        f"_version.py declares '{__version__}', which is not a final release; "
+        f"the public pipeline can only publish final versions."
     )
 
 
-# --- T1: publish workflow -----------------------------------------------
-
-@yaml_required
-def test_prerelease_workflow_exists_and_parses():
-    assert PRERELEASE_WF.exists(), f"missing {PRERELEASE_WF}"
-    assert _load_yaml(PRERELEASE_WF)  # parses to a non-empty mapping
+# --- publish workflow ----------------------------------------------------
 
 
 @yaml_required
-def test_prerelease_workflow_is_tag_triggered_on_prereleases_only():
-    wf = _load_yaml(PRERELEASE_WF)
+def test_release_workflow_exists_and_parses():
+    assert RELEASE_WF.exists(), f"missing {RELEASE_WF}"
+    assert _load_yaml(RELEASE_WF)  # parses to a non-empty mapping
+
+
+@yaml_required
+def test_release_workflow_is_tag_triggered_on_final_releases_only():
+    wf = _load_yaml(RELEASE_WF)
     # PyYAML parses the bare `on:` key as the boolean True.
     on = wf.get("on", wf.get(True))
     tags = on["push"]["tags"]
     joined = " ".join(tags)
-    # Pre-release markers present...
-    assert "a[0-9]" in joined and "b[0-9]" in joined and "rc[0-9]" in joined
-    # ...and no final-release glob (e.g. v[0-9]+.[0-9]+.[0-9]+ on its own).
+    # A final-release glob is present...
+    assert "[0-9]+.[0-9]+.[0-9]+" in joined
+    # ...and no pre-release marker that would fire on an a/b/rc tag.
     for pat in tags:
-        assert any(m in pat for m in ("a[0-9]", "b[0-9]", "rc[0-9]")), (
-            f"tag pattern {pat!r} would match a final release"
-        )
+        assert not any(
+            m in pat for m in ("a[0-9]", "b[0-9]", "rc[0-9]")
+        ), f"tag pattern {pat!r} would match a pre-release"
 
 
 @yaml_required
-def test_prerelease_workflow_uses_trusted_publishing():
-    wf = _load_yaml(PRERELEASE_WF)
+def test_release_workflow_uses_trusted_publishing():
+    wf = _load_yaml(RELEASE_WF)
     publish = wf["jobs"]["publish"]
     # Trusted Publishing requires id-token: write on the publishing job.
     assert publish["permissions"]["id-token"] == "write"
@@ -206,39 +237,35 @@ def test_prerelease_workflow_uses_trusted_publishing():
 
 
 @yaml_required
-def test_prerelease_workflow_runs_the_tag_guard():
-    wf = _load_yaml(PRERELEASE_WF)
-    runs = " ".join(
-        step.get("run", "") for step in wf["jobs"]["guard"]["steps"]
-    )
-    assert "check_prerelease_tag.py" in runs
+def test_release_workflow_runs_the_tag_guard():
+    wf = _load_yaml(RELEASE_WF)
+    runs = " ".join(step.get("run", "") for step in wf["jobs"]["guard"]["steps"])
+    assert "check_release_tag.py" in runs
 
 
 @yaml_required
-def test_prerelease_publish_gated_to_canonical_repo():
-    wf = _load_yaml(PRERELEASE_WF)
+def test_release_publish_gated_to_canonical_repo():
+    wf = _load_yaml(RELEASE_WF)
     assert "inkfoot/inkfoot" in str(wf["jobs"]["guard"].get("if", ""))
 
 
 @yaml_required
 def test_guard_job_never_imports_inkfoot():
-    # Regression for the workflow_dispatch crash: importing the package
-    # in the guard job (which installs no deps) fails on missing
-    # tiktoken. The guard must text-parse the version via the script's
-    # --from-package mode instead.
-    wf = _load_yaml(PRERELEASE_WF)
+    # Importing the package in the guard job (which installs no deps)
+    # would fail on missing tiktoken. The guard must text-parse the
+    # version via the script's --from-package mode instead.
+    wf = _load_yaml(RELEASE_WF)
     runs = " ".join(step.get("run", "") for step in wf["jobs"]["guard"]["steps"])
     assert "import inkfoot" not in runs
     assert "--from-package" in runs
 
 
 @yaml_required
-def test_publish_workflow_creates_github_release_to_fire_smoke():
+def test_publish_workflow_creates_public_github_release_to_fire_smoke():
     # The smoke workflow triggers on `release: published`; nothing else
-    # in the pipeline creates a Release, so the publish workflow must.
-    # Without this step the smoke gate (T3) only ever runs via manual
-    # dispatch.
-    wf = _load_yaml(PRERELEASE_WF)
+    # in the pipeline creates a Release, so the publish workflow must —
+    # and as a public (non-pre) release.
+    wf = _load_yaml(RELEASE_WF)
     jobs = wf["jobs"]
     release_jobs = [
         j
@@ -250,16 +277,15 @@ def test_publish_workflow_creates_github_release_to_fire_smoke():
     ]
     assert release_jobs, "no job creates a GitHub Release to fire the smoke trigger"
     job = release_jobs[0]
-    # Must be a pre-release (not the public launch) and needs
-    # contents: write to create the Release.
     assert job["permissions"]["contents"] == "write"
     gh_step = next(
         s for s in job["steps"] if "action-gh-release" in s.get("uses", "")
     )
-    assert gh_step["with"]["prerelease"] is True
+    assert gh_step["with"]["prerelease"] is False
 
 
-# --- T3: smoke workflow --------------------------------------------------
+# --- smoke workflow ------------------------------------------------------
+
 
 @yaml_required
 def test_smoke_workflow_exists_and_parses():
@@ -268,21 +294,31 @@ def test_smoke_workflow_exists_and_parses():
 
 
 @yaml_required
-def test_smoke_workflow_matrixes_supported_pythons():
+def test_smoke_workflow_matrixes_every_supported_python():
     wf = _load_yaml(SMOKE_WF)
     versions = wf["jobs"]["smoke"]["strategy"]["matrix"]["python-version"]
-    assert set(versions) == {"3.10", "3.11", "3.12"}
+    assert set(versions) == SUPPORTED_PYTHONS
 
 
 @yaml_required
-def test_smoke_workflow_installs_prerelease_from_pypi():
+def test_smoke_workflow_installs_final_release_from_pypi():
     wf = _load_yaml(SMOKE_WF)
-    runs = " ".join(
-        step.get("run", "") for step in wf["jobs"]["smoke"]["steps"]
-    )
-    # `--pre` is what lets pip resolve an a/b/rc release.
-    assert "--pre" in runs
-    assert "pip install" in runs
+    # Consider only executable lines, not comments: a comment that
+    # explains why `--pre` is absent must not trip the check.
+    install_lines = []
+    for step in wf["jobs"]["smoke"]["steps"]:
+        for line in step.get("run", "").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "pip install" in stripped:
+                install_lines.append(stripped)
+    assert install_lines, "smoke must pip install inkfoot"
+    assert any("inkfoot" in ln for ln in install_lines)
+    # The public pipeline ships finals only — no install line may
+    # resolve a pre-release via `--pre`.
+    for ln in install_lines:
+        assert "--pre" not in ln, f"smoke install must not use --pre: {ln}"
 
 
 @yaml_required
@@ -295,7 +331,7 @@ def test_smoke_workflow_runs_in_clean_container():
 @yaml_required
 def test_smoke_workflow_fires_on_published_release():
     # The far end of the trigger chain: the publish workflow creates a
-    # pre-release, and this is the event that catches it. (PyYAML maps a
+    # release, and this is the event that catches it. (PyYAML maps a
     # bare `on:` key to the boolean True.)
     wf = _load_yaml(SMOKE_WF)
     on = wf.get("on", wf.get(True))

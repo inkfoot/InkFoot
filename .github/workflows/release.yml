@@ -1,0 +1,169 @@
+name: Release
+
+# Tag-triggered public release: build + publish to PyPI, then cut a
+# GitHub Release that fires the post-release smoke.
+#
+# Trigger: pushing a final-release tag, e.g. `v1.0.0`. Pre-release tags
+# (a/b/rc), dev, and post tags deliberately do not match the filter
+# below; `check_release_tag.py` is the authoritative guard (it also
+# asserts tag == _version.py and rejects anything that is not a bare
+# final release).
+#
+# Auth: PyPI Trusted Publishing (OIDC) — no long-lived API token lives
+# in repo secrets. The `id-token: write` permission on the publish job
+# is what lets `pypa/gh-action-pypi-publish` mint a short-lived token
+# from PyPI. The `pypi` environment gives maintainers an approval gate
+# and a place to scope the trusted-publisher config.
+
+on:
+  push:
+    tags:
+      # Final releases only: 1.0.0 / v1.0.0, with or without a leading
+      # 'v'. The trailing-anchored globs do not match a/b/rc/dev/post
+      # suffixes, so a pre-release tag never reaches this pipeline.
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    # Don't let a fork's tag push try to publish to the project's PyPI.
+    if: ${{ github.repository == 'inkfoot/inkfoot' }}
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag is a publishable final release
+        id: guard
+        # Tag pushes validate ${GITHUB_REF_NAME}; dispatch runs (no tag)
+        # use --from-package, which validates _version.py directly. Both
+        # paths go through the guard script and neither imports inkfoot
+        # (the guard job installs no deps, so importing the package
+        # would crash on the missing tiktoken dependency).
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="$(python scripts/check_release_tag.py --from-package)"
+          else
+            VERSION="$(python scripts/check_release_tag.py "${GITHUB_REF_NAME}")"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build sdist + wheel
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Regenerate the bundled smell snapshot from the catalogue
+        # Freeze the snapshot from the smell catalogue at tag time so
+        # the released wheel carries a snapshot current with the
+        # catalogue. The builder needs only a YAML parser + schema
+        # validator, not the package itself.
+        run: |
+          python -m pip install --upgrade pip "pyyaml>=6" "jsonschema>=4"
+          python scripts/build_library_snapshot.py
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Check distribution metadata
+        run: |
+          python -m pip install --upgrade twine
+          twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+          retention-days: 7
+
+  verify:
+    name: Verify the built wheel imports
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    # PyPI is immutable: a wheel that builds but won't import (a missing
+    # module, or package-data that drops the bundled smell snapshot)
+    # can't be unpublished. Install the *built artifact* into a clean
+    # venv and import it before the upload, so the miss fails here
+    # instead of on a user's machine.
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+      - name: Install the built wheel and import the public surface
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/verify-venv
+          /tmp/verify-venv/bin/python -m pip install --upgrade pip
+          # Install the wheel itself, not the source tree, so this checks
+          # exactly what will land on the index.
+          /tmp/verify-venv/bin/python -m pip install dist/*.whl
+          /tmp/verify-venv/bin/python - <<'PY'
+          import inkfoot
+          from inkfoot.library import list_library_smells
+
+          assert list_library_smells(), "bundled smell snapshot missing from the wheel"
+          print(f"inkfoot {inkfoot.__version__} imports; bundled library loads")
+          PY
+
+  publish:
+    name: Publish to PyPI (trusted publishing)
+    needs: [guard, build, verify]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/inkfoot/${{ needs.guard.outputs.version }}/
+    permissions:
+      # Required by Trusted Publishing — mints a short-lived OIDC token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No `password:` — Trusted Publishing (OIDC) supplies auth.
+
+  github-release:
+    name: Create GitHub Release
+    needs: [guard, publish]
+    runs-on: ubuntu-latest
+    # Only meaningful for an actual tag push — a workflow_dispatch run
+    # has no tag to hang a Release off, and PyPI already has the build.
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      # Creating a Release writes to the repo's releases.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.guard.outputs.version }}
+          path: dist/
+      - name: Create the release
+        # This is what fires `release: published`, which in turn
+        # triggers release-smoke.yml against the version that just went
+        # to PyPI. `make_latest: true` puts it in the "Latest release"
+        # slot — this is the public release, not an early-access build.
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: false
+          make_latest: true
+          name: "v${{ needs.guard.outputs.version }}"
+          generate_release_notes: true
+          files: dist/*

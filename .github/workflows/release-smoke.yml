@@ -1,15 +1,15 @@
-name: Pre-release smoke
+name: Release smoke
 
-# Install the *published* pre-release in a clean container and run the
+# Install the *published* release in a clean container and run the
 # hello-world quickstart end-to-end.
 #
-# Where `release-prerelease.yml` builds and uploads, this workflow is
-# the after-the-fact proof that what landed on PyPI actually installs
-# and runs on every supported interpreter (3.10/3.11/3.12 per the
-# acceptance criteria). It deliberately installs from PyPI into a bare
-# `python:3.x-slim` container — no checkout, no editable install — so a
-# packaging miss (missing module, broken entry point, bad metadata)
-# fails here instead of in the reference repo.
+# Where `release.yml` builds and uploads, this workflow is the
+# after-the-fact proof that what landed on PyPI actually installs and
+# runs on every supported interpreter (3.10/3.11/3.12/3.13). It
+# deliberately installs from PyPI into a bare `python:3.x-slim`
+# container — no checkout, no editable install — so a packaging miss
+# (missing module, broken entry point, bad metadata) fails here instead
+# of in a downstream project.
 #
 # No real LLM key is used: the smoke records a synthetic `llm_call`
 # event through the installed package and asserts `inkfoot report`
@@ -17,14 +17,14 @@ name: Pre-release smoke
 # self-test.
 
 on:
-  # Fired automatically once a (pre-)release is published, and on
-  # demand so a maintainer can validate a specific version.
+  # Fired automatically once a release is published, and on demand so a
+  # maintainer can validate a specific version.
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       inkfoot-version:
-        description: "Pre-release version to smoke (e.g. 1.0.0a1). Empty = latest pre-release."
+        description: "Version to smoke (e.g. 1.0.0). Empty = latest release."
         required: false
         default: ""
 
@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     container:
       image: python:${{ matrix.python-version }}-slim
     steps:
@@ -54,17 +54,17 @@ jobs:
           fi
           echo "spec=${V}" >> "${GITHUB_OUTPUT}"
 
-      - name: Install the published pre-release from PyPI
+      - name: Install the published release from PyPI
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          # `--pre` lets pip pick up a/b/rc releases. A pinned version
-          # (from a release event or dispatch input) is exact; empty
-          # means "latest pre-release".
+          # A pinned version (from a release event or dispatch input) is
+          # exact; empty means "latest release". No `--pre`: the public
+          # release pipeline only publishes final versions.
           if [ -n "${{ steps.version.outputs.spec }}" ]; then
-            pip install --pre "inkfoot==${{ steps.version.outputs.spec }}"
+            pip install "inkfoot==${{ steps.version.outputs.spec }}"
           else
-            pip install --pre inkfoot
+            pip install inkfoot
           fi
 
       - name: Hello-world quickstart end-to-end
@@ -122,6 +122,22 @@ jobs:
           # the quickstart just wrote.
           inkfoot report --last 1h | tee report.txt
           grep -q "release-smoke" report.txt
+
+      - name: Bundled smell library loads from the installed wheel
+        run: |
+          set -euo pipefail
+          # The bundled `_snapshot.json` ships via [tool.setuptools.package-data].
+          # The unit tests read it from the source tree, so a packaging
+          # regression that drops it would only surface for an end user.
+          # Importing the library from the *installed* package catches that
+          # before anyone calls list_library_smells() in anger.
+          python - <<'PY'
+          from inkfoot.library import list_library_smells
+
+          smells = list_library_smells()
+          assert smells, "bundled smell snapshot missing from the wheel"
+          print(f"bundled smell library OK: {len(smells)} smells")
+          PY
 
       - name: Report Python + inkfoot versions
         if: always()

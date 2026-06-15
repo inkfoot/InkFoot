@@ -321,6 +321,16 @@ def instrument(
         _register_atexit_hook_once()
         _INSTRUMENTED = True
 
+    # Outside the lock (so a consent prompt or network call can never
+    # stall a second thread waiting to instrument) and only reached on
+    # the first call (subsequent calls return early above): offer the
+    # opt-in adoption ping. The telemetry module is best-effort and
+    # self-isolating — it never raises into, or blocks, this path.
+    from inkfoot import _telemetry  # noqa: PLC0415
+    from inkfoot._version import __version__  # noqa: PLC0415
+
+    _telemetry.record_install_and_maybe_ping(__version__)
+
 
 def shutdown() -> None:
     """Reverse of :func:`instrument`. Stops the aggregator, removes

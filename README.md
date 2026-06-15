@@ -231,32 +231,30 @@ tests/
   SQLite history over (resumable; renames the source to
   `.migrated`, never deletes it).
 
-## Releasing (early access)
+## Releasing
 
-The project publishes an early-access pre-release to PyPI; the public
-launch (blog post, GitHub mirror, marketplace polish) lands later. The
-pipeline is two tag-driven workflows plus a guard script:
+The project publishes to PyPI from a single tag-driven workflow plus a
+guard script:
 
-1. **Bump** `inkfoot/_version.py` to a PEP 440 pre-release (e.g.
-   `1.0.0a1`) and commit.
-2. **Tag** the commit to match — `git tag v1.0.0a1 && git push
-   origin v1.0.0a1`. The tag glob in
-   [`.github/workflows/release-prerelease.yml`](.github/workflows/release-prerelease.yml)
-   matches `a`/`b`/`rc` tags only (a final `v1.0.0` tag is ignored
-   on purpose).
-3. The **guard** ([`scripts/check_prerelease_tag.py`](scripts/check_prerelease_tag.py))
-   asserts the tag matches `_version.py` and is an actual
-   pre-release, then the workflow builds an sdist + wheel and
-   publishes via PyPI **Trusted Publishing** (OIDC — no API token
-   in repo secrets).
-4. After a successful upload the workflow creates a **GitHub
-   pre-release** (`prerelease: true`) for the tag. That published-release
+1. **Bump** `inkfoot/_version.py` to a final version (e.g. `1.0.0`)
+   and commit.
+2. **Tag** the commit to match — `git tag v1.0.0 && git push origin
+   v1.0.0`. The tag glob in
+   [`.github/workflows/release.yml`](.github/workflows/release.yml)
+   matches final-release tags only (a pre-release `v1.0.0a1` tag is
+   ignored on purpose).
+3. The **guard** ([`scripts/check_release_tag.py`](scripts/check_release_tag.py))
+   asserts the tag matches `_version.py` and is an actual final
+   release, then the workflow builds an sdist + wheel and publishes via
+   PyPI **Trusted Publishing** (OIDC — no API token in repo secrets).
+4. After a successful upload the workflow creates a **GitHub Release**
+   (set as the latest release) for the tag. That published-release
    event is what triggers
    [`.github/workflows/release-smoke.yml`](.github/workflows/release-smoke.yml),
    which installs the just-published version from PyPI into a clean
-   `python:3.10/3.11/3.12-slim` container and runs the hello-world
-   quickstart end-to-end. (You can also smoke an arbitrary version
-   on demand via the workflow's `workflow_dispatch` input.)
+   `python:3.10/3.11/3.12/3.13-slim` container and runs the
+   hello-world quickstart end-to-end. (You can also smoke an arbitrary
+   version on demand via the workflow's `workflow_dispatch` input.)
 
 Framework and provider extras ship alongside the release —
 `pip install "inkfoot[langchain]"`, `[langgraph]`,
@@ -273,6 +271,25 @@ model), and a weekly
 drives the callback handler against every LangChain partner
 package and real endpoint, so upstream drift surfaces as a red
 matrix leg (and a tracking issue) instead of a user bug report.
+
+## Contributing & community
+
+Contributions are welcome — bug fixes, new provider/LangChain coverage,
+cost smells, and docs.
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, test conventions, and
+  the pull-request checklist.
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability privately
+  (please don't open a public issue for security problems).
+- [CHANGELOG.md](CHANGELOG.md) — release notes, newest first.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — the community standards we
+  hold each other to.
+- File an issue from a [structured template](.github/ISSUE_TEMPLATE) —
+  bug, feature, cost-smell proposal, or a provider / LangChain coverage
+  gap.
+
+By participating you agree to abide by the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

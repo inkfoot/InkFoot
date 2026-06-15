@@ -1,0 +1,72 @@
+name: LangChain integration gap
+description: A call made through LangChain was not captured, double-counted, or mis-attributed.
+title: "[langchain]: "
+labels: ["langchain", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when you run models **through LangChain / LangGraph** and
+        Inkfoot's callback handler missed the call, counted it twice, or
+        attached it to the wrong node/run. For direct provider-SDK calls,
+        use the "Provider coverage gap" template instead.
+  - type: dropdown
+    id: integration
+    attributes:
+      label: LangChain integration
+      options:
+        - ChatAnthropic
+        - ChatOpenAI
+        - AzureChatOpenAI
+        - ChatGoogleGenerativeAI
+        - ChatBedrock
+        - LangGraph node
+        - Other community chat model (name it below)
+    validations:
+      required: true
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What went wrong?
+      options:
+        - The call was not captured at all
+        - The call was counted twice (handler + raw-SDK shim)
+        - Token counts are present but wrong
+        - Attribution is wrong (wrong node / run / tag)
+        - Streaming through LangChain was not captured
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: How did you call instrument()?
+      description: Show your instrument() call, including whether you passed langchain=True/"auto".
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest LangChain/LangGraph snippet that reproduces the gap. Redact API keys.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Inkfoot, langchain-core, and the relevant partner package (e.g. langchain-anthropic).
+      placeholder: inkfoot 1.0.0; langchain-core 0.3.x; langchain-anthropic 0.3.x
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: langchain-core is installed and instrument() ran with langchain enabled ("auto" or True).
+          required: true
+        - label: I checked whether the same call is also captured by a raw-SDK shim (possible double-count).
+          required: false
