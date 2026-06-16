@@ -49,9 +49,11 @@ node_modules/
 benchmark.json
 
 # Docs build (repo-root mkdocs output only; anchored so it doesn't also
-# match the library site sources under cost-smells/site/)
+# match the library site sources under cost-smells/site/). ``_site`` is
+# the dir the Docs workflow builds into (``mkdocs build --site-dir _site``).
 docs/_build/
 /site/
+/_site/
 
 # Cost smell library site — generated pages and build output
 cost-smells/site/_site/
