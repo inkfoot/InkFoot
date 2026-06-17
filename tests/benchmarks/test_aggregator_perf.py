@@ -49,12 +49,16 @@ def _seed_dirty_runs(s: SQLiteStorage) -> None:
                 kind="llm_call",
                 occurred_at=1_700_000_000_000 + r * 10 + e,
                 sequence=e + 1,
+                # Real emitted shape (nested ledger + estimated_nanodollars)
+                # so the benchmark measures the production projection path.
                 payload_json=json.dumps(
                     {
-                        "input_tokens": 100 + e,
-                        "output_tokens": 50 + e,
-                        "cache_read_tokens": e,
-                        "nanodollars": 12_345 + e * 100,
+                        "ledger": {
+                            "user_input_tokens": 100 + e,
+                            "output_tokens": 50 + e,
+                            "cache_read_tokens": e,
+                        },
+                        "estimated_nanodollars": 12_345 + e * 100,
                     }
                 ),
             )

@@ -414,11 +414,15 @@ def test_aggregator_drain_projects_totals(pg_storage) -> None:
             kind="llm_call",
             occurred_at=sequence,
             sequence=sequence,
+            # Real emitted shape: tokens nested under ``ledger``, cost in
+            # ``estimated_nanodollars`` (what emit_llm_call writes).
             payload_json=json.dumps(
                 {
-                    "input_tokens": tokens,
-                    "output_tokens": tokens * 2,
-                    "nanodollars": tokens * 100,
+                    "ledger": {
+                        "user_input_tokens": tokens,
+                        "output_tokens": tokens * 2,
+                    },
+                    "estimated_nanodollars": tokens * 100,
                 }
             ),
         )

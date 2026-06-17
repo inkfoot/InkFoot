@@ -13,14 +13,18 @@ Covers:
 from __future__ import annotations
 
 import json
-import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from inkfoot.cli import rebuild_aggregates as cli_rebuild
+from inkfoot.ledger import CausalTokenLedger, INPUT_CATEGORIES
+from inkfoot.normalise import NeutralCall
+from inkfoot.policy import CallContext
+from inkfoot.shims._emit import emit_llm_call
 from inkfoot.storage.aggregator import (
     AggregatorWorker,
     _interval_seconds,
@@ -42,7 +46,30 @@ def storage(tmp_path: Path) -> SQLiteStorage:
     s.close()
 
 
+def _emitted_llm_call_payload(
+    *, estimated_nanodollars: int = 202_500, **ledger_kwargs: int
+) -> str:
+    """An ``llm_call`` payload exactly as ``emit_llm_call`` serialises it:
+    ``dataclasses.asdict(NeutralCall)`` — token counts nested under
+    ``ledger`` (input split across the structural categories) and cost in
+    the top-level ``estimated_nanodollars``. This is the shape every
+    capture layer actually writes, so fixtures use it instead of a flat
+    top-level payload that nothing emits."""
+    call = NeutralCall(
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        started_at=0,
+        ended_at=1,
+        ledger=CausalTokenLedger(**ledger_kwargs),
+        estimated_nanodollars=estimated_nanodollars,
+    )
+    return json.dumps(asdict(call), default=str)
+
+
 def _seed_run_with_events(s: SQLiteStorage, run_id: str = "run-1") -> None:
+    # Two llm_call events in the real emitted shape, summing to
+    # input=300, output=130, cache_read=10, cache_creation=5,
+    # nanodollars=80_235 — the totals the drain/projection tests assert.
     s.start_run(
         run_id=run_id,
         task="t",
@@ -55,14 +82,12 @@ def _seed_run_with_events(s: SQLiteStorage, run_id: str = "run-1") -> None:
         kind="llm_call",
         occurred_at=1_700_000_000_001,
         sequence=1,
-        payload_json=json.dumps(
-            {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "cache_read_tokens": 10,
-                "cache_creation_tokens": 5,
-                "nanodollars": 12_345,
-            }
+        payload_json=_emitted_llm_call_payload(
+            user_input_tokens=100,
+            output_tokens=50,
+            cache_read_tokens=10,
+            cache_creation_tokens=5,
+            estimated_nanodollars=12_345,
         ),
     )
     s.insert_event(
@@ -71,12 +96,10 @@ def _seed_run_with_events(s: SQLiteStorage, run_id: str = "run-1") -> None:
         kind="llm_call",
         occurred_at=1_700_000_000_002,
         sequence=2,
-        payload_json=json.dumps(
-            {
-                "input_tokens": 200,
-                "output_tokens": 80,
-                "nanodollars": 67_890,
-            }
+        payload_json=_emitted_llm_call_payload(
+            user_input_tokens=200,
+            output_tokens=80,
+            estimated_nanodollars=67_890,
         ),
     )
 
@@ -86,7 +109,12 @@ def _seed_run_with_events(s: SQLiteStorage, run_id: str = "run-1") -> None:
 # ----------------------------------------------------------------------
 
 
-def test_project_run_totals_sums_known_fields() -> None:
+def test_project_run_totals_tolerates_legacy_flat_payload() -> None:
+    # Events written before the causal ledger landed carry flat top-level
+    # token fields and a ``nanodollars`` cost key. The projection still
+    # rolls those up (the fallback in ``_billed_from_payload``) so an old
+    # runs.db aggregates after an upgrade. The current emit path uses the
+    # nested-ledger shape — see the nested-ledger tests below.
     events = [
         {
             "kind": "llm_call",
@@ -96,9 +124,7 @@ def test_project_run_totals_sums_known_fields() -> None:
         },
         {
             "kind": "llm_call",
-            "payload_json": json.dumps(
-                {"input_tokens": 7, "cache_read_tokens": 3}
-            ),
+            "payload_json": json.dumps({"input_tokens": 7, "cache_read_tokens": 3}),
         },
     ]
     totals = project_run_totals(events)
@@ -125,7 +151,7 @@ def test_project_run_totals_skips_non_int_values() -> None:
     events = [
         {
             "kind": "llm_call",
-            "payload_json": json.dumps({"input_tokens": "ten"}),
+            "payload_json": json.dumps({"ledger": {"user_input_tokens": "ten"}}),
         }
     ]
     assert project_run_totals(events)["total_input_tokens"] == 0
@@ -137,7 +163,7 @@ def test_project_run_totals_rejects_bool_as_int() -> None:
     events = [
         {
             "kind": "llm_call",
-            "payload_json": json.dumps({"input_tokens": True}),
+            "payload_json": json.dumps({"ledger": {"user_input_tokens": True}}),
         }
     ]
     assert project_run_totals(events)["total_input_tokens"] == 0
@@ -145,7 +171,10 @@ def test_project_run_totals_rejects_bool_as_int() -> None:
 
 def test_project_run_totals_extracts_outcome_from_outcome_event() -> None:
     events = [
-        {"kind": "llm_call", "payload_json": json.dumps({"input_tokens": 1})},
+        {
+            "kind": "llm_call",
+            "payload_json": _emitted_llm_call_payload(user_input_tokens=1),
+        },
         {"kind": "outcome", "payload_json": json.dumps({"outcome": "success"})},
     ]
     assert project_run_totals(events)["outcome"] == "success"
@@ -261,7 +290,9 @@ def test_late_event_landing_after_claim_is_not_lost(
         kind="llm_call",
         occurred_at=1_700_000_000_500,
         sequence=99,
-        payload_json=json.dumps({"input_tokens": 17}),
+        payload_json=_emitted_llm_call_payload(
+            user_input_tokens=17, estimated_nanodollars=0
+        ),
     )
 
     # T2: aggregator writes totals from the T0 snapshot.
@@ -299,7 +330,9 @@ def test_insert_event_landing_after_drain_re_dirties_the_row(
         kind="llm_call",
         occurred_at=1_700_000_000_900,
         sequence=99,
-        payload_json=json.dumps({"input_tokens": 5}),
+        payload_json=_emitted_llm_call_payload(
+            user_input_tokens=5, estimated_nanodollars=0
+        ),
     )
     assert "run-1" in storage.read_dirty(limit=10)
 
@@ -509,3 +542,125 @@ def test_interval_env_var_invalid_string_falls_back(
     with caplog.at_level("WARNING"):
         v = _interval_seconds()
     assert v == 0.5
+
+
+# ----------------------------------------------------------------------
+# project_run_totals — the production (nested-ledger) payload shape
+#
+# Regression coverage for the rollup bug: every capture layer emits an
+# ``llm_call`` payload via ``emit_llm_call``, which writes
+# ``dataclasses.asdict(NeutralCall)`` — token counts nested under
+# ``ledger`` and cost in ``estimated_nanodollars``. A reader that only
+# summed flat top-level ``input_tokens`` / ``nanodollars`` rolled every
+# such run up to zero, so aggregate reports showed $0.0000 even though
+# per-call cost was captured. (``_seed_run_with_events`` and the drain
+# tests above already exercise this shape end-to-end; these pin the
+# projection semantics directly.)
+# ----------------------------------------------------------------------
+
+
+def test_project_run_totals_rolls_up_nested_ledger_payload() -> None:
+    payload = _emitted_llm_call_payload(
+        system_static_tokens=40,
+        user_input_tokens=60,
+        output_tokens=20,
+        cache_read_tokens=5,
+        cache_creation_tokens=4,
+        estimated_nanodollars=202_500,
+    )
+    # The real payload nests tokens under ``ledger`` and has no flat
+    # ``input_tokens`` / ``nanodollars`` keys at all.
+    decoded = json.loads(payload)
+    assert "ledger" in decoded
+    assert "input_tokens" not in decoded and "nanodollars" not in decoded
+
+    totals = project_run_totals([{"kind": "llm_call", "payload_json": payload}])
+    assert totals["total_input_tokens"] == 100  # 40 + 60 structural categories
+    assert totals["total_output_tokens"] == 20
+    assert totals["total_cache_read_tokens"] == 5
+    assert totals["total_cache_creation_tokens"] == 4
+    assert totals["total_nanodollars"] == 202_500
+
+
+def test_project_run_totals_input_is_sum_of_all_structural_categories() -> None:
+    # ``total_input_tokens`` must be the sum of *every* structural input
+    # category, never just ``user_input_tokens``, and must exclude the
+    # cache overlays. Driven off INPUT_CATEGORIES with a distinct value
+    # per name so a 12th category added later is auto-covered.
+    per_category = {name: i + 1 for i, name in enumerate(INPUT_CATEGORIES)}
+    payload = _emitted_llm_call_payload(
+        cache_read_tokens=1000,  # overlay — must NOT count as input
+        estimated_nanodollars=0,
+        **per_category,
+    )
+    totals = project_run_totals([{"kind": "llm_call", "payload_json": payload}])
+    assert totals["total_input_tokens"] == sum(per_category.values())
+    assert totals["total_cache_read_tokens"] == 1000
+
+
+# ----------------------------------------------------------------------
+# Emitter <-> projector contract (end-to-end through the real serialiser)
+#
+# The original bug slipped through because nothing drove the real
+# `emit_llm_call` into `project_run_totals` — fixtures reproduced a shape
+# by hand. This test runs the actual emitter (the same serialisation the
+# shims, streaming, and the LangChain handler use) into the storage and
+# the worker, so a future change to emit's serialisation that breaks the
+# rollup fails here instead of silently shipping $0.0000 again.
+# ----------------------------------------------------------------------
+
+
+class _StubTranslator:
+    """A provider translator stand-in: returns a fixed NeutralCall for
+    any response. We lock the emit-serialisation -> projection contract,
+    not per-provider translation (which has its own tests)."""
+
+    def translate(
+        self, *, request, response, run_state, started_at, ended_at, sequence
+    ) -> NeutralCall:
+        return NeutralCall(
+            provider="anthropic",
+            model="claude-haiku-4-5",
+            started_at=started_at,
+            ended_at=ended_at,
+            ledger=CausalTokenLedger(
+                user_input_tokens=120, output_tokens=34, cache_read_tokens=7
+            ),
+            estimated_nanodollars=456_000,
+            sequence=sequence,
+        )
+
+
+def test_real_emit_llm_call_rolls_up_through_the_aggregator(
+    storage: SQLiteStorage,
+) -> None:
+    run_id = "run-emit-contract"
+    storage.start_run(run_id=run_id, task="t", agent_kind="test", started_at=0)
+    ctx = CallContext(
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        run_id=run_id,
+        request_kwargs={},
+    )
+
+    # The real emitter: builds asdict(NeutralCall) and writes the event.
+    emit_llm_call(
+        ctx=ctx,
+        response=object(),
+        started_at=1,
+        ended_at=2,
+        storage=storage,
+        capture_mode="metadata",
+        translator=_StubTranslator(),
+        before_decisions=[],
+        skip_dedup=True,
+    )
+
+    # insert_event marked the run dirty; the worker projects it.
+    AggregatorWorker(storage).drain_once()
+
+    run = storage.get_run(run_id)
+    assert run["total_input_tokens"] == 120
+    assert run["total_output_tokens"] == 34
+    assert run["total_cache_read_tokens"] == 7
+    assert run["total_nanodollars"] == 456_000
