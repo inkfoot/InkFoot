@@ -36,6 +36,8 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Mapping
 
+from inkfoot.ledger import INPUT_CATEGORIES
+
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.storage import Storage
 
@@ -45,13 +47,55 @@ _LOG = logging.getLogger("inkfoot.aggregator")
 
 _DEFAULT_INTERVAL_MS = 500
 _DEFAULT_BATCH = 50
-_AGG_FIELDS_FROM_PAYLOAD = (
-    "input_tokens",
-    "output_tokens",
-    "cache_read_tokens",
-    "cache_creation_tokens",
-    "nanodollars",
-)
+
+
+def _coerce_int(value: Any) -> int:
+    """Token/cost fields must be plain ints. ``bool`` is an ``int``
+    subclass but never a real count, so reject it; anything else
+    non-int counts as 0 rather than corrupting a total."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
+def _billed_from_payload(payload: Mapping[str, Any]) -> dict[str, int]:
+    """Pull one ``llm_call`` payload's run-level token + cost aggregates.
+
+    ``emit_llm_call`` serialises a :class:`~inkfoot.normalise.NeutralCall`
+    with ``dataclasses.asdict``, so the production payload nests the token
+    counts under ``ledger`` — input is the sum of the structural
+    :data:`~inkfoot.ledger.INPUT_CATEGORIES`, cache fields are billing
+    overlays — and carries the cost as the top-level
+    ``estimated_nanodollars``. Read that shape first; fall back to flat
+    top-level fields (and the ``nanodollars`` cost alias) for events
+    written before the causal ledger landed.
+    """
+    ledger = payload.get("ledger")
+    if isinstance(ledger, Mapping):
+        input_tokens = sum(_coerce_int(ledger.get(c)) for c in INPUT_CATEGORIES)
+        output_tokens = _coerce_int(ledger.get("output_tokens"))
+        cache_read = _coerce_int(ledger.get("cache_read_tokens"))
+        cache_creation = _coerce_int(ledger.get("cache_creation_tokens"))
+    else:
+        input_tokens = _coerce_int(payload.get("input_tokens"))
+        output_tokens = _coerce_int(payload.get("output_tokens"))
+        cache_read = _coerce_int(payload.get("cache_read_tokens"))
+        cache_creation = _coerce_int(payload.get("cache_creation_tokens"))
+
+    # Cost: production uses ``estimated_nanodollars``; the flat legacy /
+    # synthetic shape uses ``nanodollars``. Prefer the former when it is
+    # a valid int (including 0), else fall back to the alias.
+    cost = payload.get("estimated_nanodollars")
+    if isinstance(cost, bool) or not isinstance(cost, int):
+        cost = payload.get("nanodollars")
+
+    return {
+        "total_input_tokens": input_tokens,
+        "total_output_tokens": output_tokens,
+        "total_cache_read_tokens": cache_read,
+        "total_cache_creation_tokens": cache_creation,
+        "total_nanodollars": _coerce_int(cost),
+    }
 
 
 def _interval_seconds() -> float:
@@ -93,9 +137,11 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
     breakdown stays in event payloads — see the ledger.
 
     Robustness notes:
-    - Missing payload fields default to 0.
-    - Non-integer values in payload fields are skipped with a debug
-      log (the shim's job is to emit ints; we don't silently coerce).
+    - Token counts are read from the nested ``ledger`` the shim writes;
+      see :func:`_billed_from_payload` for the shape and the legacy
+      flat-payload fallback.
+    - Missing payload fields default to 0; non-int / bool values count
+      as 0 rather than corrupting a total.
     - ``kind='outcome'`` event's ``payload_json.outcome`` takes
       precedence over any other claim; if multiple outcome events
       exist, the *last* by sequence wins.
@@ -128,15 +174,8 @@ def project_run_totals(events: list[Mapping[str, Any]]) -> dict[str, Any]:
                 )
                 continue
 
-        for src in _AGG_FIELDS_FROM_PAYLOAD:
-            value = payload.get(src)
-            if isinstance(value, bool) or not isinstance(value, int):
-                # bool is a subclass of int — reject explicitly.
-                continue
-            dest = (
-                f"total_{src}" if src != "nanodollars" else "total_nanodollars"
-            )
-            totals[dest] += value
+        for key, value in _billed_from_payload(payload).items():
+            totals[key] += value
 
         if ev.get("kind") == "outcome":
             claimed = payload.get("outcome")
