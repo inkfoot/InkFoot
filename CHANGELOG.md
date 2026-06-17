@@ -4,6 +4,25 @@ All notable changes to Inkfoot are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Aggregate run totals projected as zero.** The per-run rollups on the
+  `runs` table (`total_input_tokens`, `total_output_tokens`,
+  `total_cache_read_tokens`, `total_cache_creation_tokens`,
+  `total_nanodollars`) were always written as `0`, so the aggregate
+  `inkfoot report` views and cost-per-success showed `$0.0000` — even
+  though each call's cost was captured and visible in
+  `inkfoot report --run <id>`. The aggregator now reads token counts from
+  the call's causal ledger and the cost from `estimated_nanodollars`.
+  Affected both the SQLite and Postgres aggregators.
+
+  **Upgrading:** runs aggregated before this fix keep their zeroed totals
+  until they are re-projected. Run `inkfoot rebuild-aggregates` once after
+  upgrading to backfill historical runs (it recomputes `runs.total_*`
+  from the event log and is always safe to run).
+
 ## [1.0.0] - 2026-06-14
 
 First public release. The headline: **Inkfoot is a drop-in causal-cost

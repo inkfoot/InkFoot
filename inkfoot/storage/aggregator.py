@@ -36,7 +36,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Mapping
 
-from inkfoot.ledger import INPUT_CATEGORIES
+from inkfoot.ledger import ledger_from_payload
 
 if TYPE_CHECKING:  # pragma: no cover
     from inkfoot.storage import Storage
@@ -64,18 +64,20 @@ def _billed_from_payload(payload: Mapping[str, Any]) -> dict[str, int]:
     ``emit_llm_call`` serialises a :class:`~inkfoot.normalise.NeutralCall`
     with ``dataclasses.asdict``, so the production payload nests the token
     counts under ``ledger`` — input is the sum of the structural
-    :data:`~inkfoot.ledger.INPUT_CATEGORIES`, cache fields are billing
-    overlays — and carries the cost as the top-level
-    ``estimated_nanodollars``. Read that shape first; fall back to flat
+    categories, cache fields are billing overlays — and carries the cost
+    as the top-level ``estimated_nanodollars``. Read that shape via the
+    shared :func:`~inkfoot.ledger.ledger_from_payload` reader (so the
+    ledger field names stay tied to the dataclass); fall back to flat
     top-level fields (and the ``nanodollars`` cost alias) for events
     written before the causal ledger landed.
     """
     ledger = payload.get("ledger")
     if isinstance(ledger, Mapping):
-        input_tokens = sum(_coerce_int(ledger.get(c)) for c in INPUT_CATEGORIES)
-        output_tokens = _coerce_int(ledger.get("output_tokens"))
-        cache_read = _coerce_int(ledger.get("cache_read_tokens"))
-        cache_creation = _coerce_int(ledger.get("cache_creation_tokens"))
+        led = ledger_from_payload(payload)
+        input_tokens = led.input_total
+        output_tokens = led.output_tokens
+        cache_read = led.cache_read_tokens
+        cache_creation = led.cache_creation_tokens
     else:
         input_tokens = _coerce_int(payload.get("input_tokens"))
         output_tokens = _coerce_int(payload.get("output_tokens"))

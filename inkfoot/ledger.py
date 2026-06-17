@@ -52,6 +52,7 @@ the docs cite a sum, they mean the 11 structural categories — see
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+from typing import Any, Mapping
 
 
 # The 11 structural cause categories, in canonical reporting order.
@@ -222,3 +223,27 @@ def field_names() -> tuple[str, ...]:
     """Names of every ledger field in declaration order. Useful for
     serialisation tests + report rendering."""
     return tuple(f.name for f in fields(CausalTokenLedger))
+
+
+def ledger_from_payload(payload: Mapping[str, Any]) -> CausalTokenLedger:
+    """Reconstruct a :class:`CausalTokenLedger` from an ``llm_call``
+    event payload's ``ledger`` sub-dict — the shape ``emit_llm_call``
+    writes via ``dataclasses.asdict(neutral_call)``.
+
+    Defensive by design: a missing or non-mapping ``ledger``, or any
+    missing / non-int field, falls back to 0, so a single corrupt row
+    never cascades. Field names are taken from the dataclass itself
+    (:func:`field_names`), so adding or renaming a ledger field flows
+    through here automatically rather than silently dropping to 0.
+    """
+    ledger_dict = payload.get("ledger") or {}
+    if not isinstance(ledger_dict, Mapping):
+        return CausalTokenLedger()
+    values: dict[str, int] = {}
+    for name in field_names():
+        value = ledger_dict.get(name, 0)
+        # bool is an int subclass but never a real token count.
+        if isinstance(value, bool) or not isinstance(value, int):
+            value = 0
+        values[name] = value
+    return CausalTokenLedger(**values)

@@ -21,8 +21,10 @@ from types import SimpleNamespace
 import pytest
 
 from inkfoot.cli import rebuild_aggregates as cli_rebuild
-from inkfoot.ledger import CausalTokenLedger
+from inkfoot.ledger import CausalTokenLedger, INPUT_CATEGORIES
 from inkfoot.normalise import NeutralCall
+from inkfoot.policy import CallContext
+from inkfoot.shims._emit import emit_llm_call
 from inkfoot.storage.aggregator import (
     AggregatorWorker,
     _interval_seconds,
@@ -581,24 +583,84 @@ def test_project_run_totals_rolls_up_nested_ledger_payload() -> None:
 
 
 def test_project_run_totals_input_is_sum_of_all_structural_categories() -> None:
-    # ``total_input_tokens`` must be the sum of every structural input
-    # category (INPUT_CATEGORIES), not just ``user_input_tokens``, and
-    # must exclude the cache overlays.
+    # ``total_input_tokens`` must be the sum of *every* structural input
+    # category, never just ``user_input_tokens``, and must exclude the
+    # cache overlays. Driven off INPUT_CATEGORIES with a distinct value
+    # per name so a 12th category added later is auto-covered.
+    per_category = {name: i + 1 for i, name in enumerate(INPUT_CATEGORIES)}
     payload = _emitted_llm_call_payload(
-        system_static_tokens=1,
-        system_dynamic_tokens=2,
-        user_input_tokens=3,
-        tool_schema_tokens=4,
-        tool_result_tokens=5,
-        retrieved_context_tokens=6,
-        memory_tokens=7,
-        retry_overhead_tokens=8,
-        summariser_tokens=9,
-        reasoning_tokens=10,
-        guardrail_tokens=11,
         cache_read_tokens=1000,  # overlay — must NOT count as input
         estimated_nanodollars=0,
+        **per_category,
     )
     totals = project_run_totals([{"kind": "llm_call", "payload_json": payload}])
-    assert totals["total_input_tokens"] == sum(range(1, 12))  # 66
+    assert totals["total_input_tokens"] == sum(per_category.values())
     assert totals["total_cache_read_tokens"] == 1000
+
+
+# ----------------------------------------------------------------------
+# Emitter <-> projector contract (end-to-end through the real serialiser)
+#
+# The original bug slipped through because nothing drove the real
+# `emit_llm_call` into `project_run_totals` — fixtures reproduced a shape
+# by hand. This test runs the actual emitter (the same serialisation the
+# shims, streaming, and the LangChain handler use) into the storage and
+# the worker, so a future change to emit's serialisation that breaks the
+# rollup fails here instead of silently shipping $0.0000 again.
+# ----------------------------------------------------------------------
+
+
+class _StubTranslator:
+    """A provider translator stand-in: returns a fixed NeutralCall for
+    any response. We lock the emit-serialisation -> projection contract,
+    not per-provider translation (which has its own tests)."""
+
+    def translate(
+        self, *, request, response, run_state, started_at, ended_at, sequence
+    ) -> NeutralCall:
+        return NeutralCall(
+            provider="anthropic",
+            model="claude-haiku-4-5",
+            started_at=started_at,
+            ended_at=ended_at,
+            ledger=CausalTokenLedger(
+                user_input_tokens=120, output_tokens=34, cache_read_tokens=7
+            ),
+            estimated_nanodollars=456_000,
+            sequence=sequence,
+        )
+
+
+def test_real_emit_llm_call_rolls_up_through_the_aggregator(
+    storage: SQLiteStorage,
+) -> None:
+    run_id = "run-emit-contract"
+    storage.start_run(run_id=run_id, task="t", agent_kind="test", started_at=0)
+    ctx = CallContext(
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        run_id=run_id,
+        request_kwargs={},
+    )
+
+    # The real emitter: builds asdict(NeutralCall) and writes the event.
+    emit_llm_call(
+        ctx=ctx,
+        response=object(),
+        started_at=1,
+        ended_at=2,
+        storage=storage,
+        capture_mode="metadata",
+        translator=_StubTranslator(),
+        before_decisions=[],
+        skip_dedup=True,
+    )
+
+    # insert_event marked the run dirty; the worker projects it.
+    AggregatorWorker(storage).drain_once()
+
+    run = storage.get_run(run_id)
+    assert run["total_input_tokens"] == 120
+    assert run["total_output_tokens"] == 34
+    assert run["total_cache_read_tokens"] == 7
+    assert run["total_nanodollars"] == 456_000

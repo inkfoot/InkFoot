@@ -12,44 +12,12 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Iterator, Optional
 
-from inkfoot.ledger import CausalTokenLedger
+# ``ledger_from_payload`` lives in :mod:`inkfoot.ledger` (its natural
+# home — pure ledger deserialisation, shared with the storage
+# aggregator). Re-exported here so smell detectors keep importing it from
+# ``inkfoot.smells._helpers``.
+from inkfoot.ledger import ledger_from_payload  # noqa: F401
 from inkfoot.pricing import PRICING_ND_PER_TOKEN, PriceRow, _lookup_row
-
-
-def ledger_from_payload(payload: dict[str, Any]) -> CausalTokenLedger:
-    """Reconstruct a :class:`CausalTokenLedger` from a NeutralCall
-    payload's ``ledger`` sub-dict.
-
-    Defensive: missing or non-int fields fall back to 0. Smells
-    treat each call independently so a corrupt single row should
-    never cascade.
-    """
-    ledger_dict = payload.get("ledger") or {}
-    if not isinstance(ledger_dict, dict):
-        return CausalTokenLedger()
-
-    fields: dict[str, int] = {}
-    for name in (
-        "system_static_tokens",
-        "system_dynamic_tokens",
-        "user_input_tokens",
-        "tool_schema_tokens",
-        "tool_result_tokens",
-        "retrieved_context_tokens",
-        "memory_tokens",
-        "retry_overhead_tokens",
-        "summariser_tokens",
-        "reasoning_tokens",
-        "guardrail_tokens",
-        "cache_creation_tokens",
-        "cache_read_tokens",
-        "output_tokens",
-    ):
-        value = ledger_dict.get(name, 0)
-        if isinstance(value, bool) or not isinstance(value, int):
-            value = 0
-        fields[name] = value
-    return CausalTokenLedger(**fields)
 
 
 def price_row_for(payload: dict[str, Any]) -> Optional[PriceRow]:
